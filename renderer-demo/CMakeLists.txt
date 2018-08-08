@@ -10,9 +10,11 @@ set(headers
 
 include_directories(include)
 include_directories(../third_party/glm)
+include_directories(../renderer/include)
 
 add_executable(${project_name} ${src} ${headers})
 
+target_link_libraries(${project_name} Renderer)
 target_link_libraries(${project_name} SDL2main)
 
 
