@@ -16,6 +16,13 @@ int main(int argc, char **argv)
 	assert(renderer != nullptr && "Error, renderer instance could not be created");
 
 
+	bool running = true;
+	while (running)
+	{
+		IRenderer::UpdateAll();
+	}
+
+
 	delete renderer;
 
     return 0;
