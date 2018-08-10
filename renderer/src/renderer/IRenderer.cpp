@@ -3,6 +3,7 @@
 #include <renderer\vulkan\VulkanRenderer.hpp>
 
 using namespace Renderer;
+using namespace Renderer::Vulkan;
 
 std::vector<IRenderer*> IRenderer::m_renderers;
 
@@ -15,7 +16,7 @@ IRenderer * Renderer::IRenderer::CreateRenderer(const RenderingAPI api)
 	IRenderer * renderer = nullptr;
 	switch (api)
 	{
-	case Vulkan:
+	case VulkanAPI:
 		renderer = new VulkanRenderer();
 		break;
 	}

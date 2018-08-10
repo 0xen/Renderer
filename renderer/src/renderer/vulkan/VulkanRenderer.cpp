@@ -1,22 +1,31 @@
-#include "..\..\..\include\renderer\vulkan\VulkanRenderer.hpp"
+#include <renderer/vulkan/VulkanRenderer.hpp>
 
-Renderer::VulkanRenderer::VulkanRenderer() : IRenderer()
+#include <assert.h>
+
+using namespace Renderer::Vulkan;
+VulkanRenderer::VulkanRenderer() : IRenderer()
 {
 }
 
-Renderer::VulkanRenderer::~VulkanRenderer()
+VulkanRenderer::~VulkanRenderer()
 {
+	Stop();
 }
 
-bool Renderer::VulkanRenderer::Start()
+bool VulkanRenderer::Start()
 {
+	m_instance = new VulkanInstance();
+
+	assert(!m_instance->HasError() && "Unable to create a vulkan instance");
+
 	return true;
 }
 
-void Renderer::VulkanRenderer::Update()
+void VulkanRenderer::Update()
 {
 }
 
-void Renderer::VulkanRenderer::Stop()
+void VulkanRenderer::Stop()
 {
+	delete m_instance;
 }

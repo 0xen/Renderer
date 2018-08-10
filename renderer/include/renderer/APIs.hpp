@@ -4,6 +4,6 @@ namespace Renderer
 {
 	enum RenderingAPI
 	{
-		Vulkan
+		VulkanAPI
 	};
 }

@@ -9,6 +9,7 @@ set(common_src
 
 set(common_headers
     include/renderer/IRenderer.hpp
+    include/renderer/Status.hpp
     include/renderer/APIs.hpp
 )
 
@@ -25,10 +26,17 @@ find_package(Vulkan)
 if(Vulkan_FOUND)
     
     set(vulkan_src
+       src/renderer/vulkan/VulkanCommon.cpp
+       src/renderer/vulkan/VulkanInitializers.cpp
+       src/renderer/vulkan/VulkanInstance.cpp
        src/renderer/vulkan/VulkanRenderer.cpp
     )
 
     set(vulkan_headers
+        include/renderer/vulkan/VulkanStatus.hpp
+        include/renderer/vulkan/VulkanCommon.hpp
+        include/renderer/vulkan/VulkanInitializers.hpp
+        include/renderer/vulkan/VulkanInstance.hpp
         include/renderer/vulkan/VulkanRenderer.hpp
     )
 
