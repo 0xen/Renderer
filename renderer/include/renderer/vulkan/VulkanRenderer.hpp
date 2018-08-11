@@ -7,7 +7,7 @@ namespace Renderer
 {
 	namespace Vulkan
 	{
-		class VulkanRenderer : public IRenderer
+		class VulkanRenderer : public IRenderer, public VulkanStatus
 		{
 		public:
 			VulkanRenderer();

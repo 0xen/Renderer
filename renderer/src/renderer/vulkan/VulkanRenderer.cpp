@@ -16,7 +16,9 @@ bool VulkanRenderer::Start()
 {
 	m_instance = new VulkanInstance();
 
-	assert(!m_instance->HasError() && "Unable to create a vulkan instance");
+	Status::ErrorCheck(m_instance);
+
+	if (HasError())return false;
 
 	return true;
 }
