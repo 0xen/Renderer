@@ -32,6 +32,7 @@ if(Vulkan_FOUND)
        src/renderer/vulkan/VulkanInstance.cpp
        src/renderer/vulkan/VulkanRenderer.cpp
        src/renderer/vulkan/VulkanPhysicalDevice.cpp
+       src/renderer/vulkan/VulkanDevice.cpp
     )
 
     set(vulkan_headers
@@ -43,6 +44,7 @@ if(Vulkan_FOUND)
         include/renderer/vulkan/VulkanRenderer.hpp
         include/renderer/vulkan/VulkanQueueFamilyIndices.hpp
         include/renderer/vulkan/VulkanPhysicalDevice.hpp
+        include/renderer/vulkan/VulkanDevice.hpp
     )
 
     include_directories(${Vulkan_INCLUDE_DIRS})

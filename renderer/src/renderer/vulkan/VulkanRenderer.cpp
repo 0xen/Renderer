@@ -1,6 +1,7 @@
 #include <renderer/vulkan/VulkanRenderer.hpp>
 #include <renderer/vulkan/VulkanInstance.hpp>
 #include <renderer/vulkan/VulkanPhysicalDevice.hpp>
+#include <renderer/vulkan/VulkanDevice.hpp>
 
 #include <assert.h>
 
@@ -17,13 +18,17 @@ VulkanRenderer::~VulkanRenderer()
 bool VulkanRenderer::Start(Renderer::NativeWindowHandle window_handle)
 {
 	m_instance = new VulkanInstance();
-
 	Status::ErrorCheck(m_instance);
+	if (HasError())return false;
 
 	CreateSurface(window_handle);
 
 	m_physical_device = VulkanPhysicalDevice::GetPhysicalDevice(m_instance, m_surface);
+	Status::ErrorCheck(m_physical_device);
+	if (HasError())return false;
 
+	m_device = new VulkanDevice(m_instance, m_physical_device);
+	Status::ErrorCheck(m_device);
 	if (HasError())return false;
 
 	return true;
@@ -35,6 +40,7 @@ void VulkanRenderer::Update()
 
 void VulkanRenderer::Stop()
 {
+	delete m_device;
 	delete m_physical_device;
 	delete m_instance;
 }

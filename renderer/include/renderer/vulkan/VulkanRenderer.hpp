@@ -9,6 +9,7 @@ namespace Renderer
 	{
 		class VulkanInstance;
 		class VulkanPhysicalDevice;
+		class VulkanDevice;
 		class VulkanRenderer : public IRenderer, public VulkanStatus
 		{
 		public:
@@ -22,6 +23,7 @@ namespace Renderer
 			VulkanInstance * m_instance;
 			VkSurfaceKHR m_surface;
 			VulkanPhysicalDevice* m_physical_device;
+			VulkanDevice* m_device;
 		};
 	}
 }
