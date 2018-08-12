@@ -27,7 +27,7 @@ void VulkanInstance::SetupLayersAndExtensions()
 
 
 #ifdef _WIN32
-	m_instance_extensions.push_back("VK_KHR_win32_surface");
+	m_instance_extensions.push_back(VK_KHR_WIN32_SURFACE_EXTENSION_NAME);
 #elif __APPLE__
 	m_instance_extensions.push_back("VK_MVK_macos_surface");
 #elif __linux__

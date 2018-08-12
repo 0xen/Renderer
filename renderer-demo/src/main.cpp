@@ -5,10 +5,12 @@
 #include <renderer\IRenderer.hpp>
 
 
+#include <iostream>
+
 using namespace Renderer;
 
 SDL_Window* window;
-NativeWindowHandle window_handle;
+NativeWindowHandle* window_handle;
 
 Uint32 GetWindowFlags(RenderingAPI api)
 {
@@ -21,13 +23,13 @@ Uint32 GetWindowFlags(RenderingAPI api)
 	return 0;
 }
 
-void WindowSetup(RenderingAPI api, const char* title, unsigned int width, unsigned int height)
+void WindowSetup(RenderingAPI api, const char* title, int width, int height)
 {
 	window = SDL_CreateWindow(
 		title,
 		SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
 		width, height,
-		GetWindowFlags(api)
+		GetWindowFlags(api) | SDL_WINDOW_RESIZABLE
 	);
 	SDL_ShowWindow(window);
 
@@ -35,15 +37,15 @@ void WindowSetup(RenderingAPI api, const char* title, unsigned int width, unsign
 	SDL_VERSION(&info.version);
 	assert(SDL_GetWindowWMInfo(window, &info) && "Error, unable to get window info");
 
-	window_handle = { info.info.win.window };
-
+	window_handle = new NativeWindowHandle(info.info.win.window, width, height);
+	window_handle->clear_color = { 0.2f,0.2f,0.2f,1.0f };
 }
-
-
 
 void DestroyWindow()
 {
 	SDL_DestroyWindow(window);
+
+	delete window_handle;
 }
 
 int main(int argc, char **argv)
@@ -76,8 +78,23 @@ int main(int argc, char **argv)
 		SDL_Event event;
 		while (SDL_PollEvent(&event) > 0)
 		{
-			if (event.type == SDL_QUIT)
+			switch (event.type)
+			{
+			case SDL_QUIT:
 				running = false;
+				break;
+			case SDL_WINDOWEVENT:
+				switch (event.window.event)
+				{
+					//Get new dimensions and repaint on window size change
+				case SDL_WINDOWEVENT_SIZE_CHANGED:
+					window_handle->width = event.window.data1;
+					window_handle->height = event.window.data2;
+					renderer->Rebuild();
+					break;
+				}
+				break;
+			}
 		}
 	}
 

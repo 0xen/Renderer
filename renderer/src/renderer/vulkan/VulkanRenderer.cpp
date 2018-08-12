@@ -2,6 +2,7 @@
 #include <renderer/vulkan/VulkanInstance.hpp>
 #include <renderer/vulkan/VulkanPhysicalDevice.hpp>
 #include <renderer/vulkan/VulkanDevice.hpp>
+#include <renderer/vulkan/VulkanSwapchain.hpp>
 
 #include <assert.h>
 
@@ -15,8 +16,10 @@ VulkanRenderer::~VulkanRenderer()
 	Stop();
 }
 
-bool VulkanRenderer::Start(Renderer::NativeWindowHandle window_handle)
+bool VulkanRenderer::Start(Renderer::NativeWindowHandle* window_handle)
 {
+	m_window_handle = window_handle;
+
 	m_instance = new VulkanInstance();
 	Status::ErrorCheck(m_instance);
 	if (HasError())return false;
@@ -31,11 +34,18 @@ bool VulkanRenderer::Start(Renderer::NativeWindowHandle window_handle)
 	Status::ErrorCheck(m_device);
 	if (HasError())return false;
 
+	m_swapchain = new VulkanSwapchain(m_instance, m_device, &m_surface, window_handle);
+	Status::ErrorCheck(m_swapchain);
+	if (HasError())return false;
+
+	
+
 	return true;
 }
 
 void VulkanRenderer::Update()
 {
+	m_swapchain->Render();
 }
 
 void VulkanRenderer::Stop()
@@ -45,7 +55,12 @@ void VulkanRenderer::Stop()
 	delete m_instance;
 }
 
-void Renderer::Vulkan::VulkanRenderer::CreateSurface(Renderer::NativeWindowHandle window_handle)
+void Renderer::Vulkan::VulkanRenderer::Rebuild()
+{
+	m_swapchain->RebuildSwapchain();
+}
+
+void Renderer::Vulkan::VulkanRenderer::CreateSurface(Renderer::NativeWindowHandle* window_handle)
 {
 	auto CreateWin32SurfaceKHR = (PFN_vkCreateWin32SurfaceKHR)vkGetInstanceProcAddr(*m_instance->GetInstance(), "vkCreateWin32SurfaceKHR");
 

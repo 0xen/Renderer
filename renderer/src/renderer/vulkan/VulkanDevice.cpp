@@ -63,7 +63,7 @@ Renderer::Vulkan::VulkanDevice::VulkanDevice(VulkanInstance * instance, VulkanPh
 		&m_compute_command_pool
 	));
 
-	assert(!HasError() && "Unable up create compute command pool");
+	assert(!HasError() && "Unable to create compute command pool");
 
 	VkCommandPoolCreateInfo graphics_pool_info = VulkanInitializers::CommandPoolCreateInfo(m_physical_device->GetQueueFamilies()->graphics_indices);
 	ErrorCheck(vkCreateCommandPool(
@@ -73,7 +73,7 @@ Renderer::Vulkan::VulkanDevice::VulkanDevice(VulkanInstance * instance, VulkanPh
 		&m_graphics_command_pool
 	));
 
-	assert(!HasError() && "Unable up create graphics command pool");
+	assert(!HasError() && "Unable to create graphics command pool");
 
 }
 
@@ -99,6 +99,11 @@ Renderer::Vulkan::VulkanDevice::~VulkanDevice()
 VkDevice * Renderer::Vulkan::VulkanDevice::GetVulkanDevice()
 {
 	return &m_device;
+}
+
+Renderer::Vulkan::VulkanPhysicalDevice * Renderer::Vulkan::VulkanDevice::GetVulkanPhysicalDevice()
+{
+	return m_physical_device;
 }
 
 VkQueue * Renderer::Vulkan::VulkanDevice::GetGraphicsQueue()

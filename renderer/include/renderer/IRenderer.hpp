@@ -11,11 +11,13 @@ namespace Renderer
 	public:
 		IRenderer();
 		// Starts the renderer, this class is inherited by the parent class and it will define the function body
-		virtual bool Start(NativeWindowHandle window_handle) = 0;
+		virtual bool Start(NativeWindowHandle* window_handle) = 0;
 		// Update the renderer, this class is inherited by the parent class and it will define the function body
 		virtual void Update() = 0;
 		// Stop the renderer, this class is inherited by the parent class and it will define the function body
 		virtual void Stop() = 0;
+		// Rebuild the rendering platform when a event takes place that it is required, such as a screen resize
+		virtual void Rebuild() = 0;
 
 		// Creates a instance of the renderer based on the chosen API. this IRenderer can be cast into the parent class
 		static IRenderer* CreateRenderer(const RenderingAPI api);

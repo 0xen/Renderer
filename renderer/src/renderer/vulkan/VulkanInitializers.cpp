@@ -1,6 +1,9 @@
 #include <renderer/vulkan/VulkanInitializers.hpp>
+#include <renderer/vulkan/VulkanCommon.hpp>
 
-VkApplicationInfo Renderer::VulkanInitializers::ApplicationInfo(const char * app_name, uint32_t app_ver, const char * engine_name, uint32_t engine_ver, uint32_t api_version)
+#include <assert.h>
+
+VkApplicationInfo Renderer::Vulkan::VulkanInitializers::ApplicationInfo(const char * app_name, uint32_t app_ver, const char * engine_name, uint32_t engine_ver, uint32_t api_version)
 {
 	VkApplicationInfo app_info = {};
 	app_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
@@ -12,7 +15,7 @@ VkApplicationInfo Renderer::VulkanInitializers::ApplicationInfo(const char * app
 	return app_info;
 }
 
-VkInstanceCreateInfo Renderer::VulkanInitializers::InstanceCreateInfo(VkApplicationInfo & app_info, std::vector<const char*>& instance_extensions, std::vector<const char*>& instance_layers)
+VkInstanceCreateInfo Renderer::Vulkan::VulkanInitializers::InstanceCreateInfo(VkApplicationInfo & app_info, std::vector<const char*>& instance_extensions, std::vector<const char*>& instance_layers)
 {
 	VkInstanceCreateInfo create_info = {};
 	create_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
@@ -24,16 +27,16 @@ VkInstanceCreateInfo Renderer::VulkanInitializers::InstanceCreateInfo(VkApplicat
 	return create_info;
 }
 
-VkWin32SurfaceCreateInfoKHR Renderer::VulkanInitializers::SurfaceCreateInfo(Renderer::NativeWindowHandle window_handle)
+VkWin32SurfaceCreateInfoKHR Renderer::Vulkan::VulkanInitializers::SurfaceCreateInfo(Renderer::NativeWindowHandle* window_handle)
 {
 	VkWin32SurfaceCreateInfoKHR createInfo = {};
 	createInfo.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
-	createInfo.hwnd = window_handle.window;
+	createInfo.hwnd = window_handle->window;
 	createInfo.hinstance = GetModuleHandle(nullptr);
 	return createInfo;
 }
 
-VkDeviceQueueCreateInfo Renderer::VulkanInitializers::DeviceQueueCreate(uint32_t queue_family_index, float queue_priority)
+VkDeviceQueueCreateInfo Renderer::Vulkan::VulkanInitializers::DeviceQueueCreate(uint32_t queue_family_index, float queue_priority)
 {
 	VkDeviceQueueCreateInfo queue_create_info = {};
 	queue_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
@@ -43,7 +46,7 @@ VkDeviceQueueCreateInfo Renderer::VulkanInitializers::DeviceQueueCreate(uint32_t
 	return queue_create_info;
 }
 
-VkDeviceCreateInfo Renderer::VulkanInitializers::DeviceCreateInfo(std::vector<VkDeviceQueueCreateInfo>& queue_create_infos, const std::vector<const char*>& device_extensions, VkPhysicalDeviceFeatures & device_features)
+VkDeviceCreateInfo Renderer::Vulkan::VulkanInitializers::DeviceCreateInfo(std::vector<VkDeviceQueueCreateInfo>& queue_create_infos, const std::vector<const char*>& device_extensions, VkPhysicalDeviceFeatures & device_features)
 {
 	VkDeviceCreateInfo create_info = {};
 	create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -55,7 +58,7 @@ VkDeviceCreateInfo Renderer::VulkanInitializers::DeviceCreateInfo(std::vector<Vk
 	return create_info;
 }
 
-VkCommandPoolCreateInfo Renderer::VulkanInitializers::CommandPoolCreateInfo(uint32_t queue_family_index, VkCommandPoolCreateFlags flags)
+VkCommandPoolCreateInfo Renderer::Vulkan::VulkanInitializers::CommandPoolCreateInfo(uint32_t queue_family_index, VkCommandPoolCreateFlags flags)
 {
 	VkCommandPoolCreateInfo pool_info = {};
 	pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
@@ -64,7 +67,7 @@ VkCommandPoolCreateInfo Renderer::VulkanInitializers::CommandPoolCreateInfo(uint
 	return pool_info;
 }
 
-VkCommandBufferAllocateInfo Renderer::VulkanInitializers::CommandBufferAllocateInfo(VkCommandPool pool, uint32_t command_buffer_count)
+VkCommandBufferAllocateInfo Renderer::Vulkan::VulkanInitializers::CommandBufferAllocateInfo(VkCommandPool pool, uint32_t command_buffer_count)
 {
 	VkCommandBufferAllocateInfo alloc_info = {};
 	alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -74,7 +77,7 @@ VkCommandBufferAllocateInfo Renderer::VulkanInitializers::CommandBufferAllocateI
 	return alloc_info;
 }
 
-VkCommandBufferBeginInfo Renderer::VulkanInitializers::CommandBufferBeginInfo(VkCommandBufferUsageFlags flag)
+VkCommandBufferBeginInfo Renderer::Vulkan::VulkanInitializers::CommandBufferBeginInfo(VkCommandBufferUsageFlags flag)
 {
 	VkCommandBufferBeginInfo begin_info = {};
 	begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -83,7 +86,7 @@ VkCommandBufferBeginInfo Renderer::VulkanInitializers::CommandBufferBeginInfo(Vk
 	return begin_info;
 }
 
-VkSubmitInfo Renderer::VulkanInitializers::SubmitInfo(VkCommandBuffer & buffer)
+VkSubmitInfo Renderer::Vulkan::VulkanInitializers::SubmitInfo(VkCommandBuffer & buffer)
 {
 	VkSubmitInfo submit_info = {};
 	submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -92,11 +95,234 @@ VkSubmitInfo Renderer::VulkanInitializers::SubmitInfo(VkCommandBuffer & buffer)
 	return submit_info;
 }
 
-VkSubmitInfo Renderer::VulkanInitializers::SubmitInfo(VkCommandBuffer* buffer, uint32_t count)
+VkSubmitInfo Renderer::Vulkan::VulkanInitializers::SubmitInfo(VkCommandBuffer* buffer, uint32_t count)
 {
 	VkSubmitInfo submit_info = {};
 	submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 	submit_info.commandBufferCount = count;
 	submit_info.pCommandBuffers = buffer;
 	return submit_info;
+}
+
+VkRenderPassBeginInfo Renderer::Vulkan::VulkanInitializers::RenderPassBeginInfo(VkRenderPass render_pass, VkExtent2D swapchain_extent, std::array<VkClearValue, 2>& clear_values)
+{
+	VkRenderPassBeginInfo render_pass_info = {};
+	render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+	render_pass_info.renderPass = render_pass;
+	render_pass_info.renderArea.offset = { 0, 0 };
+	render_pass_info.renderArea.extent = swapchain_extent;
+	render_pass_info.clearValueCount = static_cast<uint32_t>(clear_values.size());
+	render_pass_info.pClearValues = clear_values.data();
+	return render_pass_info;
+}
+
+VkSwapchainCreateInfoKHR Renderer::Vulkan::VulkanInitializers::SwapchainCreateInfoKHR(VkSurfaceFormatKHR surface_format, VkExtent2D extent, VkPresentModeKHR present_mode, uint32_t image_count, VkSurfaceKHR surface, Renderer::Vulkan::VulkanQueueFamilyIndices indices, Renderer::Vulkan::VulkanSwapChainSupport swap_chain_support)
+{
+	VkSwapchainCreateInfoKHR create_info = {};
+	create_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+	create_info.surface = surface; // The surface we are drawing onto
+	create_info.minImageCount = image_count; // Amount of swapchain images
+	create_info.imageFormat = surface_format.format; // What format will the images be in
+	create_info.imageColorSpace = surface_format.colorSpace; // What colors will the images use
+	create_info.imageExtent = extent; // Image width and height
+	create_info.imageArrayLayers = 1; // Keep at 1
+	create_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+	create_info.presentMode = present_mode;
+	create_info.clipped = VK_TRUE; // If we can't see a pixel, get rid of it
+	create_info.oldSwapchain = VK_NULL_HANDLE; // We are not remaking the swapchain
+	if (indices.graphics_indices != indices.present_indices)
+	{
+		create_info.imageSharingMode = VK_SHARING_MODE_CONCURRENT; //Image can be used across many queue family's
+		create_info.queueFamilyIndexCount = 2;
+		create_info.pQueueFamilyIndices = std::vector<uint32_t>{ indices.graphics_indices, indices.present_indices }.data();
+	}
+	else
+	{
+		create_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE; // image is owned by one queue family
+		create_info.queueFamilyIndexCount = 0;
+		create_info.pQueueFamilyIndices = nullptr;
+	}
+	create_info.preTransform = swap_chain_support.capabilities.currentTransform; // We don't want any transformations applied to the images
+	create_info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR; // Ignore the alpha channel so we can do blending
+
+	return create_info;
+}
+
+VkSubpassDependency Renderer::Vulkan::VulkanInitializers::SubpassDependency()
+{
+	VkSubpassDependency subpass_dependency = {};
+	subpass_dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+	subpass_dependency.dstSubpass = 0;
+	subpass_dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	subpass_dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+	subpass_dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	subpass_dependency.srcAccessMask = 0;
+	return subpass_dependency;
+}
+
+VkRenderPassCreateInfo Renderer::Vulkan::VulkanInitializers::RenderPassCreateInfo(std::vector<VkAttachmentDescription>& color_attachment, VkSubpassDescription & subpass, VkSubpassDependency & subpass_dependency)
+{
+	VkRenderPassCreateInfo render_pass_info = {};
+	render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+	render_pass_info.attachmentCount = static_cast<uint32_t>(color_attachment.size());
+	render_pass_info.pAttachments = color_attachment.data();
+	render_pass_info.subpassCount = 1;
+	render_pass_info.pSubpasses = &subpass;
+	render_pass_info.dependencyCount = 1;
+	render_pass_info.pDependencies = &subpass_dependency;
+	return render_pass_info;
+}
+
+VkAttachmentDescription Renderer::Vulkan::VulkanInitializers::AttachmentDescription(VkFormat format, VkAttachmentStoreOp store_op, VkImageLayout final_layout)
+{
+	VkAttachmentDescription color_attachment = {};
+	color_attachment.format = format;
+	color_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+	color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	color_attachment.storeOp = store_op;
+	color_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	color_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	color_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	color_attachment.finalLayout = final_layout;//VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+	return color_attachment;
+}
+
+VkAttachmentReference Renderer::Vulkan::VulkanInitializers::AttachmentReference(VkImageLayout layout, uint32_t attachment)
+{
+	VkAttachmentReference color_attachment_refrence = {};
+	color_attachment_refrence.attachment = attachment;
+	color_attachment_refrence.layout = layout;
+	return color_attachment_refrence;
+}
+
+VkSubpassDescription Renderer::Vulkan::VulkanInitializers::SubpassDescription(VkAttachmentReference & color_attachment_refrence, VkAttachmentReference & depth_attachment_ref)
+{
+	VkSubpassDescription subpass = {};
+	subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+	subpass.colorAttachmentCount = 1;
+	subpass.pColorAttachments = &color_attachment_refrence;
+	subpass.pDepthStencilAttachment = &depth_attachment_ref;
+	return subpass;
+}
+
+VkFramebufferCreateInfo Renderer::Vulkan::VulkanInitializers::FramebufferCreateInfo(VkExtent2D & swap_chain_extent, std::vector<VkImageView>& attachments, VkRenderPass & render_pass)
+{
+	VkFramebufferCreateInfo framebuffer_info = {};
+	framebuffer_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+	framebuffer_info.renderPass = render_pass;
+	framebuffer_info.attachmentCount = static_cast<uint32_t>(attachments.size());
+	framebuffer_info.pAttachments = attachments.data();
+	framebuffer_info.width = swap_chain_extent.width;
+	framebuffer_info.height = swap_chain_extent.height;
+	framebuffer_info.layers = 1;
+	return framebuffer_info;
+}
+
+VkSemaphoreCreateInfo Renderer::Vulkan::VulkanInitializers::SemaphoreCreateInfo()
+{
+	VkSemaphoreCreateInfo semaphore_info = {};
+	semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+	return semaphore_info;
+}
+
+VkImageViewCreateInfo Renderer::Vulkan::VulkanInitializers::ImageViewCreate(VkImage image, VkFormat format, VkImageAspectFlags aspect_flags)
+{
+	VkImageViewCreateInfo create_info = {};
+	create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	create_info.image = image;
+	create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	create_info.format = format;
+	create_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+	create_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+	create_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+	create_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+	create_info.subresourceRange.aspectMask = aspect_flags;// VK_IMAGE_ASPECT_COLOR_BIT;
+	create_info.subresourceRange.baseMipLevel = 0;
+	create_info.subresourceRange.levelCount = 1;
+	create_info.subresourceRange.baseArrayLayer = 0;
+	create_info.subresourceRange.layerCount = 1;
+	return create_info;
+}
+
+VkMemoryAllocateInfo Renderer::Vulkan::VulkanInitializers::MemoryAllocateInfo(VkDeviceSize size, uint32_t memory_type_index)
+{
+	VkMemoryAllocateInfo alloc_info = {};
+	alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	alloc_info.allocationSize = size;
+	alloc_info.memoryTypeIndex = memory_type_index;
+	return alloc_info;
+}
+
+VkImageCreateInfo Renderer::Vulkan::VulkanInitializers::ImageCreateInfo(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, uint32_t mip_levels)
+{
+	VkImageCreateInfo image_info = {};
+	image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	image_info.imageType = VK_IMAGE_TYPE_2D;
+	image_info.extent.width = width;
+	image_info.extent.height = height;
+	image_info.extent.depth = 1;
+	image_info.mipLevels = mip_levels;
+	image_info.arrayLayers = 1;
+	image_info.format = format;
+	image_info.tiling = tiling;
+	image_info.initialLayout = VK_IMAGE_LAYOUT_PREINITIALIZED;
+	image_info.usage = usage;
+	image_info.samples = VK_SAMPLE_COUNT_1_BIT;
+	image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	return image_info;
+}
+
+VkImageMemoryBarrier Renderer::Vulkan::VulkanInitializers::ImageMemoryBarrier()
+{
+	VkImageMemoryBarrier image_memory_barrier{};
+	image_memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	image_memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	image_memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	return image_memory_barrier;
+}
+
+VkImageMemoryBarrier Renderer::Vulkan::VulkanInitializers::ImageMemoryBarrier(VkImage & image, VkFormat & format, VkImageLayout & old_layout, VkImageLayout & new_layout)
+{
+	VkImageMemoryBarrier barrier = ImageMemoryBarrier();
+	barrier.oldLayout = old_layout;
+	barrier.newLayout = new_layout;
+	barrier.image = image;
+	if (new_layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+	{
+		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+
+		if (format != VK_FORMAT_UNDEFINED && Renderer::Vulkan::VulkanCommon::HasStencilComponent(format))
+		{
+			barrier.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
+		}
+	}
+	else
+	{
+		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	}
+	barrier.subresourceRange.baseMipLevel = 0;
+	barrier.subresourceRange.levelCount = 1;
+	barrier.subresourceRange.baseArrayLayer = 0;
+	barrier.subresourceRange.layerCount = 1;
+
+	if (old_layout == VK_IMAGE_LAYOUT_PREINITIALIZED && new_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
+	{
+		barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
+		barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+	}
+	else if (old_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && new_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+	{
+		barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+		barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+	}
+	else if (old_layout == VK_IMAGE_LAYOUT_UNDEFINED && new_layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+	{
+		barrier.srcAccessMask = 0;
+		barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+	}
+	else
+	{
+		assert(0 && "Unsupported Layout Transition!");
+	}
+	return barrier;
 }

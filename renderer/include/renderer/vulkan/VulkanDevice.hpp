@@ -17,6 +17,7 @@ namespace Renderer
 			VulkanDevice(VulkanInstance* instance, VulkanPhysicalDevice * physical_device);
 			~VulkanDevice();
 			VkDevice* GetVulkanDevice();
+			VulkanPhysicalDevice * GetVulkanPhysicalDevice();
 			VkQueue* GetGraphicsQueue();
 			VkQueue* GetPresentQueue();
 			VkQueue* GetComputeQueue();
