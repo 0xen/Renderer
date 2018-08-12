@@ -8,6 +8,7 @@ set(common_src
 )
 
 set(common_headers
+    include/renderer/NativeWindowHandle.hpp
     include/renderer/IRenderer.hpp
     include/renderer/Status.hpp
     include/renderer/APIs.hpp
@@ -30,14 +31,18 @@ if(Vulkan_FOUND)
        src/renderer/vulkan/VulkanInitializers.cpp
        src/renderer/vulkan/VulkanInstance.cpp
        src/renderer/vulkan/VulkanRenderer.cpp
+       src/renderer/vulkan/VulkanPhysicalDevice.cpp
     )
 
     set(vulkan_headers
+        include/renderer/vulkan/VulkanHeader.hpp
         include/renderer/vulkan/VulkanStatus.hpp
         include/renderer/vulkan/VulkanCommon.hpp
         include/renderer/vulkan/VulkanInitializers.hpp
         include/renderer/vulkan/VulkanInstance.hpp
         include/renderer/vulkan/VulkanRenderer.hpp
+        include/renderer/vulkan/VulkanQueueFamilyIndices.hpp
+        include/renderer/vulkan/VulkanPhysicalDevice.hpp
     )
 
     include_directories(${Vulkan_INCLUDE_DIRS})

@@ -2,7 +2,8 @@
 
 #include <vector>
 
-#include <vulkan\vulkan.h>
+#include <renderer/NativeWindowHandle.hpp>
+#include <renderer/vulkan/VulkanHeader.hpp>
 
 namespace Renderer
 {
@@ -12,5 +13,6 @@ namespace Renderer
 
 		VkInstanceCreateInfo InstanceCreateInfo(VkApplicationInfo& app_info, std::vector<const char*>& instance_extensions, std::vector<const char*>& instance_layers);
 
+		VkWin32SurfaceCreateInfoKHR SurfaceCreateInfo(Renderer::NativeWindowHandle window_handle);
 	}
 }

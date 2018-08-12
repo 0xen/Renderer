@@ -23,3 +23,12 @@ VkInstanceCreateInfo Renderer::VulkanInitializers::InstanceCreateInfo(VkApplicat
 	create_info.ppEnabledLayerNames = instance_layers.data();			// The raw data of the layers to enable
 	return create_info;
 }
+
+VkWin32SurfaceCreateInfoKHR Renderer::VulkanInitializers::SurfaceCreateInfo(Renderer::NativeWindowHandle window_handle)
+{
+	VkWin32SurfaceCreateInfoKHR createInfo = {};
+	createInfo.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
+	createInfo.hwnd = window_handle.window;
+	createInfo.hinstance = GetModuleHandle(nullptr);
+	return createInfo;
+}

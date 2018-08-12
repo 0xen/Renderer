@@ -2,6 +2,7 @@
 
 #include <vector>
 #include <renderer/APIs.hpp>
+#include <renderer/NativeWindowHandle.hpp>
 
 namespace Renderer
 {
@@ -10,7 +11,7 @@ namespace Renderer
 	public:
 		IRenderer();
 		// Starts the renderer, this class is inherited by the parent class and it will define the function body
-		virtual bool Start() = 0;
+		virtual bool Start(NativeWindowHandle window_handle) = 0;
 		// Update the renderer, this class is inherited by the parent class and it will define the function body
 		virtual void Update() = 0;
 		// Stop the renderer, this class is inherited by the parent class and it will define the function body

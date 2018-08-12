@@ -24,6 +24,22 @@ void VulkanInstance::SetupLayersAndExtensions()
 	m_instance_extensions.empty();
 
 	m_instance_extensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
+
+
+#ifdef _WIN32
+	m_instance_extensions.push_back("VK_KHR_win32_surface");
+#elif __APPLE__
+	m_instance_extensions.push_back("VK_MVK_macos_surface");
+#elif __linux__
+
+#elif __unix__
+
+#elif defined(_POSIX_VERSION)
+
+#else
+#   error "Unknown compiler"
+#endif
+
 }
 
 void VulkanInstance::InitVulkanInstance()
