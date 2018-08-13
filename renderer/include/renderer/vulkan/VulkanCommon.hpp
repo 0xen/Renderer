@@ -11,6 +11,7 @@ namespace Renderer
 	{
 		class VulkanDevice;
 		class VulkanPhysicalDevice;
+		struct VulkanBufferData;
 		namespace VulkanCommon
 		{
 
@@ -31,6 +32,14 @@ namespace Renderer
 			void EndSingleTimeCommands(VulkanDevice* device, VkCommandBuffer command_buffer, VkCommandPool command_pool);
 
 			bool HasStencilComponent(VkFormat format);
+
+			void CreateBuffer(VulkanDevice* device, VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VulkanBufferData & buffer);
+
+			void MapBufferMemory(VulkanDevice* device, VulkanBufferData& buffer, VkDeviceSize size);
+
+			void UnMapBufferMemory(VulkanDevice* device, VulkanBufferData& buffer);
+
+			void DestroyBuffer(VulkanDevice * device, VulkanBufferData & buffer);
 
 
 

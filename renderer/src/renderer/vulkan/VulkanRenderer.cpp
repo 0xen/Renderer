@@ -3,9 +3,11 @@
 #include <renderer/vulkan/VulkanPhysicalDevice.hpp>
 #include <renderer/vulkan/VulkanDevice.hpp>
 #include <renderer/vulkan/VulkanSwapchain.hpp>
+#include <renderer\vulkan\VulkanUniformBuffer.hpp>
 
 #include <assert.h>
 
+using namespace Renderer;
 using namespace Renderer::Vulkan;
 VulkanRenderer::VulkanRenderer() : IRenderer()
 {
@@ -58,6 +60,11 @@ void VulkanRenderer::Stop()
 void Renderer::Vulkan::VulkanRenderer::Rebuild()
 {
 	m_swapchain->RebuildSwapchain();
+}
+
+IUniformBuffer * Renderer::Vulkan::VulkanRenderer::CreateUniformBuffer(void * dataPtr, unsigned int indexSize, unsigned int elementCount, DescriptorType descriptor_type, ShaderStage shader_stage, unsigned int binding)
+{
+	return new VulkanUniformBuffer(m_device, dataPtr, indexSize, elementCount, descriptor_type, shader_stage, binding);
 }
 
 void Renderer::Vulkan::VulkanRenderer::CreateSurface(Renderer::NativeWindowHandle* window_handle)

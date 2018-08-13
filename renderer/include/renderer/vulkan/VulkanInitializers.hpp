@@ -62,6 +62,14 @@ namespace Renderer
 
 			VkImageMemoryBarrier ImageMemoryBarrier(VkImage& image, VkFormat& format, VkImageLayout& old_layout, VkImageLayout& new_layout);
 
+			VkBufferCreateInfo BufferCreateInfo(VkDeviceSize size, VkBufferUsageFlags usage);
+
+			VkDescriptorBufferInfo DescriptorBufferInfo(VkBuffer buffer, uint32_t size, VkDeviceSize & offset);
+
+
+
+
+
 
 
 

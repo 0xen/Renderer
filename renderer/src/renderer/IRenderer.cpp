@@ -1,6 +1,8 @@
 #include <renderer/IRenderer.hpp>
 
 #include <renderer\vulkan\VulkanRenderer.hpp>
+#include <renderer\DescriptorType.hpp>
+#include <renderer\ShaderStage.hpp>
 
 using namespace Renderer;
 using namespace Renderer::Vulkan;

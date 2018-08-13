@@ -1,6 +1,7 @@
 #include <renderer/vulkan/VulkanCommon.hpp>
 #include <renderer/vulkan/VulkanDevice.hpp>
 #include <renderer/vulkan/VulkanPhysicalDevice.hpp>
+#include <renderer/vulkan/VulkanBufferData.hpp>
 
 using namespace Renderer::Vulkan;
 
@@ -161,4 +162,72 @@ void VulkanCommon::EndSingleTimeCommands(VulkanDevice * device, VkCommandBuffer 
 bool VulkanCommon::HasStencilComponent(VkFormat format)
 {
 	return format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT;
+}
+
+void Renderer::Vulkan::VulkanCommon::CreateBuffer(VulkanDevice * device, VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VulkanBufferData & buffer)
+{
+	VkBufferCreateInfo buffer_info = VulkanInitializers::BufferCreateInfo(size, usage);
+
+	vkCreateBuffer(
+		*device->GetVulkanDevice(),
+		&buffer_info,
+		nullptr,
+		&buffer.buffer
+	);
+
+	VkMemoryRequirements mem_requirements;
+	vkGetBufferMemoryRequirements(
+		*device->GetVulkanDevice(),
+		buffer.buffer,
+		&mem_requirements
+	);
+
+
+	VkMemoryAllocateInfo alloc_info = VulkanInitializers::MemoryAllocateInfo(mem_requirements.size, FindMemoryType(
+		device->GetVulkanPhysicalDevice(),
+		mem_requirements.memoryTypeBits,
+		properties
+	));
+	buffer.size = mem_requirements.size;
+	buffer.alignment = mem_requirements.alignment;
+	vkAllocateMemory(
+		*device->GetVulkanDevice(),
+		&alloc_info,
+		nullptr,
+		&buffer.buffer_memory
+	);
+
+	vkBindBufferMemory(
+		*device->GetVulkanDevice(),
+		buffer.buffer,
+		buffer.buffer_memory,
+		0
+	);
+}
+
+void Renderer::Vulkan::VulkanCommon::MapBufferMemory(VulkanDevice* device, VulkanBufferData & buffer, VkDeviceSize size)
+{
+	vkMapMemory(*device->GetVulkanDevice(), buffer.buffer_memory, 0, size, 0, &buffer.mapped_memory);
+}
+
+void Renderer::Vulkan::VulkanCommon::UnMapBufferMemory(VulkanDevice * device, VulkanBufferData & buffer)
+{
+	vkUnmapMemory(*device->GetVulkanDevice(), buffer.buffer_memory);
+	buffer.mapped_memory = nullptr;
+}
+
+void Renderer::Vulkan::VulkanCommon::DestroyBuffer(VulkanDevice * device, VulkanBufferData & buffer)
+{
+	UnMapBufferMemory(device, buffer);
+
+	vkDestroyBuffer(
+		*device->GetVulkanDevice(),
+		buffer.buffer,
+		nullptr
+	);
+	vkFreeMemory(
+		*device->GetVulkanDevice(),
+		buffer.buffer_memory,
+		nullptr
+	);
 }

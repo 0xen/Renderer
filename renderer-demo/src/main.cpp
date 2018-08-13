@@ -48,10 +48,11 @@ void DestroyWindow()
 	delete window_handle;
 }
 
+
+
+
 int main(int argc, char **argv)
 {
-
-
 
 	// Define what rendering api we are wanting to use
 	RenderingAPI rendering_api = RenderingAPI::VulkanAPI;
@@ -65,6 +66,14 @@ int main(int argc, char **argv)
 	assert(renderer != nullptr && "Error, renderer instance could not be created");
 
 	renderer->Start(window_handle);
+
+	float data = 1.0f;
+
+	IUniformBuffer* buffer = renderer->CreateUniformBuffer(&data, sizeof(float), 1, DescriptorType::UNIFORM, ShaderStage::COMPUTE_SHADER, 0);
+
+
+
+	
 
 
 	bool running = true;
@@ -98,8 +107,9 @@ int main(int argc, char **argv)
 		}
 	}
 
-	renderer->Stop();
+	delete buffer;
 
+	renderer->Stop();
 
 	delete renderer;
 

@@ -326,3 +326,22 @@ VkImageMemoryBarrier Renderer::Vulkan::VulkanInitializers::ImageMemoryBarrier(Vk
 	}
 	return barrier;
 }
+
+VkBufferCreateInfo Renderer::Vulkan::VulkanInitializers::BufferCreateInfo(VkDeviceSize size, VkBufferUsageFlags usage)
+{
+	VkBufferCreateInfo buffer_info = {};
+	buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	buffer_info.size = size;
+	buffer_info.usage = usage;
+	buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	return buffer_info;
+}
+
+VkDescriptorBufferInfo Renderer::Vulkan::VulkanInitializers::DescriptorBufferInfo(VkBuffer buffer, uint32_t size, VkDeviceSize & offset)
+{
+	VkDescriptorBufferInfo buffer_info = {};
+	buffer_info.buffer = buffer;
+	buffer_info.offset = offset;
+	buffer_info.range = size;
+	return buffer_info;
+}

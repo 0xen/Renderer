@@ -4,14 +4,22 @@ project(${project_name})
 find_package(Vulkan)
 
 set(common_src
-	src/renderer/IRenderer.cpp
+    src/renderer/IRenderer.cpp
+    src/renderer/IBuffer.cpp
+    src/renderer/IUniformBuffer.cpp
+    src/renderer/IBufferDescriptor.cpp
 )
 
 set(common_headers
     include/renderer/NativeWindowHandle.hpp
     include/renderer/IRenderer.hpp
+    include/renderer/IBuffer.hpp
+    include/renderer/IUniformBuffer.hpp
+    include/renderer/IBufferDescriptor.hpp
     include/renderer/Status.hpp
     include/renderer/APIs.hpp
+    include/renderer/ShaderStage.hpp
+    include/renderer/DescriptorType.hpp
 )
 
 set(source
@@ -27,13 +35,16 @@ find_package(Vulkan)
 if(Vulkan_FOUND)
     
     set(vulkan_src
-       src/renderer/vulkan/VulkanCommon.cpp
-       src/renderer/vulkan/VulkanInitializers.cpp
-       src/renderer/vulkan/VulkanInstance.cpp
-       src/renderer/vulkan/VulkanRenderer.cpp
-       src/renderer/vulkan/VulkanPhysicalDevice.cpp
-       src/renderer/vulkan/VulkanDevice.cpp
-       src/renderer/vulkan/VulkanSwapchain.cpp
+        src/renderer/vulkan/VulkanCommon.cpp
+        src/renderer/vulkan/VulkanInitializers.cpp
+        src/renderer/vulkan/VulkanInstance.cpp
+        src/renderer/vulkan/VulkanRenderer.cpp
+        src/renderer/vulkan/VulkanPhysicalDevice.cpp
+        src/renderer/vulkan/VulkanDevice.cpp
+        src/renderer/vulkan/VulkanSwapchain.cpp
+        src/renderer/vulkan/VulkanBuffer.cpp
+        src/renderer/vulkan/VulkanUniformBuffer.cpp
+        src/renderer/vulkan/VulkanBufferDescriptor.cpp
     )
 
     set(vulkan_headers
@@ -48,6 +59,10 @@ if(Vulkan_FOUND)
         include/renderer/vulkan/VulkanPhysicalDevice.hpp
         include/renderer/vulkan/VulkanDevice.hpp
         include/renderer/vulkan/VulkanSwapchain.hpp
+        include/renderer/vulkan/VulkanBuffer.hpp
+        include/renderer/vulkan/VulkanUniformBuffer.hpp
+        include/renderer/vulkan/VulkanBufferDescriptor.hpp
+        include/renderer/vulkan/VulkanBufferData.hpp
     )
 
     include_directories(${Vulkan_INCLUDE_DIRS})
