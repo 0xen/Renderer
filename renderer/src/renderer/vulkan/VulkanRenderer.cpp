@@ -4,6 +4,7 @@
 #include <renderer/vulkan/VulkanDevice.hpp>
 #include <renderer/vulkan/VulkanSwapchain.hpp>
 #include <renderer\vulkan\VulkanUniformBuffer.hpp>
+#include <renderer\vulkan\VulkanComputePipeline.hpp>
 
 #include <assert.h>
 
@@ -65,6 +66,11 @@ void Renderer::Vulkan::VulkanRenderer::Rebuild()
 IUniformBuffer * Renderer::Vulkan::VulkanRenderer::CreateUniformBuffer(void * dataPtr, unsigned int indexSize, unsigned int elementCount, DescriptorType descriptor_type, ShaderStage shader_stage, unsigned int binding)
 {
 	return new VulkanUniformBuffer(m_device, dataPtr, indexSize, elementCount, descriptor_type, shader_stage, binding);
+}
+
+IComputePipeline * Renderer::Vulkan::VulkanRenderer::CreateComputePipeline(const char * path, unsigned int x, unsigned int y, unsigned int z)
+{
+	return new VulkanComputePipeline(path, x, y, z);
 }
 
 void Renderer::Vulkan::VulkanRenderer::CreateSurface(Renderer::NativeWindowHandle* window_handle)

@@ -71,7 +71,7 @@ int main(int argc, char **argv)
 
 	IUniformBuffer* buffer = renderer->CreateUniformBuffer(&data, sizeof(float), 1, DescriptorType::UNIFORM, ShaderStage::COMPUTE_SHADER, 0);
 
-
+	IComputePipeline* pipeline = renderer->CreateComputePipeline("test", 1, 1, 1);
 
 	
 
