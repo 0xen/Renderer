@@ -3,6 +3,8 @@
 #include <renderer/vulkan/VulkanPhysicalDevice.hpp>
 #include <renderer/vulkan/VulkanBufferData.hpp>
 
+#include <fstream>
+
 using namespace Renderer::Vulkan;
 
 void VulkanCommon::CreateImageView(VulkanDevice* device, VkImage image, VkFormat format, VkImageAspectFlags aspect_flags, VkImageView & view)
@@ -230,4 +232,35 @@ void Renderer::Vulkan::VulkanCommon::DestroyBuffer(VulkanDevice * device, Vulkan
 		buffer.buffer_memory,
 		nullptr
 	);
+}
+
+std::vector<char> Renderer::Vulkan::VulkanCommon::ReadFile(const std::string & filename)
+{
+	std::ifstream file(filename, std::ios::ate | std::ios::binary);
+
+	if (!file.is_open())
+	{
+		throw std::runtime_error("failed to open file!");
+	}
+	size_t file_size = (size_t)file.tellg();
+	std::vector<char> buffer(file_size);
+	file.seekg(0);
+	file.read(buffer.data(), file_size);
+	file.close();
+	return buffer;
+}
+
+VkShaderModule Renderer::Vulkan::VulkanCommon::CreateShaderModule(VulkanDevice * device, const std::vector<char>& code)
+{
+	VkShaderModuleCreateInfo create_info = VulkanInitializers::ShaderModuleCreateInfo(code);
+
+	VkShaderModule shader_module;
+	vkCreateShaderModule(
+		*device->GetVulkanDevice(),
+		&create_info,
+		nullptr,
+		&shader_module
+	);
+
+	return shader_module;
 }

@@ -41,6 +41,15 @@ namespace Renderer
 
 			void DestroyBuffer(VulkanDevice * device, VulkanBufferData & buffer);
 
+			std::vector<char> ReadFile(const std::string & filename);
+
+			VkShaderModule CreateShaderModule(VulkanDevice * device, const std::vector<char>& code);
+
+
+
+
+
+
 
 
 

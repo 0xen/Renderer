@@ -345,3 +345,115 @@ VkDescriptorBufferInfo Renderer::Vulkan::VulkanInitializers::DescriptorBufferInf
 	buffer_info.range = size;
 	return buffer_info;
 }
+
+VkDescriptorPoolSize Renderer::Vulkan::VulkanInitializers::DescriptorPoolSize(VkDescriptorType type)
+{
+	VkDescriptorPoolSize pool_size = {};
+	pool_size.type = type;
+	pool_size.descriptorCount = 1;
+	return pool_size;
+}
+
+VkDescriptorSetLayoutBinding Renderer::Vulkan::VulkanInitializers::DescriptorSetLayoutBinding(VkDescriptorType type, VkShaderStageFlags stage_flags, uint32_t binding)
+{
+	VkDescriptorSetLayoutBinding layout_bindings = {};
+	layout_bindings.binding = binding;
+	layout_bindings.descriptorType = type;
+	layout_bindings.descriptorCount = 1;
+	layout_bindings.stageFlags = stage_flags;
+	return layout_bindings;
+}
+
+VkDescriptorPoolCreateInfo Renderer::Vulkan::VulkanInitializers::DescriptorPoolCreateInfo(std::vector<VkDescriptorPoolSize>& pool_sizes, uint32_t max_sets)
+{
+	VkDescriptorPoolCreateInfo create_info = {};
+	create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+	create_info.poolSizeCount = static_cast<uint32_t>(pool_sizes.size());
+	create_info.pPoolSizes = pool_sizes.data();
+	create_info.maxSets = max_sets;
+	return create_info;
+}
+
+VkDescriptorSetLayoutCreateInfo Renderer::Vulkan::VulkanInitializers::DescriptorSetLayoutCreateInfo(std::vector<VkDescriptorSetLayoutBinding>& layout_bindings)
+{
+	VkDescriptorSetLayoutCreateInfo layout_info = {};
+	layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	layout_info.bindingCount = (uint32_t)layout_bindings.size();
+	layout_info.pBindings = layout_bindings.data();
+	return layout_info;
+}
+
+VkPipelineLayoutCreateInfo Renderer::Vulkan::VulkanInitializers::PipelineLayoutCreateInfo(VkDescriptorSetLayout & descriptor_set_layout)
+{
+	VkPipelineLayoutCreateInfo pipeline_layout_info = {};
+	pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+	pipeline_layout_info.setLayoutCount = 1;
+	pipeline_layout_info.pSetLayouts = &descriptor_set_layout;
+	pipeline_layout_info.pushConstantRangeCount = 0;
+	pipeline_layout_info.pPushConstantRanges = 0;
+	return pipeline_layout_info;
+}
+
+VkDescriptorSetAllocateInfo Renderer::Vulkan::VulkanInitializers::DescriptorSetAllocateInfo(std::vector<VkDescriptorSetLayout>& layouts, VkDescriptorPool & pool)
+{
+	VkDescriptorSetAllocateInfo alloc_info = {};
+	alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	alloc_info.descriptorPool = pool;
+	alloc_info.descriptorSetCount = static_cast<uint32_t>(layouts.size());
+	alloc_info.pSetLayouts = layouts.data();
+	return alloc_info;
+}
+
+VkShaderModuleCreateInfo Renderer::Vulkan::VulkanInitializers::ShaderModuleCreateInfo(const std::vector<char>& code)
+{
+	VkShaderModuleCreateInfo create_info = {};
+	create_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+	create_info.codeSize = code.size();
+	create_info.pCode = reinterpret_cast<const uint32_t*>(code.data());
+	return create_info;
+}
+
+VkPipelineShaderStageCreateInfo Renderer::Vulkan::VulkanInitializers::PipelineShaderStageCreateInfo(VkShaderModule & shader, const char * main, VkShaderStageFlagBits flag)
+{
+	VkPipelineShaderStageCreateInfo info = {};
+	info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	info.stage = flag;
+	info.module = shader;
+	info.pName = main;
+	return info;
+}
+
+VkComputePipelineCreateInfo Renderer::Vulkan::VulkanInitializers::ComputePipelineCreateInfo(VkPipelineLayout & layout, VkPipelineShaderStageCreateInfo & shader_stage)
+{
+	VkComputePipelineCreateInfo create_info{};
+	create_info.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+	create_info.layout = layout;
+	create_info.stage = shader_stage;
+	return create_info;
+}
+
+VkWriteDescriptorSet Renderer::Vulkan::VulkanInitializers::WriteDescriptorSet(VkDescriptorSet d_set, VkDescriptorImageInfo & image_info, VkDescriptorType type, int binding)
+{
+	VkWriteDescriptorSet descriptor_write = {};
+	descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	descriptor_write.dstSet = d_set; // write to this descriptor set.
+	descriptor_write.dstBinding = binding; // write to the first, and only binding.
+	descriptor_write.dstArrayElement = 0;
+	descriptor_write.descriptorType = type; // Type of buffer
+	descriptor_write.descriptorCount = 1; // update a single descriptor.
+	descriptor_write.pImageInfo = &image_info;
+	return descriptor_write;
+}
+
+VkWriteDescriptorSet Renderer::Vulkan::VulkanInitializers::WriteDescriptorSet(VkDescriptorSet d_set, VkDescriptorBufferInfo & buffer_info, VkDescriptorType type, int binding)
+{
+	VkWriteDescriptorSet descriptor_write = {};
+	descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	descriptor_write.dstSet = d_set; // write to this descriptor set.
+	descriptor_write.dstBinding = binding; // write to the first, and only binding.
+	descriptor_write.dstArrayElement = 0;
+	descriptor_write.descriptorType = type; // Type of buffer
+	descriptor_write.descriptorCount = 1; // update a single descriptor.
+	descriptor_write.pBufferInfo = &buffer_info;
+	return descriptor_write;
+}

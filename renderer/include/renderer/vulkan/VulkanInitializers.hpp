@@ -66,6 +66,30 @@ namespace Renderer
 
 			VkDescriptorBufferInfo DescriptorBufferInfo(VkBuffer buffer, uint32_t size, VkDeviceSize & offset);
 
+			VkDescriptorPoolSize DescriptorPoolSize(VkDescriptorType type);
+
+			VkDescriptorSetLayoutBinding DescriptorSetLayoutBinding(VkDescriptorType type, VkShaderStageFlags stage_flags, uint32_t binding);
+
+			VkDescriptorPoolCreateInfo DescriptorPoolCreateInfo(std::vector<VkDescriptorPoolSize>& pool_sizes, uint32_t max_sets);
+
+			VkDescriptorSetLayoutCreateInfo DescriptorSetLayoutCreateInfo(std::vector<VkDescriptorSetLayoutBinding>& layout_bindings);
+
+			VkPipelineLayoutCreateInfo PipelineLayoutCreateInfo(VkDescriptorSetLayout & descriptor_set_layout);
+
+			VkDescriptorSetAllocateInfo DescriptorSetAllocateInfo(std::vector<VkDescriptorSetLayout>& layouts, VkDescriptorPool & pool);
+
+			VkShaderModuleCreateInfo ShaderModuleCreateInfo(const std::vector<char>& code);
+
+			VkPipelineShaderStageCreateInfo PipelineShaderStageCreateInfo(VkShaderModule & shader, const char * main, VkShaderStageFlagBits flag);
+
+			VkComputePipelineCreateInfo ComputePipelineCreateInfo(VkPipelineLayout & layout, VkPipelineShaderStageCreateInfo & shader_stage);
+
+			VkWriteDescriptorSet WriteDescriptorSet(VkDescriptorSet d_set, VkDescriptorImageInfo& image_info, VkDescriptorType type, int binding);
+
+			VkWriteDescriptorSet WriteDescriptorSet(VkDescriptorSet d_set, VkDescriptorBufferInfo & buffer_info, VkDescriptorType type, int binding);
+
+
+
 
 
 

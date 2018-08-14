@@ -71,9 +71,9 @@ int main(int argc, char **argv)
 
 	IUniformBuffer* buffer = renderer->CreateUniformBuffer(&data, sizeof(float), 1, DescriptorType::UNIFORM, ShaderStage::COMPUTE_SHADER, 0);
 
-	IComputePipeline* pipeline = renderer->CreateComputePipeline("test", 1, 1, 1);
-
-	
+	IComputePipeline* pipeline = renderer->CreateComputePipeline("../../renderer-demo/Shaders/Compute/comp.spv", 1, 1, 1);
+	pipeline->AttachBuffer(buffer);
+	pipeline->Build();
 
 
 	bool running = true;
@@ -107,6 +107,7 @@ int main(int argc, char **argv)
 		}
 	}
 
+	delete pipeline;
 	delete buffer;
 
 	renderer->Stop();

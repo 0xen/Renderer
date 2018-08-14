@@ -70,7 +70,7 @@ IUniformBuffer * Renderer::Vulkan::VulkanRenderer::CreateUniformBuffer(void * da
 
 IComputePipeline * Renderer::Vulkan::VulkanRenderer::CreateComputePipeline(const char * path, unsigned int x, unsigned int y, unsigned int z)
 {
-	return new VulkanComputePipeline(path, x, y, z);
+	return new VulkanComputePipeline(m_device,path, x, y, z);
 }
 
 void Renderer::Vulkan::VulkanRenderer::CreateSurface(Renderer::NativeWindowHandle* window_handle)
