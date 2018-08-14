@@ -4,7 +4,10 @@
 #include <renderer/vulkan/VulkanDevice.hpp>
 #include <renderer/vulkan/VulkanSwapchain.hpp>
 #include <renderer\vulkan\VulkanUniformBuffer.hpp>
+#include <renderer\vulkan\VulkanVertexBuffer.hpp>
+#include <renderer\vulkan\VulkanIndexBuffer.hpp>
 #include <renderer\vulkan\VulkanComputePipeline.hpp>
+#include <renderer\vulkan\VulkanGraphicsPipeline.hpp>
 #include <renderer\vulkan\VulkanComputeProgram.hpp>
 
 #include <assert.h>
@@ -67,6 +70,21 @@ void Renderer::Vulkan::VulkanRenderer::Rebuild()
 IUniformBuffer * Renderer::Vulkan::VulkanRenderer::CreateUniformBuffer(void * dataPtr, unsigned int indexSize, unsigned int elementCount, DescriptorType descriptor_type, ShaderStage shader_stage, unsigned int binding)
 {
 	return new VulkanUniformBuffer(m_device, dataPtr, indexSize, elementCount, descriptor_type, shader_stage, binding);
+}
+
+IVertexBuffer * Renderer::Vulkan::VulkanRenderer::CreateVertexBuffer(void * dataPtr, unsigned int indexSize, unsigned int elementCount)
+{
+	return new VulkanVertexBuffer(m_device, dataPtr, indexSize, elementCount);
+}
+
+IIndexBuffer * Renderer::Vulkan::VulkanRenderer::CreateIndexBuffer(void * dataPtr, unsigned int indexSize, unsigned int elementCount)
+{
+	return new VulkanIndexBuffer(m_device, dataPtr, indexSize, elementCount);
+}
+
+IGraphicsPipeline * Renderer::Vulkan::VulkanRenderer::CreateGraphicsPipeline(std::map<ShaderStage, const char*> paths, VertexBase * vertex_base)
+{
+	return new VulkanGraphicsPipeline(m_device, m_swapchain, paths, vertex_base);
 }
 
 IComputePipeline * Renderer::Vulkan::VulkanRenderer::CreateComputePipeline(const char * path, unsigned int x, unsigned int y, unsigned int z)

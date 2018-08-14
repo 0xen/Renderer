@@ -7,8 +7,8 @@
 
 Renderer::Vulkan::VulkanComputePipeline::VulkanComputePipeline(VulkanDevice * device, const char * path, unsigned int x, unsigned int y, unsigned int z) :
 	IComputePipeline(path,x,y,z),
-	VulkanPipeline(device,path),
-	IPipeline(path)
+	VulkanPipeline(device, { { ShaderStage::COMPUTE_SHADER, path } }),
+	IPipeline({ { ShaderStage::COMPUTE_SHADER, path } })
 {
 
 }
@@ -58,7 +58,7 @@ bool Renderer::Vulkan::VulkanComputePipeline::CreatePipeline()
 		*m_device->GetVulkanDevice(),
 		&pipeline_layout_info,
 		nullptr,
-		&m_compute_pipeline_layout
+		&m_pipeline_layout
 	));
 
 	if (HasError())return false;
@@ -76,12 +76,16 @@ bool Renderer::Vulkan::VulkanComputePipeline::CreatePipeline()
 
 	if (HasError())return false;
 
-	std::vector<char> shaderCode = VulkanCommon::ReadFile(GetPath());
+	auto shaders = GetPaths();
+
+	if (shaders[ShaderStage::COMPUTE_SHADER] == nullptr) return false;
+
+	std::vector<char> shaderCode = VulkanCommon::ReadFile(shaders[ShaderStage::COMPUTE_SHADER]);
 
 	auto shader_module = VulkanCommon::CreateShaderModule(m_device, shaderCode);
 
 	VkPipelineShaderStageCreateInfo shader_info = VulkanInitializers::PipelineShaderStageCreateInfo(shader_module, "main", VK_SHADER_STAGE_COMPUTE_BIT);
-	VkComputePipelineCreateInfo compute_pipeline_create_info = VulkanInitializers::ComputePipelineCreateInfo(m_compute_pipeline_layout, shader_info);
+	VkComputePipelineCreateInfo compute_pipeline_create_info = VulkanInitializers::ComputePipelineCreateInfo(m_pipeline_layout, shader_info);
 
 	ErrorCheck(vkCreateComputePipelines(
 		*m_device->GetVulkanDevice(),
@@ -114,7 +118,7 @@ bool Renderer::Vulkan::VulkanComputePipeline::CreatePipeline()
 
 void Renderer::Vulkan::VulkanComputePipeline::DestroyPipeline()
 {
-	vkDestroyPipelineLayout(*m_device->GetVulkanDevice(), m_compute_pipeline_layout, nullptr);
+	vkDestroyPipelineLayout(*m_device->GetVulkanDevice(), m_pipeline_layout, nullptr);
 	vkDestroyPipeline(*m_device->GetVulkanDevice(), m_pipeline, nullptr);
 }
 
@@ -128,7 +132,7 @@ void Renderer::Vulkan::VulkanComputePipeline::AttachToCommandBuffer(VkCommandBuf
 	vkCmdBindDescriptorSets(
 		command_buffer,
 		VK_PIPELINE_BIND_POINT_COMPUTE,
-		m_compute_pipeline_layout,
+		m_pipeline_layout,
 		0,
 		1,
 		&m_descriptor_set,

@@ -21,12 +21,9 @@ namespace Renderer
 
 			virtual void Resize(unsigned int elementCount);
 
-			virtual void GetData();
-			virtual void GetData(unsigned int count);
-			virtual void GetData(unsigned int startIndex, unsigned int count);
+			VulkanBufferData* GetBufferData();
 		protected:
 			VulkanBufferData m_buffer;
-		private:
 			VulkanDevice * m_device;
 		};
 	}

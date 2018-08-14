@@ -2,8 +2,8 @@
 #include <renderer/vulkan/VulkanUniformBuffer.hpp>
 #include <renderer/vulkan/VulkanDevice.hpp>
 
-Renderer::Vulkan::VulkanPipeline::VulkanPipeline(VulkanDevice * device, const char * path) :
-	IPipeline(path)
+Renderer::Vulkan::VulkanPipeline::VulkanPipeline(VulkanDevice * device, std::map<ShaderStage, const char*> paths) :
+	IPipeline(paths)
 {
 	m_device = device;
 }

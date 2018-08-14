@@ -14,6 +14,10 @@ namespace Renderer
 		public:
 			VulkanUniformBuffer(VulkanDevice* device, void* dataPtr, unsigned int indexSize, unsigned int elementCount, DescriptorType descriptor_type, ShaderStage shader_stage, unsigned int binding);
 			~VulkanUniformBuffer();
+
+			virtual void GetData();
+			virtual void GetData(unsigned int count);
+			virtual void GetData(unsigned int startIndex, unsigned int count);
 		};
 	}
 }

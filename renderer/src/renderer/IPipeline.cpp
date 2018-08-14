@@ -4,12 +4,12 @@ Renderer::IPipeline::IPipeline()
 {
 }
 
-Renderer::IPipeline::IPipeline(const char * path)
+Renderer::IPipeline::IPipeline(std::map<ShaderStage, const char*> paths)
 {
-	m_path = path;
+	m_paths = paths;
 }
 
-const char * Renderer::IPipeline::GetPath()
+std::map<Renderer::ShaderStage, const char*> Renderer::IPipeline::GetPaths()
 {
-	return m_path;
+	return m_paths;
 }

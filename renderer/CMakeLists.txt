@@ -11,6 +11,9 @@ set(common_src
     src/renderer/IPipeline.cpp
     src/renderer/IComputePipeline.cpp
     src/renderer/IComputeProgram.cpp
+    src/renderer/IVertexBuffer.cpp
+    src/renderer/IIndexBuffer.cpp
+    src/renderer/IGraphicsPipeline.cpp
 )
 
 set(common_headers
@@ -26,6 +29,13 @@ set(common_headers
     include/renderer/IPipeline.hpp
     include/renderer/IComputePipeline.hpp
     include/renderer/IComputeProgram.hpp
+    include/renderer/IVertexBuffer.hpp
+    include/renderer/IIndexBuffer.hpp
+    include/renderer/IGraphicsPipeline.hpp
+    include/renderer/VertexBase.hpp
+    include/renderer/VertexBinding.hpp
+    include/renderer/DataFormat.hpp
+
 )
 
 set(source
@@ -54,6 +64,9 @@ if(Vulkan_FOUND)
         src/renderer/vulkan/VulkanPipeline.cpp
         src/renderer/vulkan/VulkanComputePipeline.cpp
         src/renderer/vulkan/VulkanComputeProgram.cpp
+        src/renderer/vulkan/VulkanVertexBuffer.cpp
+        src/renderer/vulkan/VulkanIndexBuffer.cpp
+        src/renderer/vulkan/VulkanGraphicsPipeline.cpp
     )
 
     set(vulkan_headers
@@ -75,6 +88,9 @@ if(Vulkan_FOUND)
         include/renderer/vulkan/VulkanPipeline.hpp
         include/renderer/vulkan/VulkanComputePipeline.hpp
         include/renderer/vulkan/VulkanComputeProgram.hpp
+        include/renderer/vulkan/VulkanVertexBuffer.hpp
+        include/renderer/vulkan/VulkanIndexBuffer.hpp
+        include/renderer/vulkan/VulkanGraphicsPipeline.hpp
     )
 
     include_directories(${Vulkan_INCLUDE_DIRS})

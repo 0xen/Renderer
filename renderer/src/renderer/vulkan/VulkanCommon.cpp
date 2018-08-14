@@ -264,3 +264,58 @@ VkShaderModule Renderer::Vulkan::VulkanCommon::CreateShaderModule(VulkanDevice *
 
 	return shader_module;
 }
+
+void Renderer::Vulkan::VulkanCommon::CopyBuffer(VulkanDevice * device, VkBuffer from_buffer, VkBuffer to_buffer, VkDeviceSize size)
+{
+	VkCommandBufferAllocateInfo alloc_info = VulkanInitializers::CommandBufferAllocateInfo(*device->GetGraphicsCommandPool(), 1);
+
+	VkCommandBuffer command_buffer;
+	vkAllocateCommandBuffers(
+		*device->GetVulkanDevice(),
+		&alloc_info,
+		&command_buffer
+	);
+
+	VkCommandBufferBeginInfo begin_info = VulkanInitializers::CommandBufferBeginInfo(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+
+	vkBeginCommandBuffer(
+		command_buffer,
+		&begin_info
+	);
+
+	// Copy the temp Ram buffer to the device memory
+	VkBufferCopy copy_region = {};
+	copy_region.srcOffset = 0; // Optional
+	copy_region.dstOffset = 0; // Optional
+	copy_region.size = size;
+	vkCmdCopyBuffer(
+		command_buffer,
+		from_buffer,
+		to_buffer,
+		1,
+		&copy_region
+	);
+	vkEndCommandBuffer(
+		command_buffer
+	);
+	// Now the command has been recorded, submit it
+
+	VkSubmitInfo submit_info = VulkanInitializers::SubmitInfo(command_buffer);
+
+	vkQueueSubmit(
+		*device->GetGraphicsQueue(),
+		1,
+		&submit_info,
+		VK_NULL_HANDLE
+	);
+	vkQueueWaitIdle(
+		*device->GetGraphicsQueue()
+	);
+
+	vkFreeCommandBuffers(
+		*device->GetVulkanDevice(),
+		*device->GetGraphicsCommandPool(),
+		1,
+		&command_buffer
+	);
+}

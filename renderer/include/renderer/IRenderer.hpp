@@ -6,8 +6,12 @@
 #include <renderer\DescriptorType.hpp>
 #include <renderer\ShaderStage.hpp>
 #include <renderer\IUniformBuffer.hpp>
+#include <renderer\IVertexBuffer.hpp>
+#include <renderer\IIndexBuffer.hpp>
+#include <renderer\IGraphicsPipeline.hpp>
 #include <renderer\IComputePipeline.hpp>
 #include <renderer\IComputeProgram.hpp>
+#include <renderer\VertexBase.hpp>
 
 namespace Renderer
 {
@@ -32,6 +36,12 @@ namespace Renderer
 		static void UnregisterRenderer(IRenderer* renderer);
 
 		virtual IUniformBuffer* CreateUniformBuffer(void* dataPtr, unsigned int indexSize, unsigned int elementCount, DescriptorType descriptor_type, ShaderStage shader_stage, unsigned int binding) = 0;
+
+		virtual IVertexBuffer* CreateVertexBuffer(void* dataPtr, unsigned int indexSize, unsigned int elementCount) = 0;
+
+		virtual IIndexBuffer* CreateIndexBuffer(void* dataPtr, unsigned int indexSize, unsigned int elementCount) = 0;
+
+		virtual IGraphicsPipeline* CreateGraphicsPipeline(std::map<ShaderStage, const char*> paths, VertexBase* vertex_base) = 0;
 
 		virtual IComputePipeline* CreateComputePipeline(const char* path, unsigned int x, unsigned int y, unsigned int z) = 0;
 

@@ -1,5 +1,9 @@
 #pragma once
 
+#include <renderer\ShaderStage.hpp>
+
+#include <map>
+
 namespace Renderer
 {
 	class IUniformBuffer;
@@ -7,11 +11,11 @@ namespace Renderer
 	{
 	public:
 		IPipeline();
-		IPipeline(const char* path);
+		IPipeline(std::map<ShaderStage, const char*> paths);
 		virtual void AttachBuffer(IUniformBuffer* buffer) = 0;
 		virtual bool Build() = 0;
-		const char* GetPath();
+		std::map<ShaderStage, const char*> GetPaths();
 	private:
-		const char* m_path;
+		std::map<ShaderStage, const char*> m_paths;
 	};
 }

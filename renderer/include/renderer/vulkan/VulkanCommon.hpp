@@ -45,6 +45,7 @@ namespace Renderer
 
 			VkShaderModule CreateShaderModule(VulkanDevice * device, const std::vector<char>& code);
 
+			void CopyBuffer(VulkanDevice * device, VkBuffer from_buffer, VkBuffer to_buffer, VkDeviceSize size);
 
 
 

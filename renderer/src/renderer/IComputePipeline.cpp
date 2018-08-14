@@ -1,7 +1,9 @@
 #include <renderer/IComputePipeline.hpp>
+#include <renderer/ShaderStage.hpp>
+#include <map>
 
 Renderer::IComputePipeline::IComputePipeline(const char * path, unsigned int x, unsigned int y, unsigned int z) :
-	IPipeline(path)
+	IPipeline({ { ShaderStage::COMPUTE_SHADER, path } })
 {
 	m_x = x;
 	m_y = y;

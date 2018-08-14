@@ -2,8 +2,10 @@
 
 #include <renderer\vulkan\VulkanHeader.hpp>
 #include <renderer\IPipeline.hpp>
+#include <renderer\ShaderStage.hpp>
 
 #include <vector>
+#include <map>
 
 namespace Renderer
 {
@@ -14,7 +16,7 @@ namespace Renderer
 		class VulkanPipeline : public virtual IPipeline
 		{
 		public:
-			VulkanPipeline(VulkanDevice * device, const char* path);
+			VulkanPipeline(VulkanDevice * device, std::map<ShaderStage, const char*> paths);
 			~VulkanPipeline();
 			virtual void AttachBuffer(IUniformBuffer* buffer);
 			virtual bool Build();
@@ -32,7 +34,7 @@ namespace Renderer
 			VkDescriptorPool m_descriptor_pool;
 			VkDescriptorSetLayout m_descriptor_set_layout;
 			VkDescriptorSet m_descriptor_set;
-			VkPipelineLayout m_compute_pipeline_layout;
+			VkPipelineLayout m_pipeline_layout;
 
 			std::vector<VulkanUniformBuffer*> m_buffers;
 			VkPipeline m_pipeline = VK_NULL_HANDLE;

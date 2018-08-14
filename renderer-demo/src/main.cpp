@@ -2,8 +2,10 @@
 #include <SDL.h>
 #include <SDL_syswm.h>
 
-#include <renderer\IRenderer.hpp>
+#include <glm/glm.hpp>
 
+#include <renderer\IRenderer.hpp>
+#include <renderer\VertexBase.hpp>
 
 #include <iostream>
 
@@ -49,13 +51,33 @@ void DestroyWindow()
 }
 
 
+class Vertex : public Renderer::VertexBase
+{
+public:
+	glm::vec3 position;
+	glm::vec2 uv;
+	glm::vec3 normal;
+};
+std::vector<VertexBinding> Vertex::vertex_bindings = {
+	{ 0, DataFormat::R32G32B32_FLOAT,offsetof(Vertex,position)},
+	{ 1, DataFormat::R32G32_FLOAT,offsetof(Vertex,uv)},
+	{ 2, DataFormat::R32G32B32_FLOAT,offsetof(Vertex,normal)}
+};
+unsigned int Vertex::size = sizeof(Vertex);
+
+
+struct Camera
+{
+	glm::mat4 view;
+	glm::mat4 projection;
+};
 
 
 int main(int argc, char **argv)
 {
-
 	// Define what rendering api we are wanting to use
 	RenderingAPI rendering_api = RenderingAPI::VulkanAPI;
+
 
 	WindowSetup(rendering_api, "Renderer", 1080, 720);
 
@@ -67,33 +89,34 @@ int main(int argc, char **argv)
 
 	renderer->Start(window_handle);
 
-	float* data = new float[10];
+	std::vector<glm::vec3> vertexData{
+		glm::vec3(1.0f,1.0f,1.0f),
+		glm::vec3(1.0f,1.0f,1.0f),
+		glm::vec3(1.0f,1.0f,1.0f)
+	};
+	std::vector<uint16_t> indexData{
+		0,1,2
+	};
+	Camera camera;
 
-	for (int i = 0; i < 10; i++)
-	{
-		data[i] = 2 + i;
-	}
+	IUniformBuffer* cameraBuffer = renderer->CreateUniformBuffer(&camera, sizeof(Camera), 1, Renderer::DescriptorType::UNIFORM, ShaderStage::VERTEX_SHADER, 0);
 
-	IUniformBuffer* buffer = renderer->CreateUniformBuffer(data, sizeof(float), 10, DescriptorType::UNIFORM, ShaderStage::COMPUTE_SHADER, 0);
-	buffer->SetData();
+	IVertexBuffer* vertexBuffer = renderer->CreateVertexBuffer(vertexData.data(), sizeof(glm::vec3), vertexData.size());
+	IIndexBuffer* indexBuffer = renderer->CreateIndexBuffer(indexData.data(), sizeof(uint16_t), indexData.size());
 
+	vertexBuffer->SetData();
+	indexBuffer->SetData();
 
-	IComputePipeline* pipeline = renderer->CreateComputePipeline("../../renderer-demo/Shaders/Compute/comp.spv", 10, 1, 1);
-	pipeline->AttachBuffer(buffer);
+	Renderer::VertexBase* vertex = new Vertex;
+
+	IGraphicsPipeline* pipeline = renderer->CreateGraphicsPipeline({
+		{ ShaderStage::VERTEX_SHADER, "../../renderer-demo/Shaders/vert.spv" },
+		{ ShaderStage::FRAGMENT_SHADER, "../../renderer-demo/Shaders/frag.spv" }
+		}, vertex);
+
+	pipeline->AttachBuffer(cameraBuffer);
 	pipeline->Build();
 
-	IComputeProgram* program = renderer->CreateComputeProgram();
-	program->AttachPipeline(pipeline);
-	program->Build();
-	program->Run();
-
-	buffer->GetData();
-
-
-	for (int i = 0; i < 10; i++)
-	{
-		std::cout << data[i] << std::endl;
-	}
 
 	bool running = true;
 	while (running)
@@ -126,9 +149,10 @@ int main(int argc, char **argv)
 		}
 	}
 
-	delete program;
 	//delete pipeline;
-	delete buffer;
+
+	delete indexBuffer;
+	delete vertexBuffer;
 
 	renderer->Stop();
 

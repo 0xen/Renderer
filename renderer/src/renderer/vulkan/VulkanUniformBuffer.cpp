@@ -19,3 +19,18 @@ Renderer::Vulkan::VulkanUniformBuffer::VulkanUniformBuffer(VulkanDevice * device
 Renderer::Vulkan::VulkanUniformBuffer::~VulkanUniformBuffer()
 {
 }
+
+void Renderer::Vulkan::VulkanUniformBuffer::GetData()
+{
+	memcpy(m_dataPtr, m_buffer.mapped_memory, (::size_t)m_bufferSize);
+}
+
+void Renderer::Vulkan::VulkanUniformBuffer::GetData(unsigned int count)
+{
+	memcpy(m_dataPtr, m_buffer.mapped_memory, (::size_t)m_indexSize * count);
+}
+
+void Renderer::Vulkan::VulkanUniformBuffer::GetData(unsigned int startIndex, unsigned int count)
+{
+	memcpy(((char*)m_dataPtr) + (startIndex * m_indexSize), ((char*)m_buffer.mapped_memory) + (startIndex * m_indexSize), (::size_t)m_indexSize * count);
+}

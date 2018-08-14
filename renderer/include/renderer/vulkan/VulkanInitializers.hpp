@@ -90,8 +90,32 @@ namespace Renderer
 
 			VkFenceCreateInfo CreateFenceInfo();
 
+			VkVertexInputBindingDescription VertexInputBinding(uint32_t binding, uint32_t stride, VkVertexInputRate input_rate);
 
+			VkVertexInputAttributeDescription VertexInputAttributeDescription(uint32_t binding, uint32_t location, VkFormat format, uint32_t offset);
 
+			VkPipelineVertexInputStateCreateInfo PipelineVertexInputStateCreateInfo(std::vector<VkVertexInputBindingDescription>& bd, std::vector<VkVertexInputAttributeDescription>& add);
+
+			VkPipelineViewportStateCreateInfo PipelineViewportStateCreateInfo(uint32_t viewport_count, uint32_t scissor_count);
+
+			VkPipelineRasterizationStateCreateInfo PipelineRasterizationStateCreateInfo(VkCullModeFlagBits cull_mode, VkFrontFace front_face, VkPolygonMode poly_mode, float line_width);
+
+			VkPipelineMultisampleStateCreateInfo PipelineMultisampleStateCreateInfo();
+
+			VkPipelineDepthStencilStateCreateInfo PipelineDepthStencilStateCreateInfo(bool enable_depth);
+
+			VkPipelineColorBlendAttachmentState PipelineColorBlendAttachmentState();
+
+			VkPipelineDynamicStateCreateInfo PipelineDynamicStateCreateInfo(const std::vector<VkDynamicState>& states);
+
+			VkPipelineColorBlendStateCreateInfo PipelineColorBlendStateCreateInfo(VkPipelineColorBlendAttachmentState & color_blend_attachment);
+
+			VkPipelineInputAssemblyStateCreateInfo PipelineInputAssemblyStateCreateInfo(VkPrimitiveTopology tpology);
+
+			VkGraphicsPipelineCreateInfo GraphicsPipelineCreateInfo(std::vector<VkPipelineShaderStageCreateInfo>& shader_stages, VkPipelineVertexInputStateCreateInfo& vertex_input_info,
+				VkPipelineInputAssemblyStateCreateInfo& input_assembly, VkPipelineViewportStateCreateInfo& viewport_state, VkPipelineRasterizationStateCreateInfo& rasterizer,
+				VkPipelineMultisampleStateCreateInfo& multisampling, VkPipelineColorBlendStateCreateInfo& color_blending, VkPipelineDepthStencilStateCreateInfo& depth_stencil,
+				VkPipelineLayout& layout, VkRenderPass& render_pass, VkPipelineDynamicStateCreateInfo& dynamic_state);
 
 
 
