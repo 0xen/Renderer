@@ -457,3 +457,11 @@ VkWriteDescriptorSet Renderer::Vulkan::VulkanInitializers::WriteDescriptorSet(Vk
 	descriptor_write.pBufferInfo = &buffer_info;
 	return descriptor_write;
 }
+
+VkFenceCreateInfo Renderer::Vulkan::VulkanInitializers::CreateFenceInfo()
+{
+	VkFenceCreateInfo fenceCreateInfo = {};
+	fenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+	fenceCreateInfo.flags = 0;
+	return fenceCreateInfo;
+}

@@ -15,12 +15,13 @@ namespace Renderer
 		{
 		public:
 			VulkanPipeline(VulkanDevice * device, const char* path);
+			~VulkanPipeline();
 			virtual void AttachBuffer(IUniformBuffer* buffer);
-			virtual void Build();
-			virtual void CreatePipeline();
+			virtual bool Build();
+			virtual bool CreatePipeline();
 			virtual void DestroyPipeline();
 			virtual void AttachToCommandBuffer(VkCommandBuffer & command_buffer);
-			void Rebuild();
+			bool Rebuild();
 		protected:
 			VulkanDevice * m_device;
 			std::vector<VkDescriptorSetLayoutBinding> m_layout_bindings;

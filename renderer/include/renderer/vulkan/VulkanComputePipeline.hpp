@@ -12,8 +12,9 @@ namespace Renderer
 		{
 		public:
 			VulkanComputePipeline(VulkanDevice * device, const char* path, unsigned int x, unsigned int y, unsigned int z);
-			virtual void Build();
-			virtual void CreatePipeline();
+			~VulkanComputePipeline();
+			virtual bool Build();
+			virtual bool CreatePipeline();
 			virtual void DestroyPipeline();
 			virtual void AttachToCommandBuffer(VkCommandBuffer & command_buffer);
 		private:

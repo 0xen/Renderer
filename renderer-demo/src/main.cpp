@@ -67,14 +67,33 @@ int main(int argc, char **argv)
 
 	renderer->Start(window_handle);
 
-	float data = 1.0f;
+	float* data = new float[10];
 
-	IUniformBuffer* buffer = renderer->CreateUniformBuffer(&data, sizeof(float), 1, DescriptorType::UNIFORM, ShaderStage::COMPUTE_SHADER, 0);
+	for (int i = 0; i < 10; i++)
+	{
+		data[i] = 2 + i;
+	}
 
-	IComputePipeline* pipeline = renderer->CreateComputePipeline("../../renderer-demo/Shaders/Compute/comp.spv", 1, 1, 1);
+	IUniformBuffer* buffer = renderer->CreateUniformBuffer(data, sizeof(float), 10, DescriptorType::UNIFORM, ShaderStage::COMPUTE_SHADER, 0);
+	buffer->SetData();
+
+
+	IComputePipeline* pipeline = renderer->CreateComputePipeline("../../renderer-demo/Shaders/Compute/comp.spv", 10, 1, 1);
 	pipeline->AttachBuffer(buffer);
 	pipeline->Build();
 
+	IComputeProgram* program = renderer->CreateComputeProgram();
+	program->AttachPipeline(pipeline);
+	program->Build();
+	program->Run();
+
+	buffer->GetData();
+
+
+	for (int i = 0; i < 10; i++)
+	{
+		std::cout << data[i] << std::endl;
+	}
 
 	bool running = true;
 	while (running)
@@ -107,7 +126,8 @@ int main(int argc, char **argv)
 		}
 	}
 
-	delete pipeline;
+	delete program;
+	//delete pipeline;
 	delete buffer;
 
 	renderer->Stop();

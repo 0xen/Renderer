@@ -88,7 +88,7 @@ namespace Renderer
 
 			VkWriteDescriptorSet WriteDescriptorSet(VkDescriptorSet d_set, VkDescriptorBufferInfo & buffer_info, VkDescriptorType type, int binding);
 
-
+			VkFenceCreateInfo CreateFenceInfo();
 
 
 

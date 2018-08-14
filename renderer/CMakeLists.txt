@@ -10,6 +10,7 @@ set(common_src
     src/renderer/IBufferDescriptor.cpp
     src/renderer/IPipeline.cpp
     src/renderer/IComputePipeline.cpp
+    src/renderer/IComputeProgram.cpp
 )
 
 set(common_headers
@@ -24,6 +25,7 @@ set(common_headers
     include/renderer/DescriptorType.hpp
     include/renderer/IPipeline.hpp
     include/renderer/IComputePipeline.hpp
+    include/renderer/IComputeProgram.hpp
 )
 
 set(source
@@ -51,6 +53,7 @@ if(Vulkan_FOUND)
         src/renderer/vulkan/VulkanBufferDescriptor.cpp
         src/renderer/vulkan/VulkanPipeline.cpp
         src/renderer/vulkan/VulkanComputePipeline.cpp
+        src/renderer/vulkan/VulkanComputeProgram.cpp
     )
 
     set(vulkan_headers
@@ -71,6 +74,7 @@ if(Vulkan_FOUND)
         include/renderer/vulkan/VulkanBufferData.hpp
         include/renderer/vulkan/VulkanPipeline.hpp
         include/renderer/vulkan/VulkanComputePipeline.hpp
+        include/renderer/vulkan/VulkanComputeProgram.hpp
     )
 
     include_directories(${Vulkan_INCLUDE_DIRS})

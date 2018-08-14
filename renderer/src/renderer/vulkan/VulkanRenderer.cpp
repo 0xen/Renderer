@@ -5,6 +5,7 @@
 #include <renderer/vulkan/VulkanSwapchain.hpp>
 #include <renderer\vulkan\VulkanUniformBuffer.hpp>
 #include <renderer\vulkan\VulkanComputePipeline.hpp>
+#include <renderer\vulkan\VulkanComputeProgram.hpp>
 
 #include <assert.h>
 
@@ -71,6 +72,11 @@ IUniformBuffer * Renderer::Vulkan::VulkanRenderer::CreateUniformBuffer(void * da
 IComputePipeline * Renderer::Vulkan::VulkanRenderer::CreateComputePipeline(const char * path, unsigned int x, unsigned int y, unsigned int z)
 {
 	return new VulkanComputePipeline(m_device,path, x, y, z);
+}
+
+IComputeProgram * Renderer::Vulkan::VulkanRenderer::CreateComputeProgram()
+{
+	return new VulkanComputeProgram(m_device);
 }
 
 void Renderer::Vulkan::VulkanRenderer::CreateSurface(Renderer::NativeWindowHandle* window_handle)

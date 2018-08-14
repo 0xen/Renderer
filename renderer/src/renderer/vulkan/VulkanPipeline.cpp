@@ -8,18 +8,23 @@ Renderer::Vulkan::VulkanPipeline::VulkanPipeline(VulkanDevice * device, const ch
 	m_device = device;
 }
 
+Renderer::Vulkan::VulkanPipeline::~VulkanPipeline()
+{
+}
+
 void Renderer::Vulkan::VulkanPipeline::AttachBuffer(IUniformBuffer * buffer)
 {
-
+	m_buffers.push_back(dynamic_cast<VulkanUniformBuffer*>(buffer));
 }
 
-void Renderer::Vulkan::VulkanPipeline::Build()
+bool Renderer::Vulkan::VulkanPipeline::Build()
 {
-
+	return false;
 }
 
-void Renderer::Vulkan::VulkanPipeline::CreatePipeline()
+bool Renderer::Vulkan::VulkanPipeline::CreatePipeline()
 {
+	return false;
 }
 
 void Renderer::Vulkan::VulkanPipeline::DestroyPipeline()
@@ -31,8 +36,8 @@ void Renderer::Vulkan::VulkanPipeline::AttachToCommandBuffer(VkCommandBuffer & c
 	
 }
 
-void Renderer::Vulkan::VulkanPipeline::Rebuild()
+bool Renderer::Vulkan::VulkanPipeline::Rebuild()
 {
 	if (m_pipeline != VK_NULL_HANDLE)DestroyPipeline();
-	CreatePipeline();
+	return CreatePipeline();
 }

@@ -25,6 +25,8 @@ namespace Renderer
 			virtual IUniformBuffer* CreateUniformBuffer(void* dataPtr, unsigned int indexSize, unsigned int elementCount, DescriptorType descriptor_type, ShaderStage shader_stage, unsigned int binding);
 
 			virtual IComputePipeline* CreateComputePipeline(const char* path, unsigned int x, unsigned int y, unsigned int z);
+
+			virtual IComputeProgram* CreateComputeProgram();
 		private:
 			void CreateSurface(Renderer::NativeWindowHandle* window_handle);
 			Renderer::NativeWindowHandle* m_window_handle;

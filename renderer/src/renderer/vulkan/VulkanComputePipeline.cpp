@@ -13,12 +13,16 @@ Renderer::Vulkan::VulkanComputePipeline::VulkanComputePipeline(VulkanDevice * de
 
 }
 
-void Renderer::Vulkan::VulkanComputePipeline::Build()
+Renderer::Vulkan::VulkanComputePipeline::~VulkanComputePipeline()
 {
-	Rebuild();
 }
 
-void Renderer::Vulkan::VulkanComputePipeline::CreatePipeline()
+bool Renderer::Vulkan::VulkanComputePipeline::Build()
+{
+	return Rebuild();
+}
+
+bool Renderer::Vulkan::VulkanComputePipeline::CreatePipeline()
 {
 	m_descriptor_pool_sizes.clear();
 	m_layout_bindings.clear();
@@ -37,6 +41,8 @@ void Renderer::Vulkan::VulkanComputePipeline::CreatePipeline()
 		&m_descriptor_pool
 	));
 
+	if (HasError())return false;
+
 	VkDescriptorSetLayoutCreateInfo layout_info = VulkanInitializers::DescriptorSetLayoutCreateInfo(m_layout_bindings);
 	ErrorCheck(vkCreateDescriptorSetLayout(
 		*m_device->GetVulkanDevice(),
@@ -45,6 +51,7 @@ void Renderer::Vulkan::VulkanComputePipeline::CreatePipeline()
 		&m_descriptor_set_layout
 	));
 
+	if (HasError())return false;
 
 	VkPipelineLayoutCreateInfo pipeline_layout_info = VulkanInitializers::PipelineLayoutCreateInfo(m_descriptor_set_layout);
 	ErrorCheck(vkCreatePipelineLayout(
@@ -53,6 +60,8 @@ void Renderer::Vulkan::VulkanComputePipeline::CreatePipeline()
 		nullptr,
 		&m_compute_pipeline_layout
 	));
+
+	if (HasError())return false;
 
 	m_descriptor_set_layouts.clear();
 	m_descriptor_set_layouts.push_back(m_descriptor_set_layout);
@@ -64,6 +73,8 @@ void Renderer::Vulkan::VulkanComputePipeline::CreatePipeline()
 		&descriptor_set_alloc_info,
 		&m_descriptor_set
 	));
+
+	if (HasError())return false;
 
 	std::vector<char> shaderCode = VulkanCommon::ReadFile(GetPath());
 
@@ -81,6 +92,8 @@ void Renderer::Vulkan::VulkanComputePipeline::CreatePipeline()
 		&m_pipeline
 	));
 
+	if (HasError())return false;
+
 	VkDeviceSize offset = 0;
 	m_write_descriptor_sets.clear();
 	for (auto buffer : m_buffers)
@@ -96,6 +109,7 @@ void Renderer::Vulkan::VulkanComputePipeline::CreatePipeline()
 	}
 	vkUpdateDescriptorSets(*m_device->GetVulkanDevice(), (uint32_t)m_write_descriptor_sets.size(), m_write_descriptor_sets.data(), 0, NULL);
 
+	return true;
 }
 
 void Renderer::Vulkan::VulkanComputePipeline::DestroyPipeline()
