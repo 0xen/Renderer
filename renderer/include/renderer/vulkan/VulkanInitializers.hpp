@@ -117,8 +117,11 @@ namespace Renderer
 				VkPipelineMultisampleStateCreateInfo& multisampling, VkPipelineColorBlendStateCreateInfo& color_blending, VkPipelineDepthStencilStateCreateInfo& depth_stencil,
 				VkPipelineLayout& layout, VkRenderPass& render_pass, VkPipelineDynamicStateCreateInfo& dynamic_state);
 
+			VkRect2D Rect2D(int32_t width, int32_t height, int32_t x_offset, int32_t y_offset);
 
+			VkViewport Viewport(float width, float height, float x, float y, float min, float max);
 
+			VkRect2D Scissor(uint32_t width, uint32_t height);
 
 
 		}

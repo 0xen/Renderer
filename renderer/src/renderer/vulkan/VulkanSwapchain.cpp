@@ -4,6 +4,7 @@
 #include <renderer/vulkan/VulkanInstance.hpp>
 #include <renderer/vulkan/VulkanInitializers.hpp>
 #include <renderer/vulkan/VulkanCommon.hpp>
+#include <renderer/vulkan/VulkanGraphicsPipeline.hpp>
 
 #include <assert.h>
 
@@ -48,6 +49,13 @@ void Renderer::Vulkan::VulkanSwapchain::Render()
 	{
 		m_should_rebuild_cmd = false;
 		RebuildCommandBuffers();
+	}
+	for (auto pipeline : m_pipelines)
+	{
+		if (pipeline->HasChanged())
+		{
+			RebuildCommandBuffers();
+		}
 	}
 	VkResult check = vkAcquireNextImageKHR(
 		*m_device->GetVulkanDevice(),
@@ -114,6 +122,11 @@ VkRenderPass * Renderer::Vulkan::VulkanSwapchain::GetRenderPass()
 	return &m_render_pass;
 }
 
+void Renderer::Vulkan::VulkanSwapchain::AttachGraphicsPipeline(VulkanGraphicsPipeline * pipeline)
+{
+	m_pipelines.push_back(pipeline);
+}
+
 void Renderer::Vulkan::VulkanSwapchain::RebuildCommandBuffers()
 {
 	VkCommandBufferBeginInfo begin_info = VulkanInitializers::CommandBufferBeginInfo(VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
@@ -149,8 +162,17 @@ void Renderer::Vulkan::VulkanSwapchain::RebuildCommandBuffers()
 			VK_SUBPASS_CONTENTS_INLINE
 		);
 
-		//Engine::Singleton()->GetCurrentScene()->AttachToCommandBuffer(m_command_buffers[i]);
 
+		vkCmdSetLineWidth(m_command_buffers[i], 3.0f);
+		const VkViewport viewport = VulkanInitializers::Viewport(m_window_handle->width, m_window_handle->height, 0, 0, 0.0f, 1.0f);
+		const VkRect2D scissor = VulkanInitializers::Scissor(m_window_handle->width, m_window_handle->height);
+		vkCmdSetViewport(m_command_buffers[i], 0, 1, &viewport);
+		vkCmdSetScissor(m_command_buffers[i], 0, 1, &scissor);
+
+		for (auto pipeline : m_pipelines)
+		{
+			pipeline->AttachToCommandBuffer(m_command_buffers[i]);
+		}
 
 		vkCmdEndRenderPass(
 			m_command_buffers[i]

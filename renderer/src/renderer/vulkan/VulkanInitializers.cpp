@@ -618,3 +618,33 @@ VkGraphicsPipelineCreateInfo Renderer::Vulkan::VulkanInitializers::GraphicsPipel
 	pipeline_info.flags = VK_PIPELINE_CREATE_ALLOW_DERIVATIVES_BIT;
 	return pipeline_info;
 }
+
+VkRect2D Renderer::Vulkan::VulkanInitializers::Rect2D(int32_t width, int32_t height, int32_t x_offset, int32_t y_offset)
+{
+	VkRect2D rec{};
+	rec.extent.width = width;
+	rec.extent.height = height;
+	rec.offset.x = x_offset;
+	rec.offset.y = y_offset;
+	return rec;
+}
+
+VkViewport Renderer::Vulkan::VulkanInitializers::Viewport(float width, float height, float x, float y, float min, float max)
+{
+	VkViewport viewport = {};
+	viewport.x = x;
+	viewport.y = y;
+	viewport.width = width;
+	viewport.height = height;
+	viewport.minDepth = min;
+	viewport.maxDepth = max;
+	return viewport;
+}
+
+VkRect2D Renderer::Vulkan::VulkanInitializers::Scissor(uint32_t width, uint32_t height)
+{
+	VkRect2D dim = Rect2D(width, height, 0, 0);
+	dim.extent.width = width;
+	dim.extent.height = height;
+	return dim;
+}

@@ -11,7 +11,9 @@ namespace Renderer
 
 		virtual void Resize(unsigned int elementCount) = 0;
 		
-
+		unsigned int GetIndexSize();
+		unsigned int GetElementCount();
+		void* GetDataPointer();
 	protected:
 		void* m_dataPtr;
 		unsigned int m_bufferSize;

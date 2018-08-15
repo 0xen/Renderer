@@ -4,8 +4,10 @@
 #include <renderer/vulkan/VulkanDevice.hpp>
 #include <renderer/vulkan/VulkanSwapchain.hpp>
 #include <renderer/vulkan/VulkanCommon.hpp>
+#include <renderer/vulkan/VulkanModelPool.hpp>
 #include <renderer/ShaderStage.hpp>
 #include <renderer/DataFormat.hpp>
+#include <renderer/IModelPool.hpp>
 
 #include <glm/glm.hpp>
 
@@ -36,6 +38,7 @@ Renderer::Vulkan::VulkanGraphicsPipeline::VulkanGraphicsPipeline(VulkanDevice * 
 {
 	m_swapchain = swapchain;
 	m_vertex_base = vertex_base;
+	m_change = false;
 }
 
 Renderer::Vulkan::VulkanGraphicsPipeline::~VulkanGraphicsPipeline()
@@ -130,6 +133,7 @@ bool Renderer::Vulkan::VulkanGraphicsPipeline::CreatePipeline()
 	{
 		m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(0, vertex->GetLocation(), GetFormat(vertex->GetFormat()), vertex->GetOffset()));
 	}
+
 	// Needs to be replaced with abstract camera in future
 	m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(1, 3, VK_FORMAT_R32G32B32A32_UINT, 0));
 	m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(1, 4, VK_FORMAT_R32G32B32A32_UINT, sizeof(glm::vec4)));
@@ -199,7 +203,46 @@ void Renderer::Vulkan::VulkanGraphicsPipeline::DestroyPipeline()
 
 void Renderer::Vulkan::VulkanGraphicsPipeline::AttachToCommandBuffer(VkCommandBuffer & command_buffer)
 {
+	vkCmdBindPipeline(
+		command_buffer,
+		VK_PIPELINE_BIND_POINT_GRAPHICS,
+		m_pipeline
+	);
 
+	vkCmdBindDescriptorSets(
+		command_buffer,
+		VK_PIPELINE_BIND_POINT_GRAPHICS,
+		m_pipeline_layout,
+		0,
+		1,
+		&m_descriptor_set,
+		0,
+		NULL
+	);
+	for (auto model_pool : m_model_pools)
+	{
+		model_pool->AttachToCommandBuffer(command_buffer);
+	}
+}
+
+void Renderer::Vulkan::VulkanGraphicsPipeline::AttachModelPool(IModelPool * model_pool)
+{
+	m_model_pools.push_back(dynamic_cast<VulkanModelPool*>(model_pool));
+}
+
+bool Renderer::Vulkan::VulkanGraphicsPipeline::HasChanged()
+{
+	if (m_change)
+	{
+		m_change = false;
+		return true;
+	}
+
+	for (auto pool : m_model_pools)
+	{
+		if (pool->HasChanged())return true;
+	}
+	return false;
 }
 
 VkShaderStageFlagBits Renderer::Vulkan::VulkanGraphicsPipeline::GetShaderStageFlag(ShaderStage stage)

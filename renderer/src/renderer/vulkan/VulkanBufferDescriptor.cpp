@@ -52,7 +52,7 @@ VkDescriptorType Renderer::Vulkan::VulkanBufferDescriptor::ToVulkanDescriptorTyp
 	switch (descriptor_type)
 	{
 	case DescriptorType::UNIFORM:
-		return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+		return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 		break;
 	}
 	return VK_DESCRIPTOR_TYPE_MAX_ENUM;

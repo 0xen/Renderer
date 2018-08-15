@@ -9,6 +9,7 @@
 #include <renderer\vulkan\VulkanComputePipeline.hpp>
 #include <renderer\vulkan\VulkanGraphicsPipeline.hpp>
 #include <renderer\vulkan\VulkanComputeProgram.hpp>
+#include <renderer\vulkan\VulkanModelPool.hpp>
 
 #include <assert.h>
 
@@ -84,7 +85,9 @@ IIndexBuffer * Renderer::Vulkan::VulkanRenderer::CreateIndexBuffer(void * dataPt
 
 IGraphicsPipeline * Renderer::Vulkan::VulkanRenderer::CreateGraphicsPipeline(std::map<ShaderStage, const char*> paths, VertexBase * vertex_base)
 {
-	return new VulkanGraphicsPipeline(m_device, m_swapchain, paths, vertex_base);
+	VulkanGraphicsPipeline* graphics_pipeline = new VulkanGraphicsPipeline(m_device, m_swapchain, paths, vertex_base);
+	m_swapchain->AttachGraphicsPipeline(graphics_pipeline);
+	return graphics_pipeline;
 }
 
 IComputePipeline * Renderer::Vulkan::VulkanRenderer::CreateComputePipeline(const char * path, unsigned int x, unsigned int y, unsigned int z)
@@ -95,6 +98,11 @@ IComputePipeline * Renderer::Vulkan::VulkanRenderer::CreateComputePipeline(const
 IComputeProgram * Renderer::Vulkan::VulkanRenderer::CreateComputeProgram()
 {
 	return new VulkanComputeProgram(m_device);
+}
+
+IModelPool * Renderer::Vulkan::VulkanRenderer::CreateModelPool(IVertexBuffer * vertex_buffer, IIndexBuffer * index_buffer)
+{
+	return new VulkanModelPool(m_device, vertex_buffer, index_buffer);
 }
 
 void Renderer::Vulkan::VulkanRenderer::CreateSurface(Renderer::NativeWindowHandle* window_handle)

@@ -14,6 +14,8 @@ set(common_src
     src/renderer/IVertexBuffer.cpp
     src/renderer/IIndexBuffer.cpp
     src/renderer/IGraphicsPipeline.cpp
+    src/renderer/IModel.cpp
+    src/renderer/IModelPool.cpp
 )
 
 set(common_headers
@@ -35,6 +37,8 @@ set(common_headers
     include/renderer/VertexBase.hpp
     include/renderer/VertexBinding.hpp
     include/renderer/DataFormat.hpp
+    include/renderer/IModel.hpp
+    include/renderer/IModelPool.hpp
 
 )
 
@@ -67,6 +71,8 @@ if(Vulkan_FOUND)
         src/renderer/vulkan/VulkanVertexBuffer.cpp
         src/renderer/vulkan/VulkanIndexBuffer.cpp
         src/renderer/vulkan/VulkanGraphicsPipeline.cpp
+        src/renderer/vulkan/VulkanModel.cpp
+        src/renderer/vulkan/VulkanModelPool.cpp
     )
 
     set(vulkan_headers
@@ -91,6 +97,8 @@ if(Vulkan_FOUND)
         include/renderer/vulkan/VulkanVertexBuffer.hpp
         include/renderer/vulkan/VulkanIndexBuffer.hpp
         include/renderer/vulkan/VulkanGraphicsPipeline.hpp
+        include/renderer/vulkan/VulkanModel.hpp
+        include/renderer/vulkan/VulkanModelPool.hpp
     )
 
     include_directories(${Vulkan_INCLUDE_DIRS})

@@ -13,6 +13,7 @@ namespace Renderer
 	{
 		class VulkanInstance;
 		class VulkanDevice;
+		class VulkanGraphicsPipeline;
 		class VulkanSwapchain : public VulkanStatus
 		{
 		public:
@@ -22,6 +23,7 @@ namespace Renderer
 			void RebuildSwapchain();
 			void Render();
 			VkRenderPass* GetRenderPass();
+			void AttachGraphicsPipeline(VulkanGraphicsPipeline* pipeline);
 		private:
 
 			void RebuildCommandBuffers();
@@ -85,6 +87,8 @@ namespace Renderer
 			// Semaphores
 			VkSemaphore m_image_available_semaphore;
 			VkSemaphore m_render_finished_semaphore;
+
+			std::vector<VulkanGraphicsPipeline*> m_pipelines;
 
 			bool m_should_rebuild_cmd;
 		};

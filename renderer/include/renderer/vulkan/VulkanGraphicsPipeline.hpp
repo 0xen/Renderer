@@ -13,6 +13,7 @@ namespace Renderer
 	namespace Vulkan
 	{
 		class VulkanSwapchain;
+		class VulkanModelPool;
 		class VulkanGraphicsPipeline : public IGraphicsPipeline, public VulkanPipeline, public VulkanStatus
 		{
 		public:
@@ -22,6 +23,8 @@ namespace Renderer
 			virtual bool CreatePipeline();
 			virtual void DestroyPipeline();
 			virtual void AttachToCommandBuffer(VkCommandBuffer & command_buffer);
+			virtual void AttachModelPool(IModelPool* model_pool);
+			bool HasChanged();
 		private:
 			static VkShaderStageFlagBits GetShaderStageFlag(ShaderStage stage);
 			static VkFormat GetFormat(Renderer::DataFormat format);
@@ -34,7 +37,9 @@ namespace Renderer
 			VulkanSwapchain * m_swapchain;
 			std::vector<VkVertexInputBindingDescription> m_binding_descriptions;
 			std::vector<VkVertexInputAttributeDescription> m_attribute_descriptions;
+			std::vector<VulkanModelPool*> m_model_pools;
 			VertexBase* m_vertex_base;
+			bool m_change;
 		};
 	}
 }

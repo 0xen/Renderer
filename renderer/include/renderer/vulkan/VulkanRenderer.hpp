@@ -33,6 +33,8 @@ namespace Renderer
 			virtual IComputePipeline* CreateComputePipeline(const char* path, unsigned int x, unsigned int y, unsigned int z);
 
 			virtual IComputeProgram* CreateComputeProgram();
+
+			virtual IModelPool* CreateModelPool(IVertexBuffer* vertex_buffer, IIndexBuffer* index_buffer);
 		private:
 			void CreateSurface(Renderer::NativeWindowHandle* window_handle);
 			Renderer::NativeWindowHandle* m_window_handle;
