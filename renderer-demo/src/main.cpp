@@ -57,31 +57,63 @@ void DestroyWindow()
 }
 
 
-class Vertex : public Renderer::VertexBase
+
+
+
+class MeshVertex
 {
 public:
-	Vertex() {}
-	Vertex(glm::vec3 _position, glm::vec2 _uv, glm::vec3 _normal, glm::vec3 _color)
-	{
-		position = _position;
-		uv = _uv;
-		normal = _normal;
-		color = _color;
-	}
+	MeshVertex(glm::vec3 position, glm::vec2 uv, glm::vec3 normal, glm::vec3 color) : position(position), uv(uv), normal(normal), color(color) {}
 	glm::vec3 position;
 	glm::vec2 uv;
 	glm::vec3 normal;
 	glm::vec3 color;
 };
-std::vector<VertexBinding> Vertex::vertex_bindings = {
-	{ 0, DataFormat::R32G32B32_FLOAT,offsetof(Vertex,position)},
-	{ 1, DataFormat::R32G32_FLOAT,offsetof(Vertex,uv)},
-	{ 2, DataFormat::R32G32B32_FLOAT,offsetof(Vertex,normal) },
-	{ 8, DataFormat::R32G32B32_FLOAT,offsetof(Vertex,color) }
 
+class MeshVertexDescription : public Renderer::VertexBase
+{
+public:
+	MeshVertexDescription()
+	{
+		Setup();
+	}
+private:
+	void Setup()
+	{
+		AddVertexBinding({0, DataFormat::R32G32B32_FLOAT,offsetof(MeshVertex,position) });
+		AddVertexBinding({1, DataFormat::R32G32_FLOAT,offsetof(MeshVertex,uv) });
+		AddVertexBinding({2, DataFormat::R32G32B32_FLOAT,offsetof(MeshVertex,normal) });
+		AddVertexBinding({3, DataFormat::R32G32B32_FLOAT,offsetof(MeshVertex,color) });
+		SetSize(sizeof(MeshVertex));
+		SetVertexInputRate(VertexInputRate::INPUT_RATE_VERTEX);
+		SetBinding(0);
+	}
 };
-unsigned int Vertex::size = sizeof(Vertex);
 
+
+class PositionVertex
+{
+public:
+	PositionVertex(glm::mat4 pos) : pos(pos) {}
+	glm::mat4 pos;
+};
+
+class PositionVertexDescription : public Renderer::VertexBase
+{
+public:
+	PositionVertexDescription()
+	{
+		Setup();
+	}
+private:
+	void Setup()
+	{
+		AddVertexBinding({4, DataFormat::MAT4_FLOAT,offsetof(PositionVertex,pos) });
+		SetSize(sizeof(PositionVertex));
+		SetVertexInputRate(VertexInputRate::INPUT_RATE_INSTANCE);
+		SetBinding(1);
+	}
+};
 
 struct Camera
 {
@@ -106,11 +138,11 @@ int main(int argc, char **argv)
 	assert(renderer != nullptr && "Error, renderer instance could not be created");
 
 	renderer->Start(window_handle);
-	std::vector<Vertex> vertexData = {
-		Vertex(glm::vec3(1.0f,1.0f,0.0f), glm::vec2(0.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(1.0f,1.0f,0.0f)),
-		Vertex(glm::vec3(1.0f,-1.0f,0.0f), glm::vec2(0.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(0.0f,1.0f,0.0f)),
-		Vertex(glm::vec3(-1.0f,-1.0f,0.0f), glm::vec2(0.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(.0f,1.0f,1.0f)),
-		Vertex(glm::vec3(-1.0f,1.0f,0.0f), glm::vec2(0.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(1.0f,0.0f,1.0f))
+	std::vector<MeshVertex> vertexData = {
+		MeshVertex(glm::vec3(1.0f,1.0f,0.0f), glm::vec2(0.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(1.0f,1.0f,0.0f)),
+		MeshVertex(glm::vec3(1.0f,-1.0f,0.0f), glm::vec2(0.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(0.0f,1.0f,0.0f)),
+		MeshVertex(glm::vec3(-1.0f,-1.0f,0.0f), glm::vec2(0.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(.0f,1.0f,1.0f)),
+		MeshVertex(glm::vec3(-1.0f,1.0f,0.0f), glm::vec2(0.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(1.0f,0.0f,1.0f))
 	};
 	std::vector<uint16_t> indexData{
 		0,1,2,
@@ -136,18 +168,22 @@ int main(int argc, char **argv)
 	IUniformBuffer* cameraBuffer = renderer->CreateUniformBuffer(&camera, sizeof(Camera), 1, Renderer::DescriptorType::UNIFORM, ShaderStage::VERTEX_SHADER, 0);
 	cameraBuffer->SetData();
 
-	Renderer::VertexBase* vertex = new Vertex;
+	Renderer::VertexBase* vertex = new MeshVertexDescription;
+	Renderer::VertexBase* positionVertex = new PositionVertexDescription;
 
 	IGraphicsPipeline* pipeline = renderer->CreateGraphicsPipeline({
 		{ ShaderStage::VERTEX_SHADER, "../../renderer-demo/Shaders/vert.spv" },
 		{ ShaderStage::FRAGMENT_SHADER, "../../renderer-demo/Shaders/frag.spv" }
-		}, vertex);
+		});
+
+	pipeline->AttachVertexBinding(vertex);
+	pipeline->AttachVertexBinding(positionVertex);
 
 	pipeline->AttachBuffer(cameraBuffer);
 	pipeline->Build();
 
 
-	IVertexBuffer* vertexBuffer = renderer->CreateVertexBuffer(vertexData.data(), sizeof(Vertex), vertexData.size());
+	IVertexBuffer* vertexBuffer = renderer->CreateVertexBuffer(vertexData.data(), sizeof(MeshVertex), vertexData.size());
 	IIndexBuffer* indexBuffer = renderer->CreateIndexBuffer(indexData.data(), sizeof(uint16_t), indexData.size());
 
 	vertexBuffer->SetData();
@@ -155,18 +191,31 @@ int main(int argc, char **argv)
 
 	IModelPool* model_pool = renderer->CreateModelPool(vertexBuffer, indexBuffer);
 
-	glm::mat4* model_position_array = new glm::mat4[1];
-	IUniformBuffer* model_position_buffer = renderer->CreateUniformBuffer(model_position_array, sizeof(glm::mat4), 1, Renderer::DescriptorType::UNIFORM, ShaderStage::VERTEX_SHADER, 3);
+	glm::mat4* model_position_array = new glm::mat4[2];
+	IUniformBuffer* model_position_buffer = renderer->CreateUniformBuffer(model_position_array, sizeof(glm::mat4), 2, Renderer::DescriptorType::UNIFORM, ShaderStage::VERTEX_SHADER, 3);
 
 	model_pool->AttachBuffer(0, model_position_buffer);
 
-	IModel* model = model_pool->CreateModel();
+	IModel* model1 = model_pool->CreateModel();
 
 	glm::mat4 modelPos = glm::mat4(1.0f);
-	modelPos = glm::translate(modelPos, glm::vec3(0, 0, -20));
+	modelPos = glm::translate(modelPos, glm::vec3(2, 0, -20));
 	modelPos = glm::scale(modelPos, glm::vec3(1.0f, 1.0f, 1.0f));
 
-	model->SetData(0, modelPos);
+	model1->SetData(0, modelPos);
+
+
+	IModel* model2 = model_pool->CreateModel();
+
+	modelPos = glm::mat4(1.0f);
+	modelPos = glm::translate(modelPos, glm::vec3(-2, 0, -20));
+	modelPos = glm::scale(modelPos, glm::vec3(1.0f, 1.0f, 1.0f));
+
+	model2->SetData(0, modelPos);
+
+
+
+
 
 	model_position_buffer->SetData();
 
@@ -205,8 +254,6 @@ int main(int argc, char **argv)
 			}
 		}
 	}
-
-	delete model;
 
 	delete model_position_buffer;
 	delete model_position_array;

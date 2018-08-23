@@ -12,6 +12,7 @@ set(common_src
     src/renderer/IComputePipeline.cpp
     src/renderer/IComputeProgram.cpp
     src/renderer/IVertexBuffer.cpp
+    src/renderer/VertexBase.cpp
     src/renderer/IIndexBuffer.cpp
     src/renderer/IGraphicsPipeline.cpp
     src/renderer/IModel.cpp
@@ -39,6 +40,7 @@ set(common_headers
     include/renderer/DataFormat.hpp
     include/renderer/IModel.hpp
     include/renderer/IModelPool.hpp
+    include/renderer/VertexInputRate.hpp
 
 )
 

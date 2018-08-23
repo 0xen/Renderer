@@ -83,9 +83,9 @@ IIndexBuffer * Renderer::Vulkan::VulkanRenderer::CreateIndexBuffer(void * dataPt
 	return new VulkanIndexBuffer(m_device, dataPtr, indexSize, elementCount);
 }
 
-IGraphicsPipeline * Renderer::Vulkan::VulkanRenderer::CreateGraphicsPipeline(std::map<ShaderStage, const char*> paths, VertexBase * vertex_base)
+IGraphicsPipeline * Renderer::Vulkan::VulkanRenderer::CreateGraphicsPipeline(std::map<ShaderStage, const char*> paths)
 {
-	VulkanGraphicsPipeline* graphics_pipeline = new VulkanGraphicsPipeline(m_device, m_swapchain, paths, vertex_base);
+	VulkanGraphicsPipeline* graphics_pipeline = new VulkanGraphicsPipeline(m_device, m_swapchain, paths);
 	m_swapchain->AttachGraphicsPipeline(graphics_pipeline);
 	return graphics_pipeline;
 }

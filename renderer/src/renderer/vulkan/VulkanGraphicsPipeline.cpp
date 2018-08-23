@@ -31,13 +31,20 @@ std::map<Renderer::DataFormat, VkFormat> Renderer::Vulkan::VulkanGraphicsPipelin
 	{ Renderer::DataFormat::R32G32B32_FLOAT,VkFormat::VK_FORMAT_R32G32B32_SFLOAT },
 };
 
-Renderer::Vulkan::VulkanGraphicsPipeline::VulkanGraphicsPipeline(VulkanDevice * device, VulkanSwapchain* swapchain, std::map<ShaderStage, const char*> paths, VertexBase* vertex_base) :
+
+std::map<Renderer::VertexInputRate, VkVertexInputRate> Renderer::Vulkan::VulkanGraphicsPipeline::m_vertex_input_rates
+{
+	{ Renderer::VertexInputRate::INPUT_RATE_INSTANCE,VkVertexInputRate::VK_VERTEX_INPUT_RATE_INSTANCE },
+	{ Renderer::VertexInputRate::INPUT_RATE_VERTEX,VkVertexInputRate::VK_VERTEX_INPUT_RATE_VERTEX },
+};
+
+Renderer::Vulkan::VulkanGraphicsPipeline::VulkanGraphicsPipeline(VulkanDevice * device, VulkanSwapchain* swapchain, std::map<ShaderStage, const char*> paths) :
 	IGraphicsPipeline(paths),
 	VulkanPipeline(device, paths),
 	IPipeline(paths)
 {
 	m_swapchain = swapchain;
-	m_vertex_base = vertex_base;
+
 	m_change = false;
 }
 
@@ -123,22 +130,47 @@ bool Renderer::Vulkan::VulkanGraphicsPipeline::CreatePipeline()
 	}
 
 	m_binding_descriptions.clear();
-	m_binding_descriptions.push_back(VulkanInitializers::VertexInputBinding(0, m_vertex_base->size, VK_VERTEX_INPUT_RATE_VERTEX));
-	m_binding_descriptions.push_back(VulkanInitializers::VertexInputBinding(1, sizeof(glm::mat4), VK_VERTEX_INPUT_RATE_INSTANCE));
+
+	for (auto base : m_vertex_bases)
+	{
+		m_binding_descriptions.push_back(VulkanInitializers::VertexInputBinding(base->GetBinding(), base->GetSize(), GetVertexInputRate(base->GetVertexInputRate())));
+	}
+
+	//m_binding_descriptions.push_back(VulkanInitializers::VertexInputBinding(1, sizeof(glm::mat4), VK_VERTEX_INPUT_RATE_INSTANCE));
 
 
 	m_attribute_descriptions.clear();
 
-	for (auto vertex = m_vertex_base->vertex_bindings.begin(); vertex != m_vertex_base->vertex_bindings.end(); vertex++)
+	for (auto base : m_vertex_bases)
 	{
-		m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(0, vertex->GetLocation(), GetFormat(vertex->GetFormat()), vertex->GetOffset()));
+		for (auto vertex = base->GetBindings().begin(); vertex != base->GetBindings().end(); vertex++)
+		{
+			switch (vertex->GetFormat())
+			{
+			case DataFormat::MAT4_FLOAT:
+			{
+				VkFormat format = VK_FORMAT_R32G32B32A32_UINT;
+				uint32_t location = vertex->GetLocation();
+				m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(1, location, format, vertex->GetOffset() + 0));
+				m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(1, location + 1, format, vertex->GetOffset() + sizeof(glm::vec4)));
+				m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(1, location + 2, format, vertex->GetOffset() + (2 * sizeof(glm::vec4))));
+				m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(1, location + 3, format, vertex->GetOffset() + (3 * sizeof(glm::vec4))));
+				//m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(0, vertex->GetLocation(), GetFormat(vertex->GetFormat()), vertex->GetOffset()));
+			}
+				break;
+			default:
+				m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(0, vertex->GetLocation(), GetFormat(vertex->GetFormat()), vertex->GetOffset()));
+				break;
+			}
+			
+		}
 	}
 
 	// Needs to be replaced with abstract camera in future
-	m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(1, 3, VK_FORMAT_R32G32B32A32_UINT, 0));
+	/*m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(1, 3, VK_FORMAT_R32G32B32A32_UINT, 0));
 	m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(1, 4, VK_FORMAT_R32G32B32A32_UINT, sizeof(glm::vec4)));
 	m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(1, 5, VK_FORMAT_R32G32B32A32_UINT, 2 * sizeof(glm::vec4)));
-	m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(1, 6, VK_FORMAT_R32G32B32A32_UINT, 3 * sizeof(glm::vec4)));
+	m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(1, 6, VK_FORMAT_R32G32B32A32_UINT, 3 * sizeof(glm::vec4)));*/
 
 	VkPipelineVertexInputStateCreateInfo vertex_input_info = VulkanInitializers::PipelineVertexInputStateCreateInfo(m_binding_descriptions, m_attribute_descriptions);
 
@@ -230,6 +262,11 @@ void Renderer::Vulkan::VulkanGraphicsPipeline::AttachModelPool(IModelPool * mode
 	m_model_pools.push_back(dynamic_cast<VulkanModelPool*>(model_pool));
 }
 
+void Renderer::Vulkan::VulkanGraphicsPipeline::AttachVertexBinding(VertexBase * vertex_binding)
+{
+	m_vertex_bases.push_back(vertex_binding);
+}
+
 bool Renderer::Vulkan::VulkanGraphicsPipeline::HasChanged()
 {
 	if (m_change)
@@ -253,6 +290,11 @@ VkShaderStageFlagBits Renderer::Vulkan::VulkanGraphicsPipeline::GetShaderStageFl
 VkFormat Renderer::Vulkan::VulkanGraphicsPipeline::GetFormat(Renderer::DataFormat format)
 {
 	return m_formats[format];
+}
+
+VkVertexInputRate Renderer::Vulkan::VulkanGraphicsPipeline::GetVertexInputRate(Renderer::VertexInputRate input_rate)
+{
+	return m_vertex_input_rates[input_rate];
 }
 
 void Renderer::Vulkan::VulkanGraphicsPipeline::UpdateDescriptorSets()

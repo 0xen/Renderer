@@ -28,7 +28,7 @@ namespace Renderer
 
 			virtual IIndexBuffer* CreateIndexBuffer(void* dataPtr, unsigned int indexSize, unsigned int elementCount);
 
-			virtual IGraphicsPipeline* CreateGraphicsPipeline(std::map<ShaderStage, const char*> paths, VertexBase* vertex_base);
+			virtual IGraphicsPipeline* CreateGraphicsPipeline(std::map<ShaderStage, const char*> paths);
 
 			virtual IComputePipeline* CreateComputePipeline(const char* path, unsigned int x, unsigned int y, unsigned int z);
 
