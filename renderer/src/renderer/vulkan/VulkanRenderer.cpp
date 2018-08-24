@@ -10,6 +10,7 @@
 #include <renderer\vulkan\VulkanGraphicsPipeline.hpp>
 #include <renderer\vulkan\VulkanComputeProgram.hpp>
 #include <renderer\vulkan\VulkanModelPool.hpp>
+#include <renderer\vulkan\VulkanTextureBuffer.hpp>
 
 #include <assert.h>
 
@@ -103,6 +104,11 @@ IComputeProgram * Renderer::Vulkan::VulkanRenderer::CreateComputeProgram()
 IModelPool * Renderer::Vulkan::VulkanRenderer::CreateModelPool(IVertexBuffer * vertex_buffer, IIndexBuffer * index_buffer)
 {
 	return new VulkanModelPool(m_device, vertex_buffer, index_buffer);
+}
+
+ITextureBuffer * Renderer::Vulkan::VulkanRenderer::CreateTextureBuffer(void * dataPtr, DataFormat format, unsigned int width, unsigned int height, unsigned int binding)
+{
+	return new VulkanTextureBuffer(m_device, dataPtr, format, width, height, binding);
 }
 
 void Renderer::Vulkan::VulkanRenderer::CreateSurface(Renderer::NativeWindowHandle* window_handle)

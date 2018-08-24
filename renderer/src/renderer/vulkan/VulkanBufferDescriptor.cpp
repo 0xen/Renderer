@@ -54,6 +54,9 @@ VkDescriptorType Renderer::Vulkan::VulkanBufferDescriptor::ToVulkanDescriptorTyp
 	case DescriptorType::UNIFORM:
 		return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 		break;
+	case DescriptorType::IMAGE_SAMPLER:
+		return VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		break;
 	}
 	return VK_DESCRIPTOR_TYPE_MAX_ENUM;
 }

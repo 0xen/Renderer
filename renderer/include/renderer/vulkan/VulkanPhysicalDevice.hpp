@@ -22,6 +22,7 @@ namespace Renderer
 			VkPhysicalDeviceFeatures* GetDeviceFeatures();
 			VkPhysicalDeviceMemoryProperties* GetPhysicalDeviceMemoryProperties();
 			std::vector<const char*>* GetExtenstions();
+			VkFormatProperties GetFormatProperties(VkFormat format);
 
 			static VulkanPhysicalDevice* GetPhysicalDevice(VulkanInstance* instance, VkSurfaceKHR surface);
 			static std::vector<VkPhysicalDevice> GetPhysicalDevices(VulkanInstance* instance);

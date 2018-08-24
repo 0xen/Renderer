@@ -30,6 +30,8 @@ namespace Renderer
 			virtual IComputeProgram* CreateComputeProgram();
 
 			virtual IModelPool* CreateModelPool(IVertexBuffer* vertex_buffer, IIndexBuffer* index_buffer);
+
+			virtual ITextureBuffer* CreateTextureBuffer(void* dataPtr, DataFormat format, unsigned int width, unsigned int height, unsigned int binding);
 		private:
 
 		};

@@ -3,6 +3,7 @@
 #include <renderer\vulkan\VulkanHeader.hpp>
 #include <renderer\IPipeline.hpp>
 #include <renderer\ShaderStage.hpp>
+#include <renderer\ITextureBuffer.hpp>
 
 #include <vector>
 #include <map>
@@ -20,6 +21,7 @@ namespace Renderer
 			VulkanPipeline(VulkanDevice * device, std::map<ShaderStage, const char*> paths);
 			~VulkanPipeline();
 			virtual void AttachBuffer(IUniformBuffer* buffer);
+			virtual void AttachBuffer(ITextureBuffer* buffer);
 			virtual bool Build();
 			virtual bool CreatePipeline();
 			virtual void DestroyPipeline();

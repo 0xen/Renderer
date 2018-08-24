@@ -346,6 +346,15 @@ VkDescriptorBufferInfo Renderer::Vulkan::VulkanInitializers::DescriptorBufferInf
 	return buffer_info;
 }
 
+VkDescriptorImageInfo Renderer::Vulkan::VulkanInitializers::DescriptorImageInfo(VkSampler sampler, VkImageView imageView, VkImageLayout imageLayout)
+{
+	VkDescriptorImageInfo descriptorImageInfo{};
+	descriptorImageInfo.sampler = sampler;
+	descriptorImageInfo.imageView = imageView;
+	descriptorImageInfo.imageLayout = imageLayout;
+	return descriptorImageInfo;
+}
+
 VkDescriptorPoolSize Renderer::Vulkan::VulkanInitializers::DescriptorPoolSize(VkDescriptorType type)
 {
 	VkDescriptorPoolSize pool_size = {};
@@ -647,4 +656,12 @@ VkRect2D Renderer::Vulkan::VulkanInitializers::Scissor(uint32_t width, uint32_t 
 	dim.extent.width = width;
 	dim.extent.height = height;
 	return dim;
+}
+
+VkSamplerCreateInfo Renderer::Vulkan::VulkanInitializers::SamplerCreateInfo()
+{
+	VkSamplerCreateInfo sampler_create_info{};
+	sampler_create_info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+	sampler_create_info.maxAnisotropy = 1.0f;
+	return sampler_create_info;
 }

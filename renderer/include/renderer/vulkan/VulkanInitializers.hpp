@@ -66,6 +66,8 @@ namespace Renderer
 
 			VkDescriptorBufferInfo DescriptorBufferInfo(VkBuffer buffer, uint32_t size, VkDeviceSize & offset);
 
+			VkDescriptorImageInfo DescriptorImageInfo(VkSampler sampler, VkImageView imageView, VkImageLayout imageLayout);
+
 			VkDescriptorPoolSize DescriptorPoolSize(VkDescriptorType type);
 
 			VkDescriptorSetLayoutBinding DescriptorSetLayoutBinding(VkDescriptorType type, VkShaderStageFlags stage_flags, uint32_t binding);
@@ -123,6 +125,7 @@ namespace Renderer
 
 			VkRect2D Scissor(uint32_t width, uint32_t height);
 
+			VkSamplerCreateInfo SamplerCreateInfo();
 
 		}
 	}

@@ -64,3 +64,8 @@ IModelPool * Renderer::GL3::OpenGL3Renderer::CreateModelPool(IVertexBuffer * ver
 {
 	return nullptr;
 }
+
+ITextureBuffer * Renderer::GL3::OpenGL3Renderer::CreateTextureBuffer(void * dataPtr, DataFormat format, unsigned int width, unsigned int height, unsigned int binding)
+{
+	return nullptr;
+}

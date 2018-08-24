@@ -145,10 +145,10 @@ int main(int argc, char **argv)
 	renderer->Start(window_handle);
 
 	std::vector<MeshVertex> vertexData = {
-		MeshVertex(glm::vec3(1.0f,1.0f,0.0f), glm::vec2(0.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(1.0f,1.0f,0.0f)),
-		MeshVertex(glm::vec3(1.0f,-1.0f,0.0f), glm::vec2(0.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(0.0f,1.0f,0.0f)),
+		MeshVertex(glm::vec3(1.0f,1.0f,0.0f), glm::vec2(1.0f,1.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(1.0f,1.0f,0.0f)),
+		MeshVertex(glm::vec3(1.0f,-1.0f,0.0f), glm::vec2(1.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(0.0f,1.0f,0.0f)),
 		MeshVertex(glm::vec3(-1.0f,-1.0f,0.0f), glm::vec2(0.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(.0f,1.0f,1.0f)),
-		MeshVertex(glm::vec3(-1.0f,1.0f,0.0f), glm::vec2(0.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(1.0f,0.0f,1.0f))
+		MeshVertex(glm::vec3(-1.0f,1.0f,0.0f), glm::vec2(0.0f,1.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(1.0f,0.0f,1.0f))
 	};
 
 	std::vector<uint16_t> indexData{
@@ -173,8 +173,19 @@ int main(int argc, char **argv)
 
 
 
+	std::vector<unsigned char> image; //the raw pixels
+	unsigned width, height;
+
+	unsigned error = lodepng::decode(image, width, height, "../../renderer-demo/Images/cobble.png");
+
+	if (error) std::cout << "decoder error " << error << ": " << lodepng_error_text(error) << std::endl;
+
+
+	ITextureBuffer* texture = renderer->CreateTextureBuffer(image.data(), Renderer::DataFormat::R8G8B8A8_FLOAT, width, height, 1);
+
 	IUniformBuffer* cameraBuffer = renderer->CreateUniformBuffer(&camera, sizeof(Camera), 1, ShaderStage::VERTEX_SHADER, 0);
 	cameraBuffer->SetData();
+
 
 	Renderer::VertexBase* vertex = new MeshVertexDescription;
 	Renderer::VertexBase* positionVertex = new PositionVertexDescription;
@@ -188,6 +199,7 @@ int main(int argc, char **argv)
 	pipeline->AttachVertexBinding(positionVertex);
 
 	pipeline->AttachBuffer(cameraBuffer);
+	pipeline->AttachBuffer(texture);
 	pipeline->Build();
 
 
@@ -198,6 +210,8 @@ int main(int argc, char **argv)
 	indexBuffer->SetData();
 
 	IModelPool* model_pool = renderer->CreateModelPool(vertexBuffer, indexBuffer);
+
+
 
 	glm::mat4* model_position_array = new glm::mat4[2];
 	IUniformBuffer* model_position_buffer = renderer->CreateUniformBuffer(model_position_array, sizeof(glm::mat4), 2, ShaderStage::VERTEX_SHADER, 3);

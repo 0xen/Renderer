@@ -12,12 +12,12 @@ layout(location = 3) in vec3 inColor;
 
 layout(location = 4) in mat4 model;
 
-layout(location = 0) out vec3 color;
+layout(location = 0) out vec2 uv;
 
 
 void main()
 {
 	mat4 MVP = ubo.proj * ubo.view * model;
 	gl_Position = MVP * vec4(inPosition, 1.0);
-	color = inColor;
+	uv = inUV;
 }

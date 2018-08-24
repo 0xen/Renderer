@@ -17,6 +17,11 @@ void Renderer::Vulkan::VulkanPipeline::AttachBuffer(IUniformBuffer * buffer)
 	m_descriptor.push_back(dynamic_cast<VulkanBufferDescriptor*>(buffer));
 }
 
+void Renderer::Vulkan::VulkanPipeline::AttachBuffer(ITextureBuffer * buffer)
+{
+	m_descriptor.push_back(dynamic_cast<VulkanBufferDescriptor*>(buffer));
+}
+
 bool Renderer::Vulkan::VulkanPipeline::Build()
 {
 	return false;

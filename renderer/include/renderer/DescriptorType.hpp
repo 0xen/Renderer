@@ -4,6 +4,7 @@ namespace Renderer
 {
 	enum DescriptorType
 	{
-		UNIFORM
+		UNIFORM,
+		IMAGE_SAMPLER
 	};
 }

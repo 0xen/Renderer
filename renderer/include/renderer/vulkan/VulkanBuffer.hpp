@@ -1,6 +1,7 @@
 #pragma once
 
 #include <renderer/vulkan/VulkanHeader.hpp>
+#include <renderer/vulkan/VulkanDevice.hpp>
 #include <renderer/vulkan/VulkanBufferData.hpp>
 #include <renderer\IBuffer.hpp>
 

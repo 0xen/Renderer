@@ -58,6 +58,13 @@ std::vector<const char*>* Renderer::Vulkan::VulkanPhysicalDevice::GetExtenstions
 	return &m_device_extensions;
 }
 
+VkFormatProperties Renderer::Vulkan::VulkanPhysicalDevice::GetFormatProperties(VkFormat format)
+{
+	VkFormatProperties format_properties;
+	vkGetPhysicalDeviceFormatProperties(m_device, format, &format_properties);
+	return format_properties;
+}
+
 Renderer::Vulkan::VulkanPhysicalDevice * Renderer::Vulkan::VulkanPhysicalDevice::GetPhysicalDevice(VulkanInstance* instance, VkSurfaceKHR surface)
 {
 	VulkanPhysicalDevice* device_instance = VK_NULL_HANDLE;
