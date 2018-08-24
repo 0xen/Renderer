@@ -41,6 +41,7 @@ set(common_headers
     include/renderer/IModel.hpp
     include/renderer/IModelPool.hpp
     include/renderer/VertexInputRate.hpp
+    include/renderer/ITextureBuffer.hpp
 
 )
 
@@ -51,6 +52,29 @@ set(source
 set(headers
     ${common_headers}
 )
+
+find_package(OpenGL)
+
+if(OpenGL_OpenGL_FOUND)
+    
+    set(opengl3_src
+        src/renderer/gl3/OpenGL3Renderer.cpp
+    )
+
+    set(opengl3_headers
+        include/renderer/gl3/OpenGL3Renderer.hpp
+    )
+
+    include_directories(${Vulkan_INCLUDE_DIRS})
+
+    list(APPEND source ${opengl3_src})
+    list(APPEND headers ${opengl3_headers})
+
+    source_group("Source Files\\RenderingAPI\\GL3" FILES ${opengl3_src})
+    source_group("Header Files\\RenderingAPI\\GL3" FILES ${opengl3_headers})
+
+
+endif()
 
 find_package(Vulkan)
 
@@ -113,16 +137,18 @@ if(Vulkan_FOUND)
 
 
 endif()
+
+
 include_directories(include)
-
 add_library(${project_name} STATIC ${source} ${headers})
-
 target_link_libraries(${project_name} SDL2-static)
-
-
 
 if(Vulkan_FOUND)
     
     target_link_libraries(${project_name} Vulkan::Vulkan)
 
+endif()
+
+if(OpenGL_OpenGL_FOUND)
+    target_link_libraries(${project_name} OpenGL::GL)
 endif()

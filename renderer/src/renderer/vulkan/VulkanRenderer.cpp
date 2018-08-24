@@ -68,9 +68,9 @@ void Renderer::Vulkan::VulkanRenderer::Rebuild()
 	m_swapchain->RebuildSwapchain();
 }
 
-IUniformBuffer * Renderer::Vulkan::VulkanRenderer::CreateUniformBuffer(void * dataPtr, unsigned int indexSize, unsigned int elementCount, DescriptorType descriptor_type, ShaderStage shader_stage, unsigned int binding)
+IUniformBuffer * Renderer::Vulkan::VulkanRenderer::CreateUniformBuffer(void * dataPtr, unsigned int indexSize, unsigned int elementCount, ShaderStage shader_stage, unsigned int binding)
 {
-	return new VulkanUniformBuffer(m_device, dataPtr, indexSize, elementCount, descriptor_type, shader_stage, binding);
+	return new VulkanUniformBuffer(m_device, dataPtr, indexSize, elementCount, shader_stage, binding);
 }
 
 IVertexBuffer * Renderer::Vulkan::VulkanRenderer::CreateVertexBuffer(void * dataPtr, unsigned int indexSize, unsigned int elementCount)

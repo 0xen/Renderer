@@ -1,23 +1,18 @@
 #pragma once
 
-#include <renderer/vulkan/VulkanStatus.hpp>
 #include <renderer/IRenderer.hpp>
 #include <renderer\DescriptorType.hpp>
 #include <renderer\ShaderStage.hpp>
 
 namespace Renderer
 {
-	namespace Vulkan
+	namespace GL3
 	{
-		class VulkanInstance;
-		class VulkanPhysicalDevice;
-		class VulkanDevice;
-		class VulkanSwapchain;
-		class VulkanRenderer : public IRenderer, public VulkanStatus
+		class OpenGL3Renderer : public IRenderer
 		{
 		public:
-			VulkanRenderer();
-			~VulkanRenderer();
+			OpenGL3Renderer();
+			~OpenGL3Renderer();
 			virtual bool Start(Renderer::NativeWindowHandle* window_handle);
 			virtual void Update();
 			virtual void Stop();
@@ -36,13 +31,7 @@ namespace Renderer
 
 			virtual IModelPool* CreateModelPool(IVertexBuffer* vertex_buffer, IIndexBuffer* index_buffer);
 		private:
-			void CreateSurface(Renderer::NativeWindowHandle* window_handle);
-			Renderer::NativeWindowHandle* m_window_handle;
-			VulkanInstance * m_instance;
-			VkSurfaceKHR m_surface;
-			VulkanPhysicalDevice* m_physical_device;
-			VulkanDevice* m_device;
-			VulkanSwapchain* m_swapchain;
+
 		};
 	}
 }

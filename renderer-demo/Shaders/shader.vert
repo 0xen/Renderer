@@ -15,7 +15,8 @@ layout(location = 4) in mat4 model;
 layout(location = 0) out vec3 color;
 
 
-void main() {
+void main()
+{
 	mat4 MVP = ubo.proj * ubo.view * model;
 	gl_Position = MVP * vec4(inPosition, 1.0);
 	color = inColor;

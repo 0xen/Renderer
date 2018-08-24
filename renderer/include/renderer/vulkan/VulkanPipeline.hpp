@@ -12,6 +12,7 @@ namespace Renderer
 	namespace Vulkan
 	{
 		class VulkanDevice;
+		class VulkanBufferDescriptor;
 		class VulkanUniformBuffer;
 		class VulkanPipeline : public virtual IPipeline
 		{
@@ -36,7 +37,7 @@ namespace Renderer
 			VkDescriptorSet m_descriptor_set;
 			VkPipelineLayout m_pipeline_layout;
 
-			std::vector<VulkanUniformBuffer*> m_buffers;
+			std::vector<VulkanBufferDescriptor*> m_descriptor;
 			VkPipeline m_pipeline = VK_NULL_HANDLE;
 		private:
 		};

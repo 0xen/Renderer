@@ -13,7 +13,7 @@ set_target_properties (SDL2-static PROPERTIES FOLDER "Third Party/SDL2")
 set_target_properties (uninstall PROPERTIES FOLDER "Third Party/SDL2")
 
 include_directories(third_party/SDL2/include)
-
+include_directories(../lodepng)
 
 
 add_subdirectory(third_party/glm)

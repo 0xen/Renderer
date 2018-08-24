@@ -8,6 +8,19 @@ set(src
 set(headers
 )
 
+# Load Lodepng
+set(lodepng_src
+    ../../lodepng/lodepng.cpp
+)
+set(lodepng_headers
+    ../../lodepng/lodepng.h
+)
+list(APPEND src ${lodepng_src})
+list(APPEND headers ${lodepng_headers})
+
+
+
+
 include_directories(include)
 include_directories(../third_party/glm)
 include_directories(../renderer/include)
@@ -24,3 +37,5 @@ if(Vulkan_FOUND)
 	target_include_directories(${project_name} PRIVATE Vulkan::Vulkan)
 	target_link_libraries(${project_name} Vulkan::Vulkan)
 endif()
+
+

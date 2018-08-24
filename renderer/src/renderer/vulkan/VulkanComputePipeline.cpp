@@ -27,10 +27,10 @@ bool Renderer::Vulkan::VulkanComputePipeline::CreatePipeline()
 	m_descriptor_pool_sizes.clear();
 	m_layout_bindings.clear();
 
-	for (Renderer::Vulkan::VulkanUniformBuffer* buffer : m_buffers)
+	for (VulkanBufferDescriptor* descriptor : m_descriptor)
 	{
-		m_descriptor_pool_sizes.push_back(VulkanInitializers::DescriptorPoolSize(buffer->GetVulkanDescriptorType()));
-		m_layout_bindings.push_back(VulkanInitializers::DescriptorSetLayoutBinding(buffer->GetVulkanDescriptorType(), buffer->GetVulkanShaderStage(), buffer->GetBinding()));
+		m_descriptor_pool_sizes.push_back(VulkanInitializers::DescriptorPoolSize(descriptor->GetVulkanDescriptorType()));
+		m_layout_bindings.push_back(VulkanInitializers::DescriptorSetLayoutBinding(descriptor->GetVulkanDescriptorType(), descriptor->GetVulkanShaderStage(), descriptor->GetBinding()));
 	}
 
 	VkDescriptorPoolCreateInfo descriptor_pool_create_info = VulkanInitializers::DescriptorPoolCreateInfo(m_descriptor_pool_sizes, 1);
@@ -100,15 +100,15 @@ bool Renderer::Vulkan::VulkanComputePipeline::CreatePipeline()
 
 	VkDeviceSize offset = 0;
 	m_write_descriptor_sets.clear();
-	for (auto buffer : m_buffers)
+	for (VulkanBufferDescriptor* descriptor : m_descriptor)
 	{
-		if (buffer->GetDescriptorType() == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+		if (descriptor->GetDescriptorType() == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
 		{
-			m_write_descriptor_sets.push_back(VulkanInitializers::WriteDescriptorSet(m_descriptor_set, buffer->GetDescriptorImageInfo(), buffer->GetVulkanDescriptorType(), buffer->GetBinding()));
+			m_write_descriptor_sets.push_back(VulkanInitializers::WriteDescriptorSet(m_descriptor_set, descriptor->GetDescriptorImageInfo(), descriptor->GetVulkanDescriptorType(), descriptor->GetBinding()));
 		}
 		else
 		{
-			m_write_descriptor_sets.push_back(VulkanInitializers::WriteDescriptorSet(m_descriptor_set, buffer->GetDescriptorBufferInfo(), buffer->GetVulkanDescriptorType(), buffer->GetBinding()));
+			m_write_descriptor_sets.push_back(VulkanInitializers::WriteDescriptorSet(m_descriptor_set, descriptor->GetDescriptorBufferInfo(), descriptor->GetVulkanDescriptorType(), descriptor->GetBinding()));
 		}
 	}
 	vkUpdateDescriptorSets(*m_device->GetVulkanDevice(), (uint32_t)m_write_descriptor_sets.size(), m_write_descriptor_sets.data(), 0, NULL);

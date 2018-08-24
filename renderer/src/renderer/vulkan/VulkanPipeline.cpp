@@ -14,7 +14,7 @@ Renderer::Vulkan::VulkanPipeline::~VulkanPipeline()
 
 void Renderer::Vulkan::VulkanPipeline::AttachBuffer(IUniformBuffer * buffer)
 {
-	m_buffers.push_back(dynamic_cast<VulkanUniformBuffer*>(buffer));
+	m_descriptor.push_back(dynamic_cast<VulkanBufferDescriptor*>(buffer));
 }
 
 bool Renderer::Vulkan::VulkanPipeline::Build()

@@ -13,6 +13,8 @@
 #include <renderer\IRenderer.hpp>
 #include <renderer\VertexBase.hpp>
 
+#include <lodepng.h>
+
 #include <iostream>
 
 using namespace Renderer;
@@ -58,8 +60,6 @@ void DestroyWindow()
 
 
 
-
-
 class MeshVertex
 {
 public:
@@ -91,6 +91,7 @@ private:
 };
 
 
+
 class PositionVertex
 {
 public:
@@ -115,6 +116,8 @@ private:
 	}
 };
 
+
+
 struct Camera
 {
 	glm::mat4 view;
@@ -124,6 +127,8 @@ struct Camera
 
 int main(int argc, char **argv)
 {
+
+
 
 	// Define what rendering api we are wanting to use
 	RenderingAPI rendering_api = RenderingAPI::VulkanAPI;
@@ -138,12 +143,14 @@ int main(int argc, char **argv)
 	assert(renderer != nullptr && "Error, renderer instance could not be created");
 
 	renderer->Start(window_handle);
+
 	std::vector<MeshVertex> vertexData = {
 		MeshVertex(glm::vec3(1.0f,1.0f,0.0f), glm::vec2(0.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(1.0f,1.0f,0.0f)),
 		MeshVertex(glm::vec3(1.0f,-1.0f,0.0f), glm::vec2(0.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(0.0f,1.0f,0.0f)),
 		MeshVertex(glm::vec3(-1.0f,-1.0f,0.0f), glm::vec2(0.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(.0f,1.0f,1.0f)),
 		MeshVertex(glm::vec3(-1.0f,1.0f,0.0f), glm::vec2(0.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(1.0f,0.0f,1.0f))
 	};
+
 	std::vector<uint16_t> indexData{
 		0,1,2,
 		0,2,3
@@ -165,7 +172,8 @@ int main(int argc, char **argv)
 	camera.projection[1][1] *= -1;
 
 
-	IUniformBuffer* cameraBuffer = renderer->CreateUniformBuffer(&camera, sizeof(Camera), 1, Renderer::DescriptorType::UNIFORM, ShaderStage::VERTEX_SHADER, 0);
+
+	IUniformBuffer* cameraBuffer = renderer->CreateUniformBuffer(&camera, sizeof(Camera), 1, ShaderStage::VERTEX_SHADER, 0);
 	cameraBuffer->SetData();
 
 	Renderer::VertexBase* vertex = new MeshVertexDescription;
@@ -192,7 +200,7 @@ int main(int argc, char **argv)
 	IModelPool* model_pool = renderer->CreateModelPool(vertexBuffer, indexBuffer);
 
 	glm::mat4* model_position_array = new glm::mat4[2];
-	IUniformBuffer* model_position_buffer = renderer->CreateUniformBuffer(model_position_array, sizeof(glm::mat4), 2, Renderer::DescriptorType::UNIFORM, ShaderStage::VERTEX_SHADER, 3);
+	IUniformBuffer* model_position_buffer = renderer->CreateUniformBuffer(model_position_array, sizeof(glm::mat4), 2, ShaderStage::VERTEX_SHADER, 3);
 
 	model_pool->AttachBuffer(0, model_position_buffer);
 
@@ -228,6 +236,13 @@ int main(int argc, char **argv)
 	bool running = true;
 	while (running)
 	{
+		//modelPos = glm::rotate(modelPos, glm::radians(rot), glm::vec3(1.0f, 0.0f, 0.0f));
+		//model2->SetData(0, modelPos);
+
+		model2->SetData(0, glm::rotate(model2->GetData<glm::mat4>(0), glm::radians(rot), glm::vec3(0.0f, 0.0f, 1.0f)));
+
+		model_position_buffer->SetData();
+
 		// Update all renderer's via there Update function
 		IRenderer::UpdateAll();
 
