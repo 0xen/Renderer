@@ -92,17 +92,6 @@ bool Renderer::Vulkan::VulkanGraphicsPipeline::CreatePipeline()
 
 	if (HasError())return false;
 
-	VkPipelineLayoutCreateInfo pipeline_layout_info = VulkanInitializers::PipelineLayoutCreateInfo(m_descriptor_set_layout);
-
-	ErrorCheck(vkCreatePipelineLayout(
-		*m_device->GetVulkanDevice(),
-		&pipeline_layout_info,
-		nullptr,
-		&m_pipeline_layout
-	));
-
-	if (HasError())return false;
-
 	// Init the descriptor sets
 	m_descriptor_set_layouts.clear();
 	m_descriptor_set_layouts.push_back(m_descriptor_set_layout);
@@ -111,6 +100,17 @@ bool Renderer::Vulkan::VulkanGraphicsPipeline::CreatePipeline()
 		*m_device->GetVulkanDevice(),
 		&alloc_info,
 		&m_descriptor_set
+	));
+
+	if (HasError())return false;
+
+	VkPipelineLayoutCreateInfo pipeline_layout_info = VulkanInitializers::PipelineLayoutCreateInfo(m_descriptor_set_layout);
+
+	ErrorCheck(vkCreatePipelineLayout(
+		*m_device->GetVulkanDevice(),
+		&pipeline_layout_info,
+		nullptr,
+		&m_pipeline_layout
 	));
 
 	if (HasError())return false;
@@ -133,7 +133,7 @@ bool Renderer::Vulkan::VulkanGraphicsPipeline::CreatePipeline()
 
 	for (auto base : m_vertex_bases)
 	{
-		m_binding_descriptions.push_back(VulkanInitializers::VertexInputBinding(base->GetBinding(), base->GetSize(), GetVertexInputRate(base->GetVertexInputRate())));
+		m_binding_descriptions.push_back(VulkanInitializers::VertexInputBinding(base.binding, base.size, GetVertexInputRate(base.vertex_input_rate)));
 	}
 
 	//m_binding_descriptions.push_back(VulkanInitializers::VertexInputBinding(1, sizeof(glm::mat4), VK_VERTEX_INPUT_RATE_INSTANCE));
@@ -143,7 +143,7 @@ bool Renderer::Vulkan::VulkanGraphicsPipeline::CreatePipeline()
 
 	for (auto base : m_vertex_bases)
 	{
-		for (auto vertex = base->GetBindings().begin(); vertex != base->GetBindings().end(); vertex++)
+		for (auto vertex = base.vertex_bindings.begin(); vertex != base.vertex_bindings.end(); vertex++)
 		{
 			switch (vertex->GetFormat())
 			{
@@ -262,7 +262,7 @@ void Renderer::Vulkan::VulkanGraphicsPipeline::AttachModelPool(IModelPool * mode
 	m_model_pools.push_back(dynamic_cast<VulkanModelPool*>(model_pool));
 }
 
-void Renderer::Vulkan::VulkanGraphicsPipeline::AttachVertexBinding(VertexBase * vertex_binding)
+void Renderer::Vulkan::VulkanGraphicsPipeline::AttachVertexBinding(VertexBase vertex_binding)
 {
 	m_vertex_bases.push_back(vertex_binding);
 }

@@ -24,7 +24,7 @@ namespace Renderer
 			virtual void DestroyPipeline();
 			virtual void AttachToCommandBuffer(VkCommandBuffer & command_buffer);
 			virtual void AttachModelPool(IModelPool* model_pool);
-			virtual void AttachVertexBinding(VertexBase* vertex_binding);
+			virtual void AttachVertexBinding(VertexBase vertex_binding);
 			bool HasChanged();
 		private:
 			static VkShaderStageFlagBits GetShaderStageFlag(ShaderStage stage);
@@ -41,7 +41,7 @@ namespace Renderer
 			std::vector<VkVertexInputBindingDescription> m_binding_descriptions;
 			std::vector<VkVertexInputAttributeDescription> m_attribute_descriptions;
 			std::vector<VulkanModelPool*> m_model_pools;
-			std::vector<VertexBase*> m_vertex_bases;
+			std::vector<VertexBase> m_vertex_bases;
 			bool m_change;
 		};
 	}

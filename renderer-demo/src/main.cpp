@@ -70,27 +70,6 @@ public:
 	glm::vec3 color;
 };
 
-class MeshVertexDescription : public Renderer::VertexBase
-{
-public:
-	MeshVertexDescription()
-	{
-		Setup();
-	}
-private:
-	void Setup()
-	{
-		AddVertexBinding({0, DataFormat::R32G32B32_FLOAT,offsetof(MeshVertex,position) });
-		AddVertexBinding({1, DataFormat::R32G32_FLOAT,offsetof(MeshVertex,uv) });
-		AddVertexBinding({2, DataFormat::R32G32B32_FLOAT,offsetof(MeshVertex,normal) });
-		AddVertexBinding({3, DataFormat::R32G32B32_FLOAT,offsetof(MeshVertex,color) });
-		SetSize(sizeof(MeshVertex));
-		SetVertexInputRate(VertexInputRate::INPUT_RATE_VERTEX);
-		SetBinding(0);
-	}
-};
-
-
 
 class PositionVertex
 {
@@ -98,24 +77,6 @@ public:
 	PositionVertex(glm::mat4 pos) : pos(pos) {}
 	glm::mat4 pos;
 };
-
-class PositionVertexDescription : public Renderer::VertexBase
-{
-public:
-	PositionVertexDescription()
-	{
-		Setup();
-	}
-private:
-	void Setup()
-	{
-		AddVertexBinding({4, DataFormat::MAT4_FLOAT,offsetof(PositionVertex,pos) });
-		SetSize(sizeof(PositionVertex));
-		SetVertexInputRate(VertexInputRate::INPUT_RATE_INSTANCE);
-		SetBinding(1);
-	}
-};
-
 
 
 struct Camera
@@ -145,10 +106,10 @@ int main(int argc, char **argv)
 	renderer->Start(window_handle);
 
 	std::vector<MeshVertex> vertexData = {
-		MeshVertex(glm::vec3(1.0f,1.0f,0.0f), glm::vec2(1.0f,1.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(1.0f,1.0f,0.0f)),
-		MeshVertex(glm::vec3(1.0f,-1.0f,0.0f), glm::vec2(1.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(0.0f,1.0f,0.0f)),
-		MeshVertex(glm::vec3(-1.0f,-1.0f,0.0f), glm::vec2(0.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(.0f,1.0f,1.0f)),
-		MeshVertex(glm::vec3(-1.0f,1.0f,0.0f), glm::vec2(0.0f,1.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(1.0f,0.0f,1.0f))
+		MeshVertex(glm::vec3(1.0f,1.0f,0.0f), glm::vec2(0.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(1.0f,1.0f,0.0f)),
+		MeshVertex(glm::vec3(1.0f,-1.0f,0.0f), glm::vec2(0.0f,1.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(0.0f,1.0f,0.0f)),
+		MeshVertex(glm::vec3(-1.0f,-1.0f,0.0f), glm::vec2(1.0f,1.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(.0f,1.0f,1.0f)),
+		MeshVertex(glm::vec3(-1.0f,1.0f,0.0f), glm::vec2(1.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(1.0f,0.0f,1.0f))
 	};
 
 	std::vector<uint16_t> indexData{
@@ -176,7 +137,7 @@ int main(int argc, char **argv)
 	std::vector<unsigned char> image; //the raw pixels
 	unsigned width, height;
 
-	unsigned error = lodepng::decode(image, width, height, "../../renderer-demo/Images/cobble.png");
+	unsigned error = lodepng::decode(image, width, height, "../../renderer-demo/Images/emily.png");
 
 	if (error) std::cout << "decoder error " << error << ": " << lodepng_error_text(error) << std::endl;
 
@@ -187,16 +148,33 @@ int main(int argc, char **argv)
 	cameraBuffer->SetData();
 
 
-	Renderer::VertexBase* vertex = new MeshVertexDescription;
-	Renderer::VertexBase* positionVertex = new PositionVertexDescription;
 
 	IGraphicsPipeline* pipeline = renderer->CreateGraphicsPipeline({
 		{ ShaderStage::VERTEX_SHADER, "../../renderer-demo/Shaders/vert.spv" },
 		{ ShaderStage::FRAGMENT_SHADER, "../../renderer-demo/Shaders/frag.spv" }
 		});
 
-	pipeline->AttachVertexBinding(vertex);
-	pipeline->AttachVertexBinding(positionVertex);
+
+	pipeline->AttachVertexBinding({
+		VertexInputRate::INPUT_RATE_VERTEX,
+		{
+			{ 0, DataFormat::R32G32B32_FLOAT,offsetof(MeshVertex,position) },
+			{ 1, DataFormat::R32G32_FLOAT,offsetof(MeshVertex,uv) },
+			{ 2, DataFormat::R32G32B32_FLOAT,offsetof(MeshVertex,normal) },
+			{ 3, DataFormat::R32G32B32_FLOAT,offsetof(MeshVertex,color) },
+		},
+		sizeof(MeshVertex),
+		0
+		});
+
+	pipeline->AttachVertexBinding({
+		VertexInputRate::INPUT_RATE_INSTANCE,
+		{ 
+			{ 4, DataFormat::MAT4_FLOAT,offsetof(PositionVertex,pos) } 
+		},
+		sizeof(PositionVertex),
+		1 
+		});
 
 	pipeline->AttachBuffer(cameraBuffer);
 	pipeline->AttachBuffer(texture);
