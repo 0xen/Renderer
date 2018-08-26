@@ -14,6 +14,8 @@ namespace Renderer
 	namespace Vulkan
 	{
 		class VulkanDevice;
+		class VulkanDescriptorSet;
+		class VulkanPipeline;
 		class VulkanModelPool : public IModelPool
 		{
 		public:
@@ -21,11 +23,13 @@ namespace Renderer
 			~VulkanModelPool();
 			virtual IModel * CreateModel();
 			virtual void AttachBuffer(unsigned int index, IUniformBuffer * buffer);
-			void AttachToCommandBuffer(VkCommandBuffer & command_buffer);
+			virtual void AttachDescriptorSet(unsigned int index, IDescriptorSet* descriptor_set);
+			void AttachToCommandBuffer(VkCommandBuffer & command_buffer, VulkanPipeline* pipeline);
 			bool HasChanged();
 		private:
 			unsigned int m_current_index;
 			VulkanDevice * m_device;
+			std::map<unsigned int, VulkanDescriptorSet*> m_descriptor_sets;
 			std::map<unsigned int, VulkanUniformBuffer*> m_buffers;
 			std::map<unsigned int, VulkanModel*> m_models;
 			VulkanBuffer* m_indirect_draw_buffer;

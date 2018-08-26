@@ -1,6 +1,6 @@
 #version 450
 
-layout(binding = 0) uniform UniformBufferObjectStatic {
+layout(set = 0, binding = 0) uniform UniformBufferObjectStatic {
     mat4 view;
     mat4 proj;
 }ubo;

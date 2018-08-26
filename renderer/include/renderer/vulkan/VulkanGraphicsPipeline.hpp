@@ -35,7 +35,6 @@ namespace Renderer
 			static std::map<Renderer::DataFormat, VkFormat> m_formats;
 			static std::map<Renderer::VertexInputRate, VkVertexInputRate> m_vertex_input_rates;
 
-			void UpdateDescriptorSets();
 
 			VulkanSwapchain * m_swapchain;
 			std::vector<VkVertexInputBindingDescription> m_binding_descriptions;

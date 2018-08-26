@@ -136,13 +136,18 @@ int main(int argc, char **argv)
 
 	std::vector<unsigned char> image; //the raw pixels
 	unsigned width, height;
-
 	unsigned error = lodepng::decode(image, width, height, "../../renderer-demo/Images/cobble.png");
-
 	if (error) std::cout << "decoder error " << error << ": " << lodepng_error_text(error) << std::endl;
 
+	ITextureBuffer* texture1 = renderer->CreateTextureBuffer(image.data(), Renderer::DataFormat::R8G8B8A8_FLOAT, width, height);
 
-	ITextureBuffer* texture = renderer->CreateTextureBuffer(image.data(), Renderer::DataFormat::R8G8B8A8_FLOAT, width, height);
+	image.clear();
+	error = lodepng::decode(image, width, height, "../../renderer-demo/Images/emily.png");
+	if (error) std::cout << "decoder error " << error << ": " << lodepng_error_text(error) << std::endl;
+
+	ITextureBuffer* texture2 = renderer->CreateTextureBuffer(image.data(), Renderer::DataFormat::R8G8B8A8_FLOAT, width, height);
+
+
 
 	IUniformBuffer* cameraBuffer = renderer->CreateUniformBuffer(&camera, sizeof(Camera), 1);
 	cameraBuffer->SetData();
@@ -177,21 +182,25 @@ int main(int argc, char **argv)
 		});
 
 
-	IDescriptorPool* descriptor_pool = renderer->CreateDescriptorPool({
+	IDescriptorPool* camera_pool = renderer->CreateDescriptorPool({
 		renderer->CreateDescriptor(Renderer::DescriptorType::UNIFORM, Renderer::ShaderStage::VERTEX_SHADER, 0),
-		renderer->CreateDescriptor(Renderer::DescriptorType::IMAGE_SAMPLER, Renderer::ShaderStage::FRAGMENT_SHADER, 1),
 		});
+	pipeline->AttachDescriptorPool(camera_pool);
 
-	IDescriptorSet* descriptor_set = descriptor_pool->CreateDescriptorSet();
+	IDescriptorSet* camera_descriptor_set = camera_pool->CreateDescriptorSet();
+	camera_descriptor_set->AttachBuffer(0, cameraBuffer);
+	camera_descriptor_set->UpdateSet();
 
-	descriptor_set->AttachBuffer(0, cameraBuffer);
-	descriptor_set->AttachBuffer(1, texture);
+	pipeline->AttachDescriptorSet(0, camera_descriptor_set);
 
-	descriptor_set->UpdateSet();
 
-	pipeline->AttachDescriptorSet(descriptor_set);
 
-	pipeline->AttachDescriptorPool(descriptor_pool);
+	IDescriptorPool* texture_pool = renderer->CreateDescriptorPool({
+		renderer->CreateDescriptor(Renderer::DescriptorType::IMAGE_SAMPLER, Renderer::ShaderStage::FRAGMENT_SHADER, 0),
+		});
+	pipeline->AttachDescriptorPool(texture_pool);
+
+
 	pipeline->Build();
 
 
@@ -202,16 +211,27 @@ int main(int argc, char **argv)
 	vertexBuffer->SetData();
 	indexBuffer->SetData();
 
-	IModelPool* model_pool = renderer->CreateModelPool(vertexBuffer, indexBuffer);
 
 
 
-	glm::mat4* model_position_array = new glm::mat4[2];
-	IUniformBuffer* model_position_buffer = renderer->CreateUniformBuffer(model_position_array, sizeof(glm::mat4), 2);
 
-	model_pool->AttachBuffer(0, model_position_buffer);
 
-	IModel* model1 = model_pool->CreateModel();
+
+	IModelPool* model_pool1 = renderer->CreateModelPool(vertexBuffer, indexBuffer);
+
+	IDescriptorSet* texture_descriptor_set1 = texture_pool->CreateDescriptorSet();
+	texture_descriptor_set1->AttachBuffer(0, texture2);
+	texture_descriptor_set1->UpdateSet();
+
+	model_pool1->AttachDescriptorSet(1, texture_descriptor_set1);
+
+
+	glm::mat4* model_position_array1 = new glm::mat4[1];
+	IUniformBuffer* model_position_buffer1 = renderer->CreateUniformBuffer(model_position_array1, sizeof(glm::mat4), 1);
+
+	model_pool1->AttachBuffer(0, model_position_buffer1);
+
+	IModel* model1 = model_pool1->CreateModel();
 
 	glm::mat4 modelPos = glm::mat4(1.0f);
 	modelPos = glm::translate(modelPos, glm::vec3(2, 0, -20));
@@ -220,7 +240,21 @@ int main(int argc, char **argv)
 	model1->SetData(0, modelPos);
 
 
-	IModel* model2 = model_pool->CreateModel();
+	IModelPool* model_pool2 = renderer->CreateModelPool(vertexBuffer, indexBuffer);
+
+	IDescriptorSet* texture_descriptor_set2 = texture_pool->CreateDescriptorSet();
+	texture_descriptor_set2->AttachBuffer(0, texture1);
+	texture_descriptor_set2->UpdateSet();
+	model_pool2->AttachDescriptorSet(1, texture_descriptor_set2);
+
+	glm::mat4* model_position_array2 = new glm::mat4[1];
+	IUniformBuffer* model_position_buffer2 = renderer->CreateUniformBuffer(model_position_array2, sizeof(glm::mat4), 1);
+
+	model_pool2->AttachBuffer(0, model_position_buffer2);
+
+
+
+	IModel* model2 = model_pool2->CreateModel();
 
 	modelPos = glm::mat4(1.0f);
 	modelPos = glm::translate(modelPos, glm::vec3(-2, 0, -20));
@@ -232,14 +266,16 @@ int main(int argc, char **argv)
 
 
 
-	model_position_buffer->SetData();
+	model_position_buffer1->SetData();
+	model_position_buffer2->SetData();
 
-	pipeline->AttachModelPool(model_pool);
+	pipeline->AttachModelPool(model_pool1);
+	pipeline->AttachModelPool(model_pool2);
 
 
 
 
-	float rot = 0.1f;
+	float rot = 4.00001f;
 	bool running = true;
 	while (running)
 	{
@@ -248,7 +284,8 @@ int main(int argc, char **argv)
 
 		model2->SetData(0, glm::rotate(model2->GetData<glm::mat4>(0), glm::radians(rot), glm::vec3(0.0f, 0.0f, 1.0f)));
 
-		model_position_buffer->SetData();
+		model_position_buffer1->SetData();
+		model_position_buffer2->SetData();
 
 		// Update all renderer's via there Update function
 		IRenderer::UpdateAll();
@@ -277,10 +314,6 @@ int main(int argc, char **argv)
 		}
 	}
 
-	delete model_position_buffer;
-	delete model_position_array;
-
-	delete model_pool;
 
 	//delete pipeline;
 

@@ -21,9 +21,9 @@ void Renderer::Vulkan::VulkanPipeline::AttachDescriptorPool(IDescriptorPool * bu
 	m_descriptor_pools.push_back(static_cast<VulkanDescriptorPool*>(buffer));
 }
 
-void Renderer::Vulkan::VulkanPipeline::AttachDescriptorSet(IDescriptorSet * descriptor_set)
+void Renderer::Vulkan::VulkanPipeline::AttachDescriptorSet(unsigned int setID, IDescriptorSet* descriptor_set)
 {
-	m_descriptor_sets.push_back(static_cast<VulkanDescriptorSet*>(descriptor_set));
+	m_descriptor_sets[setID] = static_cast<VulkanDescriptorSet*>(descriptor_set);
 }
 
 bool Renderer::Vulkan::VulkanPipeline::Build()
@@ -49,4 +49,9 @@ bool Renderer::Vulkan::VulkanPipeline::Rebuild()
 {
 	if (m_pipeline != VK_NULL_HANDLE)DestroyPipeline();
 	return CreatePipeline();
+}
+
+VkPipelineLayout & Renderer::Vulkan::VulkanPipeline::GetPipelineLayout()
+{
+	return m_pipeline_layout;
 }

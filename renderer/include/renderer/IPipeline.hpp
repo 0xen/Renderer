@@ -14,7 +14,7 @@ namespace Renderer
 		IPipeline();
 		IPipeline(std::map<ShaderStage, const char*> paths);
 		virtual void AttachDescriptorPool(IDescriptorPool* buffer) = 0;
-		virtual void AttachDescriptorSet(IDescriptorSet* descriptor_set) = 0;
+		virtual void AttachDescriptorSet(unsigned int setID, IDescriptorSet* descriptor_set) = 0;
 		virtual bool Build() = 0;
 		std::map<ShaderStage, const char*> GetPaths();
 	private:

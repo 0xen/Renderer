@@ -3,6 +3,9 @@
 #include <renderer/vulkan/VulkanModel.hpp>
 #include <renderer/vulkan/VulkanVertexBuffer.hpp>
 #include <renderer/vulkan/VulkanIndexBuffer.hpp>
+#include <renderer/vulkan/VulkanDescriptorSet.hpp>
+#include <renderer/vulkan/VulkanPipeline.hpp>
+
 
 Renderer::Vulkan::VulkanModelPool::VulkanModelPool(VulkanDevice* device, IVertexBuffer * vertex_buffer, IIndexBuffer * index_buffer) :
 	IModelPool(vertex_buffer, index_buffer)
@@ -51,9 +54,28 @@ void Renderer::Vulkan::VulkanModelPool::AttachBuffer(unsigned int index, IUnifor
 	m_buffers[index] = dynamic_cast<VulkanUniformBuffer*>(buffer);
 }
 
-void Renderer::Vulkan::VulkanModelPool::AttachToCommandBuffer(VkCommandBuffer & command_buffer)
+void Renderer::Vulkan::VulkanModelPool::AttachDescriptorSet(unsigned int index, IDescriptorSet * descriptor_set)
+{
+	m_descriptor_sets[index] = static_cast<VulkanDescriptorSet*>(descriptor_set);
+}
+
+void Renderer::Vulkan::VulkanModelPool::AttachToCommandBuffer(VkCommandBuffer & command_buffer, VulkanPipeline* pipeline)
 {
 	VkDeviceSize offsets[] = { 0 };
+	for(auto it = m_descriptor_sets.begin(); it!= m_descriptor_sets.end(); it++)
+	{
+		vkCmdBindDescriptorSets(
+			command_buffer,
+			VK_PIPELINE_BIND_POINT_GRAPHICS,
+			pipeline->GetPipelineLayout(),
+			it->first,
+			1,
+			&it->second->GetDescriptorSet(),
+			0,
+			NULL
+		);
+	}
+
 	vkCmdBindVertexBuffers(
 		command_buffer,
 		0,

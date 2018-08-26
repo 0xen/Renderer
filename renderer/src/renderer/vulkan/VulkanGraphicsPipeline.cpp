@@ -61,50 +61,6 @@ bool Renderer::Vulkan::VulkanGraphicsPipeline::Build()
 
 bool Renderer::Vulkan::VulkanGraphicsPipeline::CreatePipeline()
 {
-	//m_descriptor_pool_sizes.clear();
-	//m_layout_bindings.clear();
-
-
-	/*for (VulkanBufferDescriptor* descriptor : m_descriptor)
-	{
-		m_descriptor_pool_sizes.push_back(VulkanInitializers::DescriptorPoolSize(descriptor->GetVulkanDescriptorType()));
-		m_layout_bindings.push_back(VulkanInitializers::DescriptorSetLayoutBinding(descriptor->GetVulkanDescriptorType(), descriptor->GetVulkanShaderStage(), descriptor->GetBinding()));
-	}*/
-
-	//VkDescriptorPoolCreateInfo create_info = VulkanInitializers::DescriptorPoolCreateInfo(m_descriptor_pool_sizes, 2);
-
-	/*ErrorCheck(vkCreateDescriptorPool(
-		*m_device->GetVulkanDevice(),
-		&create_info,
-		nullptr,
-		&m_descriptor_pool
-	));*/
-
-	//if (HasError())return false;
-
-
-	/*VkDescriptorSetLayoutCreateInfo layout_info = VulkanInitializers::DescriptorSetLayoutCreateInfo(m_layout_bindings);
-
-	ErrorCheck(vkCreateDescriptorSetLayout(
-		*m_device->GetVulkanDevice(),
-		&layout_info,
-		nullptr,
-		&m_descriptor_set_layout
-	));
-
-	if (HasError())return false;*/
-
-	// Init the descriptor sets
-	/*m_descriptor_set_layouts.clear();
-	m_descriptor_set_layouts.push_back(m_descriptor_set_layout);
-	VkDescriptorSetAllocateInfo alloc_info = VulkanInitializers::DescriptorSetAllocateInfo(m_descriptor_set_layouts, m_descriptor_pool);
-	ErrorCheck(vkAllocateDescriptorSets(
-		*m_device->GetVulkanDevice(),
-		&alloc_info,
-		&m_descriptor_set
-	));*/
-
-	//if (HasError())return false;
 
 	std::vector<VkDescriptorSetLayout> descriptor_set_layouts;
 	for (auto descriptor_pool : m_descriptor_pools)
@@ -230,8 +186,6 @@ bool Renderer::Vulkan::VulkanGraphicsPipeline::CreatePipeline()
 
 	if (HasError())return false;
 
-	UpdateDescriptorSets();
-
 	return true;
 }
 
@@ -248,23 +202,22 @@ void Renderer::Vulkan::VulkanGraphicsPipeline::AttachToCommandBuffer(VkCommandBu
 		VK_PIPELINE_BIND_POINT_GRAPHICS,
 		m_pipeline
 	);
-
-	for (VulkanDescriptorSet* descriptor_set : m_descriptor_sets)
+	for(auto it = m_descriptor_sets.begin(); it!= m_descriptor_sets.end(); it++)
 	{
 		vkCmdBindDescriptorSets(
 			command_buffer,
 			VK_PIPELINE_BIND_POINT_GRAPHICS,
 			m_pipeline_layout,
-			0,
+			it->first,
 			1,
-			&descriptor_set->GetDescriptorSet(),
+			&it->second->GetDescriptorSet(),
 			0,
 			NULL
 		);
 	}
 	for (auto model_pool : m_model_pools)
 	{
-		model_pool->AttachToCommandBuffer(command_buffer);
+		model_pool->AttachToCommandBuffer(command_buffer,this);
 	}
 }
 
@@ -306,22 +259,4 @@ VkFormat Renderer::Vulkan::VulkanGraphicsPipeline::GetFormat(Renderer::DataForma
 VkVertexInputRate Renderer::Vulkan::VulkanGraphicsPipeline::GetVertexInputRate(Renderer::VertexInputRate input_rate)
 {
 	return m_vertex_input_rates[input_rate];
-}
-
-void Renderer::Vulkan::VulkanGraphicsPipeline::UpdateDescriptorSets()
-{
-	//VkDeviceSize offset = 0;
-	//m_write_descriptor_sets.clear();
-	/*for (VulkanBufferDescriptor* descriptor : m_descriptor)
-	{
-		if (descriptor->GetDescriptorType() == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
-		{
-			m_write_descriptor_sets.push_back(VulkanInitializers::WriteDescriptorSet(m_descriptor_set, descriptor->GetDescriptorImageInfo(), descriptor->GetVulkanDescriptorType(), descriptor->GetBinding()));
-		}
-		else
-		{
-			m_write_descriptor_sets.push_back(VulkanInitializers::WriteDescriptorSet(m_descriptor_set, descriptor->GetDescriptorBufferInfo(), descriptor->GetVulkanDescriptorType(), descriptor->GetBinding()));
-		}
-	}*/
-	//vkUpdateDescriptorSets(*m_device->GetVulkanDevice(), (uint32_t)m_write_descriptor_sets.size(), m_write_descriptor_sets.data(), 0, NULL);
 }
