@@ -1,6 +1,10 @@
 #include <renderer/vulkan/VulkanPipeline.hpp>
 #include <renderer/vulkan/VulkanUniformBuffer.hpp>
 #include <renderer/vulkan/VulkanDevice.hpp>
+#include <renderer/vulkan/VulkanDescriptorPool.hpp>
+#include <renderer/vulkan/VulkanDescriptorSet.hpp>
+
+
 
 Renderer::Vulkan::VulkanPipeline::VulkanPipeline(VulkanDevice * device, std::map<ShaderStage, const char*> paths) :
 	IPipeline(paths)
@@ -12,14 +16,14 @@ Renderer::Vulkan::VulkanPipeline::~VulkanPipeline()
 {
 }
 
-void Renderer::Vulkan::VulkanPipeline::AttachBuffer(IUniformBuffer * buffer)
+void Renderer::Vulkan::VulkanPipeline::AttachDescriptorPool(IDescriptorPool * buffer)
 {
-	m_descriptor.push_back(dynamic_cast<VulkanBufferDescriptor*>(buffer));
+	m_descriptor_pools.push_back(static_cast<VulkanDescriptorPool*>(buffer));
 }
 
-void Renderer::Vulkan::VulkanPipeline::AttachBuffer(ITextureBuffer * buffer)
+void Renderer::Vulkan::VulkanPipeline::AttachDescriptorSet(IDescriptorSet * descriptor_set)
 {
-	m_descriptor.push_back(dynamic_cast<VulkanBufferDescriptor*>(buffer));
+	m_descriptor_sets.push_back(static_cast<VulkanDescriptorSet*>(descriptor_set));
 }
 
 bool Renderer::Vulkan::VulkanPipeline::Build()

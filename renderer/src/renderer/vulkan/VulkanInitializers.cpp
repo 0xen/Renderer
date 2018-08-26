@@ -392,12 +392,12 @@ VkDescriptorSetLayoutCreateInfo Renderer::Vulkan::VulkanInitializers::Descriptor
 	return layout_info;
 }
 
-VkPipelineLayoutCreateInfo Renderer::Vulkan::VulkanInitializers::PipelineLayoutCreateInfo(VkDescriptorSetLayout & descriptor_set_layout)
+VkPipelineLayoutCreateInfo Renderer::Vulkan::VulkanInitializers::PipelineLayoutCreateInfo(std::vector<VkDescriptorSetLayout> & descriptor_set_layout)
 {
 	VkPipelineLayoutCreateInfo pipeline_layout_info = {};
 	pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-	pipeline_layout_info.setLayoutCount = 1;
-	pipeline_layout_info.pSetLayouts = &descriptor_set_layout;
+	pipeline_layout_info.setLayoutCount = descriptor_set_layout.size();
+	pipeline_layout_info.pSetLayouts = descriptor_set_layout.data();
 	pipeline_layout_info.pushConstantRangeCount = 0;
 	pipeline_layout_info.pPushConstantRanges = 0;
 	return pipeline_layout_info;

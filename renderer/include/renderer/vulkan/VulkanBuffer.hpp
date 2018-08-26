@@ -23,7 +23,15 @@ namespace Renderer
 			virtual void Resize(unsigned int elementCount);
 
 			VulkanBufferData* GetBufferData();
+			VkDescriptorImageInfo& GetDescriptorImageInfo();
+			VkDescriptorBufferInfo& GetDescriptorBufferInfo();
+
 		protected:
+			union
+			{
+				VkDescriptorImageInfo m_image_info;
+				VkDescriptorBufferInfo m_buffer_info;
+			};
 			VulkanBufferData m_buffer;
 			VulkanDevice * m_device;
 		};

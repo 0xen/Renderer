@@ -13,6 +13,7 @@ namespace Renderer
 		class VulkanPhysicalDevice;
 		class VulkanDevice;
 		class VulkanSwapchain;
+		class VulkanDescriptor;
 		class VulkanRenderer : public IRenderer, public VulkanStatus
 		{
 		public:
@@ -22,7 +23,7 @@ namespace Renderer
 			virtual void Update();
 			virtual void Stop();
 			virtual void Rebuild();
-			virtual IUniformBuffer* CreateUniformBuffer(void* dataPtr, unsigned int indexSize, unsigned int elementCount, ShaderStage shader_stage, unsigned int binding);
+			virtual IUniformBuffer* CreateUniformBuffer(void* dataPtr, unsigned int indexSize, unsigned int elementCount);
 
 			virtual IVertexBuffer* CreateVertexBuffer(void* dataPtr, unsigned int indexSize, unsigned int elementCount);
 
@@ -36,7 +37,15 @@ namespace Renderer
 
 			virtual IModelPool* CreateModelPool(IVertexBuffer* vertex_buffer, IIndexBuffer* index_buffer);
 
-			virtual ITextureBuffer* CreateTextureBuffer(void* dataPtr, DataFormat format, unsigned int width, unsigned int height, unsigned int binding);
+			virtual ITextureBuffer* CreateTextureBuffer(void* dataPtr, DataFormat format, unsigned int width, unsigned int height);
+
+			virtual IDescriptor* CreateDescriptor(DescriptorType descriptor_type, ShaderStage shader_stage, unsigned int binding);
+
+			virtual IDescriptorPool* CreateDescriptorPool(std::vector<IDescriptor*> descriptors);
+
+			static VkDescriptorType ToDescriptorType(DescriptorType descriptor_type);
+
+			static VkShaderStageFlagBits ToVulkanShader(ShaderStage stage);
 		private:
 			void CreateSurface(Renderer::NativeWindowHandle* window_handle);
 			Renderer::NativeWindowHandle* m_window_handle;

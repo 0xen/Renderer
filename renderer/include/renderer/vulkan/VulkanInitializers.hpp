@@ -76,7 +76,7 @@ namespace Renderer
 
 			VkDescriptorSetLayoutCreateInfo DescriptorSetLayoutCreateInfo(std::vector<VkDescriptorSetLayoutBinding>& layout_bindings);
 
-			VkPipelineLayoutCreateInfo PipelineLayoutCreateInfo(VkDescriptorSetLayout & descriptor_set_layout);
+			VkPipelineLayoutCreateInfo PipelineLayoutCreateInfo(std::vector<VkDescriptorSetLayout> & descriptor_set_layout);
 
 			VkDescriptorSetAllocateInfo DescriptorSetAllocateInfo(std::vector<VkDescriptorSetLayout>& layouts, VkDescriptorPool & pool);
 

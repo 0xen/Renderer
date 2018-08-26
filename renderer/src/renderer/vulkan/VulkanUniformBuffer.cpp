@@ -1,16 +1,15 @@
 #include <renderer/vulkan/VulkanUniformBuffer.hpp>
 #include <renderer/vulkan/VulkanBuffer.hpp>
-#include <renderer/vulkan/VulkanBufferDescriptor.hpp>
 #include <renderer/vulkan/VulkanInitializers.hpp>
+
+#include <renderer/ShaderStage.hpp>
 
 using namespace Renderer::Vulkan;
 
-Renderer::Vulkan::VulkanUniformBuffer::VulkanUniformBuffer(VulkanDevice * device, void * dataPtr, unsigned int indexSize, unsigned int elementCount, ShaderStage shader_stage, unsigned int binding) :
+Renderer::Vulkan::VulkanUniformBuffer::VulkanUniformBuffer(VulkanDevice * device, void * dataPtr, unsigned int indexSize, unsigned int elementCount) :
 	VulkanBuffer(device, dataPtr, indexSize, elementCount,
 		VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT),
-	VulkanBufferDescriptor(DescriptorType::UNIFORM, shader_stage, binding), 
-	IBufferDescriptor(DescriptorType::UNIFORM, shader_stage, binding)
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
 {
 	VkDeviceSize offset = 0;
 	m_buffer_info = VulkanInitializers::DescriptorBufferInfo(m_buffer.buffer, (uint32_t)m_buffer.size, offset);

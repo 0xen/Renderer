@@ -13,6 +13,7 @@ layout(location = 3) in vec3 inColor;
 layout(location = 4) in mat4 model;
 
 layout(location = 0) out vec2 uv;
+layout(location = 1) out vec3 color;
 
 
 void main()

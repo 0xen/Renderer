@@ -5,12 +5,10 @@
 using namespace Renderer;
 using namespace Renderer::Vulkan;
 
-Renderer::Vulkan::VulkanTextureBuffer::VulkanTextureBuffer(VulkanDevice* device, void* dataPtr, DataFormat format, unsigned int width, unsigned int height, unsigned int binding):
+Renderer::Vulkan::VulkanTextureBuffer::VulkanTextureBuffer(VulkanDevice* device, void* dataPtr, DataFormat format, unsigned int width, unsigned int height):
 	VulkanBuffer(device, dataPtr, GetFormatSize(format) * width * height, 1,
 		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT),
-	VulkanBufferDescriptor(DescriptorType::IMAGE_SAMPLER, ShaderStage::FRAGMENT_SHADER, binding),
-	IBufferDescriptor(DescriptorType::IMAGE_SAMPLER, ShaderStage::FRAGMENT_SHADER, binding)
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
 {
 	m_format = format;
 	m_width = width;

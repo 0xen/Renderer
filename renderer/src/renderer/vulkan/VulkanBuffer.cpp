@@ -42,3 +42,13 @@ Renderer::Vulkan::VulkanBufferData * Renderer::Vulkan::VulkanBuffer::GetBufferDa
 {
 	return &m_buffer;
 }
+
+VkDescriptorImageInfo & Renderer::Vulkan::VulkanBuffer::GetDescriptorImageInfo()
+{
+	return m_image_info;
+}
+
+VkDescriptorBufferInfo & Renderer::Vulkan::VulkanBuffer::GetDescriptorBufferInfo()
+{
+	return m_buffer_info;
+}

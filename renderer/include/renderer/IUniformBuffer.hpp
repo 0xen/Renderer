@@ -1,12 +1,12 @@
 #pragma once
 
 #include <renderer\IBuffer.hpp>
-#include <renderer\IBufferDescriptor.hpp>
+#include <renderer\ShaderStage.hpp>
 
 namespace Renderer
 {
 
-	class IUniformBuffer : public virtual IBuffer, public virtual IBufferDescriptor
+	class IUniformBuffer : public virtual IBuffer
 	{
 	public:
 		virtual void GetData() = 0;

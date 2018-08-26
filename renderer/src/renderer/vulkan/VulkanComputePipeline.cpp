@@ -3,6 +3,7 @@
 #include <renderer/vulkan/VulkanUniformBuffer.hpp>
 #include <renderer/vulkan/VulkanDevice.hpp>
 #include <renderer/vulkan/VulkanCommon.hpp>
+#include <renderer/vulkan/VulkanDescriptorPool.hpp>
 
 
 Renderer::Vulkan::VulkanComputePipeline::VulkanComputePipeline(VulkanDevice * device, const char * path, unsigned int x, unsigned int y, unsigned int z) :
@@ -24,16 +25,16 @@ bool Renderer::Vulkan::VulkanComputePipeline::Build()
 
 bool Renderer::Vulkan::VulkanComputePipeline::CreatePipeline()
 {
-	m_descriptor_pool_sizes.clear();
-	m_layout_bindings.clear();
+	//m_descriptor_pool_sizes.clear();
+	//m_layout_bindings.clear();
 
-	for (VulkanBufferDescriptor* descriptor : m_descriptor)
+	/*for (VulkanBufferDescriptor* descriptor : m_descriptor)
 	{
 		m_descriptor_pool_sizes.push_back(VulkanInitializers::DescriptorPoolSize(descriptor->GetVulkanDescriptorType()));
 		m_layout_bindings.push_back(VulkanInitializers::DescriptorSetLayoutBinding(descriptor->GetVulkanDescriptorType(), descriptor->GetVulkanShaderStage(), descriptor->GetBinding()));
-	}
+	}*/
 
-	VkDescriptorPoolCreateInfo descriptor_pool_create_info = VulkanInitializers::DescriptorPoolCreateInfo(m_descriptor_pool_sizes, 1);
+	/*VkDescriptorPoolCreateInfo descriptor_pool_create_info = VulkanInitializers::DescriptorPoolCreateInfo(m_descriptor_pool_sizes, 1);
 	ErrorCheck(vkCreateDescriptorPool(
 		*m_device->GetVulkanDevice(),
 		&descriptor_pool_create_info,
@@ -41,9 +42,9 @@ bool Renderer::Vulkan::VulkanComputePipeline::CreatePipeline()
 		&m_descriptor_pool
 	));
 
-	if (HasError())return false;
+	if (HasError())return false;*/
 
-	VkDescriptorSetLayoutCreateInfo layout_info = VulkanInitializers::DescriptorSetLayoutCreateInfo(m_layout_bindings);
+	/*VkDescriptorSetLayoutCreateInfo layout_info = VulkanInitializers::DescriptorSetLayoutCreateInfo(m_layout_bindings);
 	ErrorCheck(vkCreateDescriptorSetLayout(
 		*m_device->GetVulkanDevice(),
 		&layout_info,
@@ -51,9 +52,15 @@ bool Renderer::Vulkan::VulkanComputePipeline::CreatePipeline()
 		&m_descriptor_set_layout
 	));
 
-	if (HasError())return false;
+	if (HasError())return false;*/
 
-	VkPipelineLayoutCreateInfo pipeline_layout_info = VulkanInitializers::PipelineLayoutCreateInfo(m_descriptor_set_layout);
+	std::vector<VkDescriptorSetLayout> descriptor_set_layouts;
+	for (auto descriptor_pool : m_descriptor_pools)
+	{
+		descriptor_set_layouts.push_back(descriptor_pool->GetDescriptorSetLayout());
+	}
+
+	VkPipelineLayoutCreateInfo pipeline_layout_info = VulkanInitializers::PipelineLayoutCreateInfo(descriptor_set_layouts);
 	ErrorCheck(vkCreatePipelineLayout(
 		*m_device->GetVulkanDevice(),
 		&pipeline_layout_info,
@@ -63,18 +70,16 @@ bool Renderer::Vulkan::VulkanComputePipeline::CreatePipeline()
 
 	if (HasError())return false;
 
-	m_descriptor_set_layouts.clear();
+	/*m_descriptor_set_layouts.clear();
 	m_descriptor_set_layouts.push_back(m_descriptor_set_layout);
 	VkDescriptorSetAllocateInfo descriptor_set_alloc_info = VulkanInitializers::DescriptorSetAllocateInfo(m_descriptor_set_layouts, m_descriptor_pool);
-
-
 	ErrorCheck(vkAllocateDescriptorSets(
 		*m_device->GetVulkanDevice(),
 		&descriptor_set_alloc_info,
 		&m_descriptor_set
 	));
 
-	if (HasError())return false;
+	if (HasError())return false;*/
 
 	auto shaders = GetPaths();
 
@@ -98,7 +103,7 @@ bool Renderer::Vulkan::VulkanComputePipeline::CreatePipeline()
 
 	if (HasError())return false;
 
-	VkDeviceSize offset = 0;
+	/*VkDeviceSize offset = 0;
 	m_write_descriptor_sets.clear();
 	for (VulkanBufferDescriptor* descriptor : m_descriptor)
 	{
@@ -111,7 +116,7 @@ bool Renderer::Vulkan::VulkanComputePipeline::CreatePipeline()
 			m_write_descriptor_sets.push_back(VulkanInitializers::WriteDescriptorSet(m_descriptor_set, descriptor->GetDescriptorBufferInfo(), descriptor->GetVulkanDescriptorType(), descriptor->GetBinding()));
 		}
 	}
-	vkUpdateDescriptorSets(*m_device->GetVulkanDevice(), (uint32_t)m_write_descriptor_sets.size(), m_write_descriptor_sets.data(), 0, NULL);
+	vkUpdateDescriptorSets(*m_device->GetVulkanDevice(), (uint32_t)m_write_descriptor_sets.size(), m_write_descriptor_sets.data(), 0, NULL);*/
 
 	return true;
 }
@@ -129,7 +134,7 @@ void Renderer::Vulkan::VulkanComputePipeline::AttachToCommandBuffer(VkCommandBuf
 		VK_PIPELINE_BIND_POINT_COMPUTE,
 		m_pipeline
 	);
-	vkCmdBindDescriptorSets(
+	/*vkCmdBindDescriptorSets(
 		command_buffer,
 		VK_PIPELINE_BIND_POINT_COMPUTE,
 		m_pipeline_layout,
@@ -138,7 +143,7 @@ void Renderer::Vulkan::VulkanComputePipeline::AttachToCommandBuffer(VkCommandBuf
 		&m_descriptor_set,
 		0,
 		0
-	);
+	);*/
 	vkCmdDispatch(
 		command_buffer,
 		GetX(),

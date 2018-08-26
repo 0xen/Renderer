@@ -137,14 +137,14 @@ int main(int argc, char **argv)
 	std::vector<unsigned char> image; //the raw pixels
 	unsigned width, height;
 
-	unsigned error = lodepng::decode(image, width, height, "../../renderer-demo/Images/emily.png");
+	unsigned error = lodepng::decode(image, width, height, "../../renderer-demo/Images/cobble.png");
 
 	if (error) std::cout << "decoder error " << error << ": " << lodepng_error_text(error) << std::endl;
 
 
-	ITextureBuffer* texture = renderer->CreateTextureBuffer(image.data(), Renderer::DataFormat::R8G8B8A8_FLOAT, width, height, 1);
+	ITextureBuffer* texture = renderer->CreateTextureBuffer(image.data(), Renderer::DataFormat::R8G8B8A8_FLOAT, width, height);
 
-	IUniformBuffer* cameraBuffer = renderer->CreateUniformBuffer(&camera, sizeof(Camera), 1, ShaderStage::VERTEX_SHADER, 0);
+	IUniformBuffer* cameraBuffer = renderer->CreateUniformBuffer(&camera, sizeof(Camera), 1);
 	cameraBuffer->SetData();
 
 
@@ -176,9 +176,24 @@ int main(int argc, char **argv)
 		1 
 		});
 
-	pipeline->AttachBuffer(cameraBuffer);
-	pipeline->AttachBuffer(texture);
+
+	IDescriptorPool* descriptor_pool = renderer->CreateDescriptorPool({
+		renderer->CreateDescriptor(Renderer::DescriptorType::UNIFORM, Renderer::ShaderStage::VERTEX_SHADER, 0),
+		renderer->CreateDescriptor(Renderer::DescriptorType::IMAGE_SAMPLER, Renderer::ShaderStage::FRAGMENT_SHADER, 1),
+		});
+
+	IDescriptorSet* descriptor_set = descriptor_pool->CreateDescriptorSet();
+
+	descriptor_set->AttachBuffer(0, cameraBuffer);
+	descriptor_set->AttachBuffer(1, texture);
+
+	descriptor_set->UpdateSet();
+
+	pipeline->AttachDescriptorSet(descriptor_set);
+
+	pipeline->AttachDescriptorPool(descriptor_pool);
 	pipeline->Build();
+
 
 
 	IVertexBuffer* vertexBuffer = renderer->CreateVertexBuffer(vertexData.data(), sizeof(MeshVertex), vertexData.size());
@@ -192,7 +207,7 @@ int main(int argc, char **argv)
 
 
 	glm::mat4* model_position_array = new glm::mat4[2];
-	IUniformBuffer* model_position_buffer = renderer->CreateUniformBuffer(model_position_array, sizeof(glm::mat4), 2, ShaderStage::VERTEX_SHADER, 3);
+	IUniformBuffer* model_position_buffer = renderer->CreateUniformBuffer(model_position_array, sizeof(glm::mat4), 2);
 
 	model_pool->AttachBuffer(0, model_position_buffer);
 

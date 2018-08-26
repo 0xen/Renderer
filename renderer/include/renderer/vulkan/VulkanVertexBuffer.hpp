@@ -1,7 +1,6 @@
 #pragma once
 
 #include <renderer/vulkan/VulkanBuffer.hpp>
-#include <renderer/vulkan/VulkanBufferDescriptor.hpp>
 #include <renderer/IVertexBuffer.hpp>
 
 namespace Renderer

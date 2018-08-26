@@ -1,13 +1,10 @@
 set(project_name Renderer)
 project(${project_name})
 
-find_package(Vulkan)
-
 set(common_src
     src/renderer/IRenderer.cpp
     src/renderer/IBuffer.cpp
     src/renderer/IUniformBuffer.cpp
-    src/renderer/IBufferDescriptor.cpp
     src/renderer/IPipeline.cpp
     src/renderer/IComputePipeline.cpp
     src/renderer/IComputeProgram.cpp
@@ -17,6 +14,9 @@ set(common_src
     src/renderer/IGraphicsPipeline.cpp
     src/renderer/IModel.cpp
     src/renderer/IModelPool.cpp
+    src/renderer/IDescriptor.cpp
+    src/renderer/IDescriptorPool.cpp
+    src/renderer/IDescriptorSet.cpp
 )
 
 set(common_headers
@@ -24,7 +24,6 @@ set(common_headers
     include/renderer/IRenderer.hpp
     include/renderer/IBuffer.hpp
     include/renderer/IUniformBuffer.hpp
-    include/renderer/IBufferDescriptor.hpp
     include/renderer/Status.hpp
     include/renderer/APIs.hpp
     include/renderer/ShaderStage.hpp
@@ -42,6 +41,9 @@ set(common_headers
     include/renderer/IModelPool.hpp
     include/renderer/VertexInputRate.hpp
     include/renderer/ITextureBuffer.hpp
+    include/renderer/IDescriptor.hpp
+    include/renderer/IDescriptorPool.hpp
+    include/renderer/IDescriptorSet.hpp
 
 )
 
@@ -53,28 +55,6 @@ set(headers
     ${common_headers}
 )
 
-find_package(OpenGL)
-
-if(OpenGL_OpenGL_FOUND)
-    
-    set(opengl3_src
-        src/renderer/gl3/OpenGL3Renderer.cpp
-    )
-
-    set(opengl3_headers
-        include/renderer/gl3/OpenGL3Renderer.hpp
-    )
-
-    include_directories(${Vulkan_INCLUDE_DIRS})
-
-    list(APPEND source ${opengl3_src})
-    list(APPEND headers ${opengl3_headers})
-
-    source_group("Source Files\\RenderingAPI\\GL3" FILES ${opengl3_src})
-    source_group("Header Files\\RenderingAPI\\GL3" FILES ${opengl3_headers})
-
-
-endif()
 
 find_package(Vulkan)
 
@@ -90,7 +70,6 @@ if(Vulkan_FOUND)
         src/renderer/vulkan/VulkanSwapchain.cpp
         src/renderer/vulkan/VulkanBuffer.cpp
         src/renderer/vulkan/VulkanUniformBuffer.cpp
-        src/renderer/vulkan/VulkanBufferDescriptor.cpp
         src/renderer/vulkan/VulkanPipeline.cpp
         src/renderer/vulkan/VulkanComputePipeline.cpp
         src/renderer/vulkan/VulkanComputeProgram.cpp
@@ -100,6 +79,9 @@ if(Vulkan_FOUND)
         src/renderer/vulkan/VulkanModel.cpp
         src/renderer/vulkan/VulkanModelPool.cpp
         src/renderer/vulkan/VulkanTextureBuffer.cpp
+        src/renderer/vulkan/VulkanDescriptor.cpp
+        src/renderer/vulkan/VulkanDescriptorPool.cpp
+        src/renderer/vulkan/VulkanDescriptorSet.cpp
     )
 
     set(vulkan_headers
@@ -116,7 +98,6 @@ if(Vulkan_FOUND)
         include/renderer/vulkan/VulkanSwapchain.hpp
         include/renderer/vulkan/VulkanBuffer.hpp
         include/renderer/vulkan/VulkanUniformBuffer.hpp
-        include/renderer/vulkan/VulkanBufferDescriptor.hpp
         include/renderer/vulkan/VulkanBufferData.hpp
         include/renderer/vulkan/VulkanPipeline.hpp
         include/renderer/vulkan/VulkanComputePipeline.hpp
@@ -127,6 +108,9 @@ if(Vulkan_FOUND)
         include/renderer/vulkan/VulkanModel.hpp
         include/renderer/vulkan/VulkanModelPool.hpp
         include/renderer/vulkan/VulkanTextureBuffer.hpp
+        include/renderer/vulkan/VulkanDescriptor.hpp
+        include/renderer/vulkan/VulkanDescriptorPool.hpp
+        include/renderer/vulkan/VulkanDescriptorSet.hpp
     )
 
     include_directories(${Vulkan_INCLUDE_DIRS})
@@ -146,11 +130,5 @@ add_library(${project_name} STATIC ${source} ${headers})
 target_link_libraries(${project_name} SDL2-static)
 
 if(Vulkan_FOUND)
-    
     target_link_libraries(${project_name} Vulkan::Vulkan)
-
-endif()
-
-if(OpenGL_OpenGL_FOUND)
-    target_link_libraries(${project_name} OpenGL::GL)
 endif()
