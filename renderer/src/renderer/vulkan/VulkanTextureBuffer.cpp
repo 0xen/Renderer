@@ -21,19 +21,24 @@ Renderer::Vulkan::VulkanTextureBuffer::~VulkanTextureBuffer()
 {
 }
 
+void Renderer::Vulkan::VulkanTextureBuffer::SetData()
+{
+	VulkanBuffer::SetData();
+	MoveDataToImage();
+}
+
 void Renderer::Vulkan::VulkanTextureBuffer::InitTexture()
 {
-	SetData();
 
 	VkFormat format = GetFormat(m_format);
 
 	VkFormatProperties format_properties = m_device->GetVulkanPhysicalDevice()->GetFormatProperties(format);
 
 
-	std::vector<VkBufferImageCopy> bufferCopyRegions;
+	
 	uint32_t offset = 0;
 
-	int mipLevels = 1;
+	m_mipLevels = 1;
 
 	// Only dealing with one mip level for now
 	VkBufferImageCopy bufferCopyRegion = {};
@@ -45,7 +50,7 @@ void Renderer::Vulkan::VulkanTextureBuffer::InitTexture()
 	bufferCopyRegion.imageExtent.height = static_cast<uint32_t>(m_height);
 	bufferCopyRegion.imageExtent.depth = 1;
 	bufferCopyRegion.bufferOffset = offset;
-	bufferCopyRegions.push_back(bufferCopyRegion);
+	m_bufferCopyRegions.push_back(bufferCopyRegion);
 
 
 	VkImageCreateInfo image_create_info = VulkanInitializers::ImageCreateInfo(
@@ -54,7 +59,7 @@ void Renderer::Vulkan::VulkanTextureBuffer::InitTexture()
 		format,
 		VK_IMAGE_TILING_OPTIMAL,
 		VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-		mipLevels
+		m_mipLevels
 	);
 
 	image_create_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -96,62 +101,7 @@ void Renderer::Vulkan::VulkanTextureBuffer::InitTexture()
 	));
 
 
-	VkCommandBuffer copy_cmd;
-	m_device->GetGraphicsCommand(&copy_cmd, true);
-
-	// The sub resource range describes the regions of the image we will be transition
-	VkImageSubresourceRange subresourceRange = {};
-	// Image only contains color data
-	subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	// Start at first mip level
-	subresourceRange.baseMipLevel = 0;
-	// We will transition on all mip levels
-	subresourceRange.levelCount = mipLevels;
-	// The 2D texture only has one layer
-	subresourceRange.layerCount = 1;
-
-	// Optimal image will be used as destination for the copy, so we must transfer from our
-	// initial undefined image layout to the transfer destination layout
-
-	VulkanCommon::SetImageLayout(
-		copy_cmd,
-		m_image,
-		VK_IMAGE_LAYOUT_UNDEFINED,
-		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-		subresourceRange,
-		VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-		VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT);
-
-	// Copy mip levels from staging buffer
-	vkCmdCopyBufferToImage(
-		copy_cmd,
-		GetBufferData()->buffer,
-		m_image,
-		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-		static_cast<uint32_t>(bufferCopyRegions.size()),
-		bufferCopyRegions.data());
-
-	// Change texture image layout to shader read after all mip levels have been copied
-	m_image_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-	VulkanCommon::SetImageLayout(
-		copy_cmd,
-		m_image,
-		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-		m_image_layout,
-		subresourceRange,
-		VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-		VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT);
-
-
-	ErrorCheck(vkEndCommandBuffer(copy_cmd));
-
-
-	m_device->SubmitGraphicsCommand(&copy_cmd, 1);
-
-	m_device->FreeGraphicsCommand(&copy_cmd, 1);
-
-
+	SetData();
 
 
 
@@ -169,7 +119,7 @@ void Renderer::Vulkan::VulkanTextureBuffer::InitTexture()
 	sampler_info.compareOp = VK_COMPARE_OP_NEVER;
 	sampler_info.minLod = 0.0f;
 	// Set max level-of-detail to mip level count of the texture
-	sampler_info.maxLod = mipLevels;
+	sampler_info.maxLod = m_mipLevels;
 	// Enable anisotropic filtering
 	// This feature is optional, so we must check if it's supported on the device
 	if (m_device->GetVulkanPhysicalDevice()->GetDeviceFeatures()->samplerAnisotropy)
@@ -192,10 +142,6 @@ void Renderer::Vulkan::VulkanTextureBuffer::InitTexture()
 		&m_sampler
 	));
 
-	// Create image view
-	// Textures are not directly accessed by the shaders and
-	// are abstracted by image views containing additional
-	// information and sub resource ranges
 	VkImageViewCreateInfo view_info = VulkanInitializers::ImageViewCreate(m_image, format, VK_IMAGE_ASPECT_COLOR_BIT);
 
 	view_info.components = { VK_COMPONENT_SWIZZLE_R, VK_COMPONENT_SWIZZLE_G, VK_COMPONENT_SWIZZLE_B, VK_COMPONENT_SWIZZLE_A };
@@ -203,7 +149,7 @@ void Renderer::Vulkan::VulkanTextureBuffer::InitTexture()
 
 	// Linear tiling usually won't support mip maps
 	// Only set mip map count if optimal tiling is used
-	view_info.subresourceRange.levelCount = mipLevels;
+	view_info.subresourceRange.levelCount = m_mipLevels;
 
 	ErrorCheck(vkCreateImageView(
 		*m_device->GetVulkanDevice(),
@@ -216,6 +162,66 @@ void Renderer::Vulkan::VulkanTextureBuffer::InitTexture()
 
 
 
+}
+
+void Renderer::Vulkan::VulkanTextureBuffer::MoveDataToImage()
+{
+	VkCommandBuffer copy_cmd;
+	m_device->GetGraphicsCommand(&copy_cmd, true);
+
+	// The sub resource range describes the regions of the image we will be transition
+	VkImageSubresourceRange subresourceRange = {};
+	// Image only contains color data
+	subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	// Start at first mip level
+	subresourceRange.baseMipLevel = 0;
+	// We will transition on all mip levels
+	subresourceRange.levelCount = m_mipLevels;
+	// The 2D texture only has one layer
+	subresourceRange.layerCount = 1;
+
+	// Optimal image will be used as destination for the copy, so we must transfer from our
+	// initial undefined image layout to the transfer destination layout
+
+	VulkanCommon::SetImageLayout(
+		copy_cmd,
+		m_image,
+		VK_IMAGE_LAYOUT_UNDEFINED,
+		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		subresourceRange,
+		VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+		VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT);
+
+
+	// Copy mip levels from staging buffer
+	vkCmdCopyBufferToImage(
+		copy_cmd,
+		GetBufferData()->buffer,
+		m_image,
+		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		static_cast<uint32_t>(m_bufferCopyRegions.size()),
+		m_bufferCopyRegions.data());
+
+
+	// Change texture image layout to shader read after all mip levels have been copied
+	m_image_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+	VulkanCommon::SetImageLayout(
+		copy_cmd,
+		m_image,
+		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		m_image_layout,
+		subresourceRange,
+		VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+		VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT);
+
+
+	ErrorCheck(vkEndCommandBuffer(copy_cmd));
+
+
+	m_device->SubmitGraphicsCommand(&copy_cmd, 1);
+
+	m_device->FreeGraphicsCommand(&copy_cmd, 1);
 }
 
 unsigned int Renderer::Vulkan::VulkanTextureBuffer::GetFormatSize(DataFormat format)
