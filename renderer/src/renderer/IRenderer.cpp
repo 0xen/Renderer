@@ -4,6 +4,8 @@
 #include <renderer\DescriptorType.hpp>
 #include <renderer\ShaderStage.hpp>
 
+#include <imgui.h>
+
 using namespace Renderer;
 using namespace Renderer::Vulkan;
 
@@ -11,6 +13,11 @@ std::vector<IRenderer*> IRenderer::m_renderers;
 
 Renderer::IRenderer::IRenderer()
 {
+
+
+	ImGui::CreateContext();
+	ImGuiIO& io = ImGui::GetIO(); (void)io;
+
 }
 
 IRenderer * Renderer::IRenderer::CreateRenderer(const RenderingAPI api)

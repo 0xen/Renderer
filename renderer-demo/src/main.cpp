@@ -14,6 +14,9 @@
 #include <renderer\VertexBase.hpp>
 
 #include <lodepng.h>
+#include <imgui.h>
+#include <examples\imgui_impl_vulkan.h>
+#include <examples\imgui_impl_sdl.h>
 
 #include <iostream>
 
@@ -104,6 +107,12 @@ int main(int argc, char **argv)
 	assert(renderer != nullptr && "Error, renderer instance could not be created");
 
 	renderer->Start(window_handle);
+
+	ImGui_ImplSDL2_InitForVulkan(window);
+
+	renderer->InitilizeImGUI();
+
+	ImGui::StyleColorsDark();
 
 	std::vector<MeshVertex> vertexData = {
 		MeshVertex(glm::vec3(1.0f,1.0f,0.0f), glm::vec2(0.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(1.0f,1.0f,0.0f)),
@@ -250,11 +259,27 @@ int main(int argc, char **argv)
 
 		model1->SetData(0, glm::rotate(model1->GetData<glm::mat4>(0), glm::radians(rot), glm::vec3(0.0f, 0.0f, 1.0f)));
 
-
-
 		model_position_buffer1->SetData();
 		// Update all renderer's via there Update function
 		IRenderer::UpdateAll();
+
+
+
+
+		ImGui_ImplVulkan_NewFrame();
+		ImGui_ImplSDL2_NewFrame(window);
+		ImGui::NewFrame();
+
+		ImGui::Begin("Hello, world!");
+
+		ImGui::Text("This is some useful text.");
+
+		ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+
+		ImGui::End();
+
+		renderer->RenderImGUI();
+
 
 		// Poll Window
 		SDL_Event event;

@@ -14,10 +14,14 @@ set_target_properties (uninstall PROPERTIES FOLDER "Third Party/SDL2")
 
 include_directories(third_party/SDL2/include)
 include_directories(../lodepng)
+include_directories(third_party/imgui)
 
 
 add_subdirectory(third_party/glm)
 include_directories(third_party/glm)
+
+add_subdirectory(third_party/imgui)
+include_directories(third_party/imgui)
 
 
 add_subdirectory(renderer)

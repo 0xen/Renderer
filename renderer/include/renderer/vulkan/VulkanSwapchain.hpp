@@ -23,7 +23,17 @@ namespace Renderer
 			void RebuildSwapchain();
 			void Render();
 			VkRenderPass* GetRenderPass();
+			VkSurfaceKHR* GetSurface();
+			VkSwapchainKHR GetSwapchain();
+			VkSurfaceFormatKHR GetSurfaceFormat();
+			VkPresentModeKHR GetSurfacePresentMode(); 
 			void AttachGraphicsPipeline(VulkanGraphicsPipeline* pipeline);
+
+			uint32_t GetImageCount();
+			std::vector<VkImage> GetSwapchainImages();
+			std::vector<VkImageView> GetSwpachainImageViews();
+			std::vector<VkFramebuffer> GetSwapchainFrameBuffers();
+			std::vector<VkCommandBuffer> GetCommandBuffers();
 		private:
 
 			void RebuildCommandBuffers();
@@ -61,6 +71,8 @@ namespace Renderer
 			VulkanInstance* m_instance;
 			VulkanDevice* m_device;
 			VkSurfaceKHR* m_surface;
+			VkSurfaceFormatKHR surface_format;
+			VkPresentModeKHR present_mode;
 
 			Renderer::NativeWindowHandle* m_window_handle;
 
@@ -72,6 +84,7 @@ namespace Renderer
 			VkFormat m_swap_chain_image_format;
 			VkFormat m_depth_image_format;
 			uint32_t m_active_swapchain_image;
+			uint32_t image_count;
 
 			// Render pass
 			VkRenderPass m_render_pass;

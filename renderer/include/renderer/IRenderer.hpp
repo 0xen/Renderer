@@ -26,6 +26,11 @@ namespace Renderer
 		IRenderer();
 		// Starts the renderer, this class is inherited by the parent class and it will define the function body
 		virtual bool Start(NativeWindowHandle* window_handle) = 0;
+
+		virtual void InitilizeImGUI() = 0;
+
+		virtual void RenderImGUI() = 0;
+
 		// Update the renderer, this class is inherited by the parent class and it will define the function body
 		virtual void Update() = 0;
 		// Stop the renderer, this class is inherited by the parent class and it will define the function body

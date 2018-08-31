@@ -5,6 +5,9 @@
 #include <renderer\DescriptorType.hpp>
 #include <renderer\ShaderStage.hpp>
 
+#include <imgui.h>
+#include <examples\imgui_impl_vulkan.h>
+
 namespace Renderer
 {
 	namespace Vulkan
@@ -20,6 +23,8 @@ namespace Renderer
 			VulkanRenderer();
 			~VulkanRenderer();
 			virtual bool Start(Renderer::NativeWindowHandle* window_handle);
+			virtual void InitilizeImGUI();
+			virtual void RenderImGUI();
 			virtual void Update();
 			virtual void Stop();
 			virtual void Rebuild();
@@ -54,6 +59,9 @@ namespace Renderer
 			VulkanPhysicalDevice* m_physical_device;
 			VulkanDevice* m_device;
 			VulkanSwapchain* m_swapchain;
+
+			//ImGUI
+			ImGui_ImplVulkanH_WindowData m_WindowData;
 		};
 	}
 }

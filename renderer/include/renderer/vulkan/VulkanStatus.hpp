@@ -14,8 +14,12 @@ namespace Renderer
 			VulkanStatus() : Status() {}
 		protected:
 			bool ErrorCheck(VkResult res)
-			{	
+			{
 				return Status::ErrorCheck(VkResult::VK_SUCCESS != res);
+			}
+			void vErrorCheck(VkResult res)
+			{
+
 			}
 		};
 	}

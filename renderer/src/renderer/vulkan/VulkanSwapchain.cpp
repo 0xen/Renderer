@@ -122,9 +122,54 @@ VkRenderPass * Renderer::Vulkan::VulkanSwapchain::GetRenderPass()
 	return &m_render_pass;
 }
 
+VkSurfaceKHR * Renderer::Vulkan::VulkanSwapchain::GetSurface()
+{
+	return m_surface;
+}
+
+VkSwapchainKHR Renderer::Vulkan::VulkanSwapchain::GetSwapchain()
+{
+	return m_swap_chain;
+}
+
+VkSurfaceFormatKHR Renderer::Vulkan::VulkanSwapchain::GetSurfaceFormat()
+{
+	return surface_format;
+}
+
+VkPresentModeKHR Renderer::Vulkan::VulkanSwapchain::GetSurfacePresentMode()
+{
+	return present_mode;
+}
+
 void Renderer::Vulkan::VulkanSwapchain::AttachGraphicsPipeline(VulkanGraphicsPipeline * pipeline)
 {
 	m_pipelines.push_back(pipeline);
+}
+
+uint32_t Renderer::Vulkan::VulkanSwapchain::GetImageCount()
+{
+	return image_count;
+}
+
+std::vector<VkImage> Renderer::Vulkan::VulkanSwapchain::GetSwapchainImages()
+{
+	return m_swap_chain_images;
+}
+
+std::vector<VkImageView> Renderer::Vulkan::VulkanSwapchain::GetSwpachainImageViews()
+{
+	return m_swap_chain_image_views;
+}
+
+std::vector<VkFramebuffer> Renderer::Vulkan::VulkanSwapchain::GetSwapchainFrameBuffers()
+{
+	return m_swap_chain_framebuffers;
+}
+
+std::vector<VkCommandBuffer> Renderer::Vulkan::VulkanSwapchain::GetCommandBuffers()
+{
+	return m_command_buffers;
 }
 
 void Renderer::Vulkan::VulkanSwapchain::RebuildCommandBuffers()
@@ -209,8 +254,9 @@ void Renderer::Vulkan::VulkanSwapchain::InitSwapchain()
 	// Get all required information for the swapchain initialization
 	VulkanSwapChainSupport swap_chain_support;
 	CheckSwapChainSupport(swap_chain_support);
-	VkSurfaceFormatKHR surface_format = ChooseSwapSurfaceFormat(swap_chain_support.formats);
-	VkPresentModeKHR present_mode = ChooseSwapPresentMode(swap_chain_support.present_modes);
+
+	surface_format = ChooseSwapSurfaceFormat(swap_chain_support.formats);
+	present_mode = ChooseSwapPresentMode(swap_chain_support.present_modes);
 	VkExtent2D extent = ChooseSwapExtent(swap_chain_support.capabilities);
 
 	// Store the format and extent for later use
@@ -218,7 +264,7 @@ void Renderer::Vulkan::VulkanSwapchain::InitSwapchain()
 	m_swap_chain_image_format = surface_format.format;
 
 	// Make sure that the amount of images we are creating for the swapchain are in between the min and max
-	uint32_t image_count = swap_chain_support.capabilities.minImageCount + 1;
+	image_count = swap_chain_support.capabilities.minImageCount + 1;
 	if (swap_chain_support.capabilities.maxImageCount > 0 && image_count > swap_chain_support.capabilities.maxImageCount)
 	{
 		image_count = swap_chain_support.capabilities.maxImageCount;
@@ -435,7 +481,6 @@ void Renderer::Vulkan::VulkanSwapchain::InitFrameBuffer()
 	m_swap_chain_framebuffers.resize(m_swap_chain_image_views.size());
 	for (uint32_t i = 0; i < m_swap_chain_image_views.size(); i++)
 	{
-		// What 
 		std::vector<VkImageView> attachments = {
 			m_swap_chain_image_views[i],
 			m_depth_image_view
