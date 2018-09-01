@@ -15,8 +15,6 @@
 
 #include <lodepng.h>
 #include <imgui.h>
-#include <examples\imgui_impl_vulkan.h>
-#include <examples\imgui_impl_sdl.h>
 
 #include <iostream>
 
@@ -108,11 +106,7 @@ int main(int argc, char **argv)
 
 	renderer->Start(window_handle);
 
-	ImGui_ImplSDL2_InitForVulkan(window);
-
 	renderer->InitilizeImGUI();
-
-	ImGui::StyleColorsDark();
 
 	std::vector<MeshVertex> vertexData = {
 		MeshVertex(glm::vec3(1.0f,1.0f,0.0f), glm::vec2(0.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(1.0f,1.0f,0.0f)),
@@ -251,6 +245,7 @@ int main(int argc, char **argv)
 
 
 	float rot = 0.01;
+	float fpn = 0.01;
 	bool running = true;
 	while (running)
 	{
@@ -265,18 +260,26 @@ int main(int argc, char **argv)
 
 
 
-
-		ImGui_ImplVulkan_NewFrame();
-		ImGui_ImplSDL2_NewFrame(window);
 		ImGui::NewFrame();
 
-		ImGui::Begin("Hello, world!");
+		ImGui::SetNextWindowSize(ImVec2(200, 200), ImGuiSetCond_FirstUseEver);
+		ImGui::SetNextWindowPos(ImVec2(650, 20));
 
-		ImGui::Text("This is some useful text.");
+		ImGui::Begin("Vulkan Example", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
 
-		ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+		ImGui::SetWindowSize(ImVec2(200, 150), ImGuiSetCond_FirstUseEver);
+		ImGui::SetWindowPos(ImVec2(650, 250));
+		static float f = 0.0f;
+		ImGui::Text("Debug information");
+		ImGui::SliderFloat("float", &f, 0.0f, 1.0f);
+		ImGui::Checkbox("Render models", &running);
 
 		ImGui::End();
+
+		ImGui::SetNextWindowPos(ImVec2(650, 20), ImGuiSetCond_FirstUseEver);
+		ImGui::ShowTestWindow();
+		ImGui::Render();
+
 
 		renderer->RenderImGUI();
 

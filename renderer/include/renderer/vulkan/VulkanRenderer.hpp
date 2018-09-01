@@ -6,7 +6,6 @@
 #include <renderer\ShaderStage.hpp>
 
 #include <imgui.h>
-#include <examples\imgui_impl_vulkan.h>
 
 namespace Renderer
 {
@@ -61,7 +60,14 @@ namespace Renderer
 			VulkanSwapchain* m_swapchain;
 
 			//ImGUI
-			ImGui_ImplVulkanH_WindowData m_WindowData;
+			ITextureBuffer* m_font_texture;
+			IGraphicsPipeline* m_imgui_pipeline;
+
+			IVertexBuffer* vertexBuffer = nullptr;
+			IIndexBuffer* indexBuffer = nullptr;
+
+			uint16_t* indexData = nullptr;
+			ImDrawVert* vertexData = nullptr;
 		};
 	}
 }
