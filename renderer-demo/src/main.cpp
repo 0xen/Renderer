@@ -320,13 +320,13 @@ int main(int argc, char **argv)
 			case SDL_MOUSEBUTTONDOWN:
 				//do whatever you want to do after a mouse button was pressed,
 				// e.g.:
-				io.MouseDown[0] = event.button.state == SDL_RELEASED;
+				io.MouseDown[0] = true;
 				std::cout << (int)event.button.button << std::endl;
 				break;
 			case SDL_MOUSEBUTTONUP:
 				//do whatever you want to do after a mouse button was pressed,
 				// e.g.:
-				io.MouseDown[0] = event.button.state == SDL_RELEASED;
+				io.MouseDown[0] = false;
 				std::cout << (int)event.button.button << std::endl;
 				break;
 			case SDL_MOUSEMOTION:

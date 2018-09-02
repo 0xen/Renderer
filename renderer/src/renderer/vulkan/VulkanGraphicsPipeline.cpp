@@ -155,7 +155,7 @@ bool Renderer::Vulkan::VulkanGraphicsPipeline::CreatePipeline()
 	VkPipelineMultisampleStateCreateInfo multisampling = VulkanInitializers::PipelineMultisampleStateCreateInfo();
 
 	// Depth stencil
-	VkPipelineDepthStencilStateCreateInfo depth_stencil = VulkanInitializers::PipelineDepthStencilStateCreateInfo(true);
+	VkPipelineDepthStencilStateCreateInfo depth_stencil = VulkanInitializers::PipelineDepthStencilStateCreateInfo(m_use_depth_stencil);
 
 	// Color blending
 	VkPipelineColorBlendAttachmentState color_blend_attachment = VulkanInitializers::PipelineColorBlendAttachmentState();
@@ -231,6 +231,11 @@ void Renderer::Vulkan::VulkanGraphicsPipeline::AttachModelPool(IModelPool * mode
 void Renderer::Vulkan::VulkanGraphicsPipeline::AttachVertexBinding(VertexBase vertex_binding)
 {
 	m_vertex_bases.push_back(vertex_binding);
+}
+
+void Renderer::Vulkan::VulkanGraphicsPipeline::UseDepth(bool depth)
+{
+	m_use_depth_stencil = depth;
 }
 
 bool Renderer::Vulkan::VulkanGraphicsPipeline::HasChanged()

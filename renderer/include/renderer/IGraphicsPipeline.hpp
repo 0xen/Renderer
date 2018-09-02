@@ -14,6 +14,7 @@ namespace Renderer
 		IGraphicsPipeline(std::map<ShaderStage,const char*> paths);
 		virtual void AttachModelPool(IModelPool* model_pool) = 0;
 		virtual void AttachVertexBinding(VertexBase vertex_binding) = 0;
+		virtual void UseDepth(bool depth) = 0;
 	private:
 	};
 }

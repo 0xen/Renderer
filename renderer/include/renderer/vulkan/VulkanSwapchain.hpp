@@ -23,7 +23,7 @@ namespace Renderer
 			void RebuildSwapchain();
 			unsigned int GetCurrentBuffer();
 			VkSubmitInfo GetSubmitInfo();
-			void SubmitQueue(unsigned int currentBuffer, VkSubmitInfo& sumbit_info);
+			void SubmitQueue(unsigned int currentBuffer);
 			void Present();
 			VkRenderPass* GetRenderPass();
 			VkSurfaceKHR* GetSurface();
@@ -39,6 +39,9 @@ namespace Renderer
 			std::vector<VkCommandBuffer> GetCommandBuffers();
 			VkSemaphore GetImageAvailableSemaphore();
 			VkSemaphore GetRenderFinishedSemaphore();
+			VkFormat GetSwapChainImageFormat();
+			VkImage GetDepthImage();
+			VkExtent2D GetSwapchainExtent();
 		private:
 
 			void RebuildCommandBuffers();

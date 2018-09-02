@@ -40,7 +40,7 @@ namespace Renderer
 
 			VkSubpassDependency SubpassDependency();
 
-			VkRenderPassCreateInfo RenderPassCreateInfo(std::vector<VkAttachmentDescription>& color_attachment, VkSubpassDescription& subpass, VkSubpassDependency& subpass_dependency);
+			VkRenderPassCreateInfo RenderPassCreateInfo(std::vector<VkAttachmentDescription>& color_attachment, VkSubpassDescription & subpass, VkSubpassDependency & subpass_dependency);
 
 			VkAttachmentDescription AttachmentDescription(VkFormat format, VkAttachmentStoreOp store_op, VkImageLayout final_layout);
 

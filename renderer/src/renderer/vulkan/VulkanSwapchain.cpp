@@ -93,19 +93,17 @@ VkSubmitInfo Renderer::Vulkan::VulkanSwapchain::GetSubmitInfo()
 	return sumbit_info;
 }
 
-void Renderer::Vulkan::VulkanSwapchain::SubmitQueue(unsigned int currentBuffer, VkSubmitInfo& sumbit_info)
+void Renderer::Vulkan::VulkanSwapchain::SubmitQueue(unsigned int currentBuffer)
 {
-	sumbit_info.pCommandBuffers = &m_command_buffers[currentBuffer];
-
+	VkSubmitInfo info = GetSubmitInfo();
+	info.pCommandBuffers = &m_command_buffers[currentBuffer];
 	ErrorCheck(vkQueueSubmit(
 		*m_device->GetGraphicsQueue(),
 		1,
-		&sumbit_info,
+		&info,
 		VK_NULL_HANDLE
 	));
-	assert(!HasError() && "Queue submission unsucsessfull");
 
-	ErrorCheck(vkQueueWaitIdle(*m_device->GetGraphicsQueue()));
 	assert(!HasError());
 }
 
@@ -127,6 +125,7 @@ void Renderer::Vulkan::VulkanSwapchain::Present()
 		*m_device->GetPresentQueue(),
 		&present_info
 	);
+	vkDeviceWaitIdle(*m_device->GetVulkanDevice());
 }
 
 VkRenderPass * Renderer::Vulkan::VulkanSwapchain::GetRenderPass()
@@ -192,6 +191,21 @@ VkSemaphore Renderer::Vulkan::VulkanSwapchain::GetImageAvailableSemaphore()
 VkSemaphore Renderer::Vulkan::VulkanSwapchain::GetRenderFinishedSemaphore()
 {
 	return m_render_finished_semaphore;
+}
+
+VkFormat Renderer::Vulkan::VulkanSwapchain::GetSwapChainImageFormat()
+{
+	return m_swap_chain_image_format;
+}
+
+VkImage Renderer::Vulkan::VulkanSwapchain::GetDepthImage()
+{
+	return m_depth_image;
+}
+
+VkExtent2D Renderer::Vulkan::VulkanSwapchain::GetSwapchainExtent()
+{
+	return m_swap_chain_extent;
 }
 
 void Renderer::Vulkan::VulkanSwapchain::RebuildCommandBuffers()

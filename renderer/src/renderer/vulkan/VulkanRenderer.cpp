@@ -14,6 +14,7 @@
 #include <renderer\vulkan\VulkanDescriptor.hpp>
 #include <renderer\vulkan\VulkanDescriptorPool.hpp>
 #include <renderer\vulkan\VulkanDescriptorSet.hpp>
+#include <renderer\vulkan\VulkanCommon.hpp>
 
 
 #include <assert.h>
@@ -77,6 +78,7 @@ void Renderer::Vulkan::VulkanRenderer::InitilizeImGUI()
 		{ ShaderStage::FRAGMENT_SHADER, "../../renderer-demo/Shaders/ImGUI/frag.spv" }
 		}));
 
+	m_imgui_pipeline->UseDepth(false);
 
 	m_imgui_pipeline->AttachVertexBinding({
 		VertexInputRate::INPUT_RATE_VERTEX,
@@ -94,7 +96,6 @@ void Renderer::Vulkan::VulkanRenderer::InitilizeImGUI()
 	// Create font texture
 	unsigned char* font_data;
 	int font_width, font_height;
-	//io.Fonts->AddFontFromFileTTF("../../third_party/imgui/misc/fonts/Cousine-Regular.ttf", 16.0f);
 	io.Fonts->GetTexDataAsRGBA32(&font_data, &font_width, &font_height);
 	m_font_texture = dynamic_cast<VulkanTextureBuffer*>(CreateTextureBuffer(font_data, Renderer::DataFormat::R8G8B8A8_FLOAT, font_width, font_height));
 
@@ -127,6 +128,33 @@ void Renderer::Vulkan::VulkanRenderer::InitilizeImGUI()
 		&alloc_info,
 		m_command_buffers.data()
 	));
+
+
+	std::vector<VkAttachmentDescription> attachments = {
+		VulkanInitializers::AttachmentDescription(m_swapchain->GetSwapChainImageFormat(), VK_ATTACHMENT_STORE_OP_STORE,VK_IMAGE_LAYOUT_PRESENT_SRC_KHR),	//Color
+		VulkanInitializers::AttachmentDescription(VulkanCommon::GetDepthImageFormat(m_device), VK_ATTACHMENT_STORE_OP_DONT_CARE,VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)		// Depth
+	};
+	attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+
+	VkAttachmentReference color_attachment_refrence = VulkanInitializers::AttachmentReference(VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, 0);
+	VkAttachmentReference depth_attachment_refrence = VulkanInitializers::AttachmentReference(VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, 1);
+
+	VkSubpassDescription subpass = VulkanInitializers::SubpassDescription(color_attachment_refrence, depth_attachment_refrence);
+
+	VkSubpassDependency subpass_dependency = VulkanInitializers::SubpassDependency();
+
+	VkRenderPassCreateInfo render_pass_info = VulkanInitializers::RenderPassCreateInfo(attachments, subpass, subpass_dependency);
+
+
+	ErrorCheck(vkCreateRenderPass(
+		*m_device->GetVulkanDevice(),
+		&render_pass_info,
+		nullptr,
+		&m_render_pass
+	));
+	assert(!HasError() && "Unable to initialize render pass");
+
 }
 void Renderer::Vulkan::VulkanRenderer::RenderImGUI()
 {
@@ -178,12 +206,11 @@ void Renderer::Vulkan::VulkanRenderer::RenderImGUI()
 
 	VkCommandBufferBeginInfo begin_info = VulkanInitializers::CommandBufferBeginInfo(VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
 	VkClearValue clearValues[2];
-	clearValues[0].color = { { 0.1f, 0.1f, 0.5f, 1.0f } };
-	clearValues[1].depthStencil = { 1.0f, 0 };
+	clearValues[1].color = { { 0.0f, 0.0f, 0.0f, 0.0f } };
 
 	VkRenderPassBeginInfo renderPassBeginInfo = {};
 	renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-	renderPassBeginInfo.renderPass = *m_swapchain->GetRenderPass();
+	renderPassBeginInfo.renderPass = m_render_pass;
 	renderPassBeginInfo.renderArea.offset.x = 0;
 	renderPassBeginInfo.renderArea.offset.y = 0;
 	renderPassBeginInfo.renderArea.extent.width = m_window_handle->width;
@@ -200,7 +227,6 @@ void Renderer::Vulkan::VulkanRenderer::RenderImGUI()
 		);
 
 		renderPassBeginInfo.framebuffer = m_swapchain->GetSwapchainFrameBuffers()[i];
-
 
 		vkBeginCommandBuffer(m_command_buffers[i], &begin_info);
 
@@ -226,60 +252,30 @@ void Renderer::Vulkan::VulkanRenderer::RenderImGUI()
 		// Render the command lists:
 		int vtx_offset = 0;
 		int idx_offset = 0;
-		for (int n = 0; n < imDrawData->CmdListsCount; n++)
+		for (int j = 0; j < imDrawData->CmdListsCount; j++)
 		{
-			const ImDrawList* cmd_list = imDrawData->CmdLists[n];
+			const ImDrawList* cmd_list = imDrawData->CmdLists[j];
 			for (int cmd_i = 0; cmd_i < cmd_list->CmdBuffer.Size; cmd_i++)
 			{
 				const ImDrawCmd* pcmd = &cmd_list->CmdBuffer[cmd_i];
-				if (pcmd->UserCallback)
-				{
-					pcmd->UserCallback(cmd_list, pcmd);
-				}
-				else
-				{
-					// Apply scissor/clipping rectangle
-					// FIXME: We could clamp width/height based on clamped min/max values.
-					VkRect2D scissorRect;
-					scissorRect.offset.x = std::max((int32_t)(pcmd->ClipRect.x), 0);
-					scissorRect.offset.y = std::max((int32_t)(pcmd->ClipRect.y), 0);
-					scissorRect.extent.width = (uint32_t)(pcmd->ClipRect.z - pcmd->ClipRect.x);
-					scissorRect.extent.height = (uint32_t)(pcmd->ClipRect.w - pcmd->ClipRect.y);
-					vkCmdSetScissor(m_command_buffers[i], 0, 1, &scissorRect);
 
-
-					// Draw
-					vkCmdDrawIndexed(m_command_buffers[i], pcmd->ElemCount, 1, idx_offset, vtx_offset, 0);
-				}
-				idx_offset += pcmd->ElemCount;
-			}
-			vtx_offset += cmd_list->VtxBuffer.Size;
-		}
-
-
-
-		/*ImDrawData* imDrawData = ImGui::GetDrawData();
-		int32_t vertexOffset = 0;
-		int32_t indexOffset = 0;
-		for (int32_t i = 0; i < imDrawData->CmdListsCount; i++)
-		{
-			const ImDrawList* cmd_list = imDrawData->CmdLists[i];
-			for (int32_t j = 0; j < cmd_list->CmdBuffer.Size; j++)
-			{
-			
-				const ImDrawCmd* pcmd = &cmd_list->CmdBuffer[j];
+				// Apply scissor/clipping rectangle
+				// FIXME: We could clamp width/height based on clamped min/max values.
 				VkRect2D scissorRect;
 				scissorRect.offset.x = std::max((int32_t)(pcmd->ClipRect.x), 0);
 				scissorRect.offset.y = std::max((int32_t)(pcmd->ClipRect.y), 0);
 				scissorRect.extent.width = (uint32_t)(pcmd->ClipRect.z - pcmd->ClipRect.x);
 				scissorRect.extent.height = (uint32_t)(pcmd->ClipRect.w - pcmd->ClipRect.y);
 				vkCmdSetScissor(m_command_buffers[i], 0, 1, &scissorRect);
-				//vkCmdDrawIndexed(m_command_buffers[i], pcmd->ElemCount, 1, indexOffset, vertexOffset, 0);
-				indexOffset += pcmd->ElemCount;
-			}
-			vertexOffset += cmd_list->VtxBuffer.Size;
-		}*/
 
+
+				// Draw
+				vkCmdDrawIndexed(m_command_buffers[i], pcmd->ElemCount, 1, idx_offset, vtx_offset, 0);
+
+				idx_offset += pcmd->ElemCount;
+			}
+			vtx_offset += cmd_list->VtxBuffer.Size;
+		}
 
 		vkCmdEndRenderPass(m_command_buffers[i]);
 
@@ -293,19 +289,18 @@ void VulkanRenderer::Update()
 {
 	unsigned int currentBuffer = m_swapchain->GetCurrentBuffer();
 
-	VkSubmitInfo sumbit_info = m_swapchain->GetSubmitInfo();
-	//m_swapchain->SubmitQueue(currentBuffer, sumbit_info);
+	m_swapchain->SubmitQueue(currentBuffer);
 
 	// Submit ImGUI
-	sumbit_info.pCommandBuffers = &m_command_buffers[currentBuffer];
+	VkSubmitInfo submitInfo = m_swapchain->GetSubmitInfo();
+	submitInfo.pCommandBuffers = &m_command_buffers[currentBuffer];
 
 	ErrorCheck(vkQueueSubmit(
 		*m_device->GetGraphicsQueue(),
 		1,
-		&sumbit_info,
+		&submitInfo,
 		VK_NULL_HANDLE
 	));
-	assert(!HasError() && "Queue submission unsuccessful");
 
 	ErrorCheck(vkQueueWaitIdle(*m_device->GetGraphicsQueue()));
 	assert(!HasError());

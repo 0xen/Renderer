@@ -67,6 +67,7 @@ namespace Renderer
 			//ImGUI
 			VulkanTextureBuffer* m_font_texture;
 			VulkanGraphicsPipeline* m_imgui_pipeline;
+			VkRenderPass m_render_pass;
 
 			VulkanVertexBuffer* vertexBuffer = nullptr;
 			VulkanIndexBuffer* indexBuffer = nullptr;

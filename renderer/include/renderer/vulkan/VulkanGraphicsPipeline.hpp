@@ -25,6 +25,7 @@ namespace Renderer
 			virtual void AttachToCommandBuffer(VkCommandBuffer & command_buffer);
 			virtual void AttachModelPool(IModelPool* model_pool);
 			virtual void AttachVertexBinding(VertexBase vertex_binding);
+			virtual void UseDepth(bool depth);
 			bool HasChanged();
 		private:
 			static VkShaderStageFlagBits GetShaderStageFlag(ShaderStage stage);
@@ -42,6 +43,7 @@ namespace Renderer
 			std::vector<VulkanModelPool*> m_model_pools;
 			std::vector<VertexBase> m_vertex_bases;
 			bool m_change;
+			bool m_use_depth_stencil = true;
 		};
 	}
 }
