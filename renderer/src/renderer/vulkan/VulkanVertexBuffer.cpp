@@ -11,7 +11,7 @@ Renderer::Vulkan::VulkanVertexBuffer::VulkanVertexBuffer(VulkanDevice * device, 
 
 Renderer::Vulkan::VulkanVertexBuffer::~VulkanVertexBuffer()
 {
-	delete m_staging_buffer;
+
 }
 
 void Renderer::Vulkan::VulkanVertexBuffer::SetData()

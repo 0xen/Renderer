@@ -116,10 +116,11 @@ bool Renderer::Vulkan::VulkanGraphicsPipeline::CreatePipeline()
 			{
 				VkFormat format = VK_FORMAT_R32G32B32A32_UINT;
 				uint32_t location = vertex->GetLocation();
+				unsigned int size_of = sizeof(glm::vec4);
 				m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(1, location, format, vertex->GetOffset() + 0));
-				m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(1, location + 1, format, vertex->GetOffset() + sizeof(glm::vec4)));
-				m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(1, location + 2, format, vertex->GetOffset() + (2 * sizeof(glm::vec4))));
-				m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(1, location + 3, format, vertex->GetOffset() + (3 * sizeof(glm::vec4))));
+				m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(1, location + 1, format, vertex->GetOffset() + size_of));
+				m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(1, location + 2, format, vertex->GetOffset() + (2 * size_of)));
+				m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(1, location + 3, format, vertex->GetOffset() + (3 * size_of)));
 				//m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(0, vertex->GetLocation(), GetFormat(vertex->GetFormat()), vertex->GetOffset()));
 			}
 				break;

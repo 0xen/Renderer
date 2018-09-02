@@ -15,6 +15,7 @@ namespace Renderer
 		public:
 			VulkanTextureBuffer(VulkanDevice* device, void* dataPtr, DataFormat format, unsigned int width, unsigned int height);
 			~VulkanTextureBuffer();
+			VkImage& GetImage();
 			virtual void SetData();
 		private:
 			void InitTexture();

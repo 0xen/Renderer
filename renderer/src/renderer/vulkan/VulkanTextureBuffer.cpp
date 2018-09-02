@@ -21,6 +21,11 @@ Renderer::Vulkan::VulkanTextureBuffer::~VulkanTextureBuffer()
 {
 }
 
+VkImage & Renderer::Vulkan::VulkanTextureBuffer::GetImage()
+{
+	return m_image;
+}
+
 void Renderer::Vulkan::VulkanTextureBuffer::SetData()
 {
 	VulkanBuffer::SetData();

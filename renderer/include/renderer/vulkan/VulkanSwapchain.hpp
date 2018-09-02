@@ -21,7 +21,10 @@ namespace Renderer
 			~VulkanSwapchain();
 			void RequestRebuildCommandBuffers();
 			void RebuildSwapchain();
-			void Render();
+			unsigned int GetCurrentBuffer();
+			VkSubmitInfo GetSubmitInfo();
+			void SubmitQueue(unsigned int currentBuffer, VkSubmitInfo& sumbit_info);
+			void Present();
 			VkRenderPass* GetRenderPass();
 			VkSurfaceKHR* GetSurface();
 			VkSwapchainKHR GetSwapchain();
@@ -34,6 +37,8 @@ namespace Renderer
 			std::vector<VkImageView> GetSwpachainImageViews();
 			std::vector<VkFramebuffer> GetSwapchainFrameBuffers();
 			std::vector<VkCommandBuffer> GetCommandBuffers();
+			VkSemaphore GetImageAvailableSemaphore();
+			VkSemaphore GetRenderFinishedSemaphore();
 		private:
 
 			void RebuildCommandBuffers();
@@ -102,6 +107,8 @@ namespace Renderer
 			VkSemaphore m_render_finished_semaphore;
 
 			std::vector<VulkanGraphicsPipeline*> m_pipelines;
+
+			VkPipelineStageFlags* m_wait_stages;
 
 			bool m_should_rebuild_cmd;
 		};

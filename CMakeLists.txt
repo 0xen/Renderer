@@ -20,7 +20,6 @@ include_directories(third_party/imgui)
 add_subdirectory(third_party/glm)
 include_directories(third_party/glm)
 
-add_subdirectory(third_party/imgui)
 include_directories(third_party/imgui)
 
 

@@ -13,6 +13,7 @@
 #include <renderer\vulkan\VulkanTextureBuffer.hpp>
 #include <renderer\vulkan\VulkanDescriptor.hpp>
 #include <renderer\vulkan\VulkanDescriptorPool.hpp>
+#include <renderer\vulkan\VulkanDescriptorSet.hpp>
 
 
 #include <assert.h>
@@ -56,7 +57,7 @@ bool VulkanRenderer::Start(Renderer::NativeWindowHandle* window_handle)
 
 void Renderer::Vulkan::VulkanRenderer::InitilizeImGUI()
 {
-	ImGui::StyleColorsDark();
+	/*ImGui::StyleColorsDark();
 
 	// Color scheme
 	ImGuiStyle& style = ImGui::GetStyle();
@@ -64,25 +65,17 @@ void Renderer::Vulkan::VulkanRenderer::InitilizeImGUI()
 	style.Colors[ImGuiCol_TitleBgActive] = ImVec4(1.0f, 0.0f, 0.0f, 0.8f);
 	style.Colors[ImGuiCol_MenuBarBg] = ImVec4(1.0f, 0.0f, 0.0f, 0.4f);
 	style.Colors[ImGuiCol_Header] = ImVec4(1.0f, 0.0f, 0.0f, 0.4f);
-	style.Colors[ImGuiCol_CheckMark] = ImVec4(0.0f, 1.0f, 0.0f, 1.0f);
+	style.Colors[ImGuiCol_CheckMark] = ImVec4(0.0f, 1.0f, 0.0f, 1.0f);*/
 
 
 	ImGuiIO& io = ImGui::GetIO();
 	io.DisplaySize = ImVec2(m_window_handle->width, m_window_handle->height);
 	io.DisplayFramebufferScale = ImVec2(1.0f, 1.0f);
 
-
-	// Create font texture
-	unsigned char* font_data;
-	int font_width, font_height;
-	io.Fonts->GetTexDataAsRGBA32(&font_data, &font_width, &font_height);
-	m_font_texture = CreateTextureBuffer(font_data, Renderer::DataFormat::R8G8B8A8_FLOAT, font_width, font_height);
-
-
-	m_imgui_pipeline = CreateGraphicsPipeline({
-		{ ShaderStage::VERTEX_SHADER, "../../renderer-demo/Shaders/ui.vert.spv" },
-		{ ShaderStage::FRAGMENT_SHADER, "../../renderer-demo/Shaders/ui.frag.spv" }
-		});
+	m_imgui_pipeline = dynamic_cast<VulkanGraphicsPipeline*>(CreateGraphicsPipeline({
+		{ ShaderStage::VERTEX_SHADER, "../../renderer-demo/Shaders/ImGUI/vert.spv" },
+		{ ShaderStage::FRAGMENT_SHADER, "../../renderer-demo/Shaders/ImGUI/frag.spv" }
+		}));
 
 
 	m_imgui_pipeline->AttachVertexBinding({
@@ -97,18 +90,48 @@ void Renderer::Vulkan::VulkanRenderer::InitilizeImGUI()
 		});
 
 
+
+	// Create font texture
+	unsigned char* font_data;
+	int font_width, font_height;
+	//io.Fonts->AddFontFromFileTTF("../../third_party/imgui/misc/fonts/Cousine-Regular.ttf", 16.0f);
+	io.Fonts->GetTexDataAsRGBA32(&font_data, &font_width, &font_height);
+	m_font_texture = dynamic_cast<VulkanTextureBuffer*>(CreateTextureBuffer(font_data, Renderer::DataFormat::R8G8B8A8_FLOAT, font_width, font_height));
+
+	io.Fonts->TexID = (ImTextureID)(intptr_t)m_font_texture->GetImage();
+
+
+	font_texture_pool = CreateDescriptorPool({
+		CreateDescriptor(Renderer::DescriptorType::IMAGE_SAMPLER, Renderer::ShaderStage::FRAGMENT_SHADER, 0),
+		});
+	m_imgui_pipeline->AttachDescriptorPool(font_texture_pool);
+
+	texture_descriptor_set = font_texture_pool->CreateDescriptorSet();
+	texture_descriptor_set->AttachBuffer(0, m_font_texture);
+	texture_descriptor_set->UpdateSet();
+	m_imgui_pipeline->AttachDescriptorSet(0, texture_descriptor_set);
+
+
 	m_imgui_pipeline->Build();
 
-	
-}
 
+	m_command_buffers.resize(m_swapchain->GetImageCount());
+	// Setup the allocation info
+	VkCommandBufferAllocateInfo alloc_info = VulkanInitializers::CommandBufferAllocateInfo(
+		*m_device->GetGraphicsCommandPool(),
+		static_cast<uint32_t>(m_command_buffers.size())
+	);
+	// Allocate the buffers
+	ErrorCheck(vkAllocateCommandBuffers(
+		*m_device->GetVulkanDevice(),
+		&alloc_info,
+		m_command_buffers.data()
+	));
+}
 void Renderer::Vulkan::VulkanRenderer::RenderImGUI()
 {
-	
-
 
 	ImDrawData* imDrawData = ImGui::GetDrawData();
-
 
 	if (vertexBuffer != nullptr && vertexBuffer->GetElementCount() != imDrawData->TotalVtxCount)
 	{
@@ -126,30 +149,169 @@ void Renderer::Vulkan::VulkanRenderer::RenderImGUI()
 	if (vertexBuffer == nullptr)
 	{
 		vertexData = new ImDrawVert[imDrawData->TotalIdxCount];
-		vertexBuffer = CreateVertexBuffer(vertexData, sizeof(ImDrawVert), imDrawData->TotalVtxCount);
+		vertexBuffer = dynamic_cast<VulkanVertexBuffer*>(CreateVertexBuffer(vertexData, sizeof(ImDrawVert), imDrawData->TotalVtxCount));
 	}
 	if (indexBuffer == nullptr)
 	{
-		indexData = new uint16_t[imDrawData->TotalIdxCount];
-		indexBuffer = CreateIndexBuffer(indexData, sizeof(uint16_t), imDrawData->TotalIdxCount);
+		indexData = new ImDrawIdx[imDrawData->TotalIdxCount];
+		indexBuffer = dynamic_cast<VulkanIndexBuffer*>(CreateIndexBuffer(indexData, sizeof(ImDrawIdx), imDrawData->TotalIdxCount));
 	}
 
 
+	// Upload data
+	ImDrawVert* vtxDst = vertexData;
+	ImDrawIdx* idxDst = indexData;
 
-
-
-
-
-
-
-
+	for (int n = 0; n < imDrawData->CmdListsCount; n++)
+	{
+		const ImDrawList* cmd_list = imDrawData->CmdLists[n];
+		memcpy(vtxDst, cmd_list->VtxBuffer.Data, cmd_list->VtxBuffer.Size * sizeof(ImDrawVert));
+		memcpy(idxDst, cmd_list->IdxBuffer.Data, cmd_list->IdxBuffer.Size * sizeof(ImDrawIdx));
+		vtxDst += cmd_list->VtxBuffer.Size;
+		idxDst += cmd_list->IdxBuffer.Size;
+	}
 	vertexBuffer->SetData();
 	indexBuffer->SetData();
+
+
+
+
+	VkCommandBufferBeginInfo begin_info = VulkanInitializers::CommandBufferBeginInfo(VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
+	VkClearValue clearValues[2];
+	clearValues[0].color = { { 0.1f, 0.1f, 0.5f, 1.0f } };
+	clearValues[1].depthStencil = { 1.0f, 0 };
+
+	VkRenderPassBeginInfo renderPassBeginInfo = {};
+	renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+	renderPassBeginInfo.renderPass = *m_swapchain->GetRenderPass();
+	renderPassBeginInfo.renderArea.offset.x = 0;
+	renderPassBeginInfo.renderArea.offset.y = 0;
+	renderPassBeginInfo.renderArea.extent.width = m_window_handle->width;
+	renderPassBeginInfo.renderArea.extent.height = m_window_handle->height;
+	renderPassBeginInfo.clearValueCount = 2;
+	renderPassBeginInfo.pClearValues = clearValues;
+
+	for (int32_t i = 0; i < m_command_buffers.size(); ++i)
+	{
+
+		vkResetCommandBuffer(
+			m_command_buffers[i],
+			0
+		);
+
+		renderPassBeginInfo.framebuffer = m_swapchain->GetSwapchainFrameBuffers()[i];
+
+
+		vkBeginCommandBuffer(m_command_buffers[i], &begin_info);
+
+		vkCmdBeginRenderPass(m_command_buffers[i], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+
+
+
+		m_imgui_pipeline->AttachToCommandBuffer(m_command_buffers[i]);
+
+		vkCmdSetLineWidth(m_command_buffers[i], 1.0f);
+
+		VkDeviceSize offsets[1] = { 0 };
+		vkCmdBindVertexBuffers(m_command_buffers[i], 0, 1, &vertexBuffer->GetBufferData()->buffer, offsets);
+		vkCmdBindIndexBuffer(m_command_buffers[i], indexBuffer->GetBufferData()->buffer, 0, VK_INDEX_TYPE_UINT16);
+
+		ImGuiIO& io = ImGui::GetIO();
+		const VkViewport viewport = VulkanInitializers::Viewport(io.DisplaySize.x, io.DisplaySize.y, 0, 0, 0.0f, 1.0f);
+		vkCmdSetViewport(m_command_buffers[i], 0, 1, &viewport);
+
+
+		ImDrawData* imDrawData = ImGui::GetDrawData();
+		// Render the command lists:
+		int vtx_offset = 0;
+		int idx_offset = 0;
+		for (int n = 0; n < imDrawData->CmdListsCount; n++)
+		{
+			const ImDrawList* cmd_list = imDrawData->CmdLists[n];
+			for (int cmd_i = 0; cmd_i < cmd_list->CmdBuffer.Size; cmd_i++)
+			{
+				const ImDrawCmd* pcmd = &cmd_list->CmdBuffer[cmd_i];
+				if (pcmd->UserCallback)
+				{
+					pcmd->UserCallback(cmd_list, pcmd);
+				}
+				else
+				{
+					// Apply scissor/clipping rectangle
+					// FIXME: We could clamp width/height based on clamped min/max values.
+					VkRect2D scissorRect;
+					scissorRect.offset.x = std::max((int32_t)(pcmd->ClipRect.x), 0);
+					scissorRect.offset.y = std::max((int32_t)(pcmd->ClipRect.y), 0);
+					scissorRect.extent.width = (uint32_t)(pcmd->ClipRect.z - pcmd->ClipRect.x);
+					scissorRect.extent.height = (uint32_t)(pcmd->ClipRect.w - pcmd->ClipRect.y);
+					vkCmdSetScissor(m_command_buffers[i], 0, 1, &scissorRect);
+
+
+					// Draw
+					vkCmdDrawIndexed(m_command_buffers[i], pcmd->ElemCount, 1, idx_offset, vtx_offset, 0);
+				}
+				idx_offset += pcmd->ElemCount;
+			}
+			vtx_offset += cmd_list->VtxBuffer.Size;
+		}
+
+
+
+		/*ImDrawData* imDrawData = ImGui::GetDrawData();
+		int32_t vertexOffset = 0;
+		int32_t indexOffset = 0;
+		for (int32_t i = 0; i < imDrawData->CmdListsCount; i++)
+		{
+			const ImDrawList* cmd_list = imDrawData->CmdLists[i];
+			for (int32_t j = 0; j < cmd_list->CmdBuffer.Size; j++)
+			{
+			
+				const ImDrawCmd* pcmd = &cmd_list->CmdBuffer[j];
+				VkRect2D scissorRect;
+				scissorRect.offset.x = std::max((int32_t)(pcmd->ClipRect.x), 0);
+				scissorRect.offset.y = std::max((int32_t)(pcmd->ClipRect.y), 0);
+				scissorRect.extent.width = (uint32_t)(pcmd->ClipRect.z - pcmd->ClipRect.x);
+				scissorRect.extent.height = (uint32_t)(pcmd->ClipRect.w - pcmd->ClipRect.y);
+				vkCmdSetScissor(m_command_buffers[i], 0, 1, &scissorRect);
+				//vkCmdDrawIndexed(m_command_buffers[i], pcmd->ElemCount, 1, indexOffset, vertexOffset, 0);
+				indexOffset += pcmd->ElemCount;
+			}
+			vertexOffset += cmd_list->VtxBuffer.Size;
+		}*/
+
+
+		vkCmdEndRenderPass(m_command_buffers[i]);
+
+		vkEndCommandBuffer(m_command_buffers[i]);
+	}
+
+
 }
 
 void VulkanRenderer::Update()
 {
-	m_swapchain->Render();
+	unsigned int currentBuffer = m_swapchain->GetCurrentBuffer();
+
+	VkSubmitInfo sumbit_info = m_swapchain->GetSubmitInfo();
+	//m_swapchain->SubmitQueue(currentBuffer, sumbit_info);
+
+	// Submit ImGUI
+	sumbit_info.pCommandBuffers = &m_command_buffers[currentBuffer];
+
+	ErrorCheck(vkQueueSubmit(
+		*m_device->GetGraphicsQueue(),
+		1,
+		&sumbit_info,
+		VK_NULL_HANDLE
+	));
+	assert(!HasError() && "Queue submission unsuccessful");
+
+	ErrorCheck(vkQueueWaitIdle(*m_device->GetGraphicsQueue()));
+	assert(!HasError());
+	// End Submit ImGUI
+
+	m_swapchain->Present();
 }
 
 void VulkanRenderer::Stop()

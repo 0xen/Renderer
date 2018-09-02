@@ -106,7 +106,6 @@ int main(int argc, char **argv)
 
 	renderer->Start(window_handle);
 
-	renderer->InitilizeImGUI();
 
 	std::vector<MeshVertex> vertexData = {
 		MeshVertex(glm::vec3(1.0f,1.0f,0.0f), glm::vec2(0.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(1.0f,1.0f,0.0f)),
@@ -242,47 +241,60 @@ int main(int argc, char **argv)
 	pipeline->AttachModelPool(model_pool1);
 
 
+	renderer->InitilizeImGUI();
 
+	ImGuiIO& io = ImGui::GetIO();
+	io.DisplaySize = ImVec2(1080, 720);
+	io.MouseDrawCursor = true;
+	io.Fonts->AddFontFromFileTTF("DroidSans.ttf", 24);
+	
 
 	float rot = 0.01;
 	float fpn = 0.01;
 	bool running = true;
 	while (running)
 	{
+		io.DeltaTime = rot;
+
 		//modelPos = glm::rotate(modelPos, glm::radians(rot), glm::vec3(1.0f, 0.0f, 0.0f));
 		//model2->SetData(0, modelPos);
 
 		model1->SetData(0, glm::rotate(model1->GetData<glm::mat4>(0), glm::radians(rot), glm::vec3(0.0f, 0.0f, 1.0f)));
 
 		model_position_buffer1->SetData();
-		// Update all renderer's via there Update function
-		IRenderer::UpdateAll();
-
-
 
 		ImGui::NewFrame();
+		ImGui::Begin("Vulkan Example");
+		ImGui::Text("Test");
+		ImGui::End();
+		ImGui::Render();
 
-		ImGui::SetNextWindowSize(ImVec2(200, 200), ImGuiSetCond_FirstUseEver);
+
+		/*ImGui::NewFrame();
+		ImGui::SetNextWindowSize(ImVec2(0, 0));
 		ImGui::SetNextWindowPos(ImVec2(650, 20));
 
 		ImGui::Begin("Vulkan Example", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
 
-		ImGui::SetWindowSize(ImVec2(200, 150), ImGuiSetCond_FirstUseEver);
+		ImGui::SetWindowSize(ImVec2(200, 150));
 		ImGui::SetWindowPos(ImVec2(650, 250));
 		static float f = 0.0f;
 		ImGui::Text("Debug information");
 		ImGui::SliderFloat("float", &f, 0.0f, 1.0f);
-		ImGui::Checkbox("Render models", &running);
 
 		ImGui::End();
 
-		ImGui::SetNextWindowPos(ImVec2(650, 20), ImGuiSetCond_FirstUseEver);
+		ImGui::SetNextWindowPos(ImVec2(650, 20));
 		ImGui::ShowTestWindow();
-		ImGui::Render();
+		ImGui::Render();*/
 
 
 		renderer->RenderImGUI();
 
+
+
+		// Update all renderer's via there Update function
+		IRenderer::UpdateAll();
 
 		// Poll Window
 		SDL_Event event;
@@ -301,8 +313,25 @@ int main(int argc, char **argv)
 					window_handle->width = event.window.data1;
 					window_handle->height = event.window.data2;
 					renderer->Rebuild();
+					io.DisplaySize = ImVec2(window_handle->width, window_handle->height);
 					break;
 				}
+				break;
+			case SDL_MOUSEBUTTONDOWN:
+				//do whatever you want to do after a mouse button was pressed,
+				// e.g.:
+				io.MouseDown[0] = event.button.state == SDL_RELEASED;
+				std::cout << (int)event.button.button << std::endl;
+				break;
+			case SDL_MOUSEBUTTONUP:
+				//do whatever you want to do after a mouse button was pressed,
+				// e.g.:
+				io.MouseDown[0] = event.button.state == SDL_RELEASED;
+				std::cout << (int)event.button.button << std::endl;
+				break;
+			case SDL_MOUSEMOTION:
+
+				io.MousePos = ImVec2(event.motion.x, event.motion.y);
 				break;
 			}
 		}

@@ -11,7 +11,7 @@ Renderer::Vulkan::VulkanIndexBuffer::VulkanIndexBuffer(VulkanDevice * device, vo
 
 Renderer::Vulkan::VulkanIndexBuffer::~VulkanIndexBuffer()
 {
-	delete m_staging_buffer;
+
 }
 
 void Renderer::Vulkan::VulkanIndexBuffer::SetData()

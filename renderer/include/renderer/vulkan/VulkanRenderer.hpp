@@ -16,6 +16,11 @@ namespace Renderer
 		class VulkanDevice;
 		class VulkanSwapchain;
 		class VulkanDescriptor;
+		class VulkanGraphicsPipeline;
+		class VulkanVertexBuffer;
+		class VulkanIndexBuffer;
+		class VulkanTextureBuffer;
+
 		class VulkanRenderer : public IRenderer, public VulkanStatus
 		{
 		public:
@@ -60,14 +65,17 @@ namespace Renderer
 			VulkanSwapchain* m_swapchain;
 
 			//ImGUI
-			ITextureBuffer* m_font_texture;
-			IGraphicsPipeline* m_imgui_pipeline;
+			VulkanTextureBuffer* m_font_texture;
+			VulkanGraphicsPipeline* m_imgui_pipeline;
 
-			IVertexBuffer* vertexBuffer = nullptr;
-			IIndexBuffer* indexBuffer = nullptr;
+			VulkanVertexBuffer* vertexBuffer = nullptr;
+			VulkanIndexBuffer* indexBuffer = nullptr;
 
-			uint16_t* indexData = nullptr;
+			ImDrawIdx* indexData = nullptr;
 			ImDrawVert* vertexData = nullptr;
+			std::vector<VkCommandBuffer> m_command_buffers;
+			IDescriptorSet* texture_descriptor_set;
+			IDescriptorPool* font_texture_pool;
 		};
 	}
 }

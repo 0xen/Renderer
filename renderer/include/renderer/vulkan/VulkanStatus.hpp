@@ -15,12 +15,14 @@ namespace Renderer
 		protected:
 			bool ErrorCheck(VkResult res)
 			{
+				m_res = res;
 				return Status::ErrorCheck(VkResult::VK_SUCCESS != res);
 			}
 			void vErrorCheck(VkResult res)
 			{
 
 			}
+			VkResult m_res;
 		};
 	}
 }

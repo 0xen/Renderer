@@ -19,12 +19,14 @@ Renderer::Vulkan::VulkanSwapchain::VulkanSwapchain(VulkanInstance * instance, Vu
 	InitCommandBuffers();
 	InitSemaphores();
 	m_should_rebuild_cmd = true;
+	m_wait_stages = new VkPipelineStageFlags{ VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
 }
 
 Renderer::Vulkan::VulkanSwapchain::~VulkanSwapchain()
 {
 	DeInitSemaphores();
 	DestroySwapchain();
+	delete m_wait_stages;
 }
 
 void Renderer::Vulkan::VulkanSwapchain::RequestRebuildCommandBuffers()
@@ -43,7 +45,7 @@ void Renderer::Vulkan::VulkanSwapchain::RebuildSwapchain()
 	RebuildCommandBuffers();
 }
 
-void Renderer::Vulkan::VulkanSwapchain::Render()
+unsigned int Renderer::Vulkan::VulkanSwapchain::GetCurrentBuffer()
 {
 	if (m_should_rebuild_cmd)
 	{
@@ -68,26 +70,32 @@ void Renderer::Vulkan::VulkanSwapchain::Render()
 	if (check == VK_ERROR_OUT_OF_DATE_KHR)
 	{
 		RebuildSwapchain();
-		return;
+		return GetCurrentBuffer();
 	}
 	ErrorCheck(check);
 	assert(!HasError());
 	vkQueueWaitIdle(
 		*m_device->GetPresentQueue()
 	);
+	return m_active_swapchain_image;
+}
 
-	VkSemaphore wait_semaphores[] = { m_image_available_semaphore };
-	VkSemaphore signal_semaphores[] = { m_render_finished_semaphore };
-	VkPipelineStageFlags wait_stages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+VkSubmitInfo Renderer::Vulkan::VulkanSwapchain::GetSubmitInfo()
+{
 	VkSubmitInfo sumbit_info = {};
 	sumbit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 	sumbit_info.waitSemaphoreCount = 1;
-	sumbit_info.pWaitSemaphores = wait_semaphores;
-	sumbit_info.pWaitDstStageMask = wait_stages;
+	sumbit_info.pWaitSemaphores = &m_image_available_semaphore;
+	sumbit_info.pWaitDstStageMask = m_wait_stages;
 	sumbit_info.commandBufferCount = 1;
-	sumbit_info.pCommandBuffers = &m_command_buffers[m_active_swapchain_image];
 	sumbit_info.signalSemaphoreCount = 1;
-	sumbit_info.pSignalSemaphores = signal_semaphores;
+	sumbit_info.pSignalSemaphores = &m_render_finished_semaphore;
+	return sumbit_info;
+}
+
+void Renderer::Vulkan::VulkanSwapchain::SubmitQueue(unsigned int currentBuffer, VkSubmitInfo& sumbit_info)
+{
+	sumbit_info.pCommandBuffers = &m_command_buffers[currentBuffer];
 
 	ErrorCheck(vkQueueSubmit(
 		*m_device->GetGraphicsQueue(),
@@ -99,7 +107,11 @@ void Renderer::Vulkan::VulkanSwapchain::Render()
 
 	ErrorCheck(vkQueueWaitIdle(*m_device->GetGraphicsQueue()));
 	assert(!HasError());
+}
 
+void Renderer::Vulkan::VulkanSwapchain::Present()
+{
+	VkSemaphore signal_semaphores[] = { m_render_finished_semaphore };
 	VkResult present_result = VkResult::VK_RESULT_MAX_ENUM;
 	VkSwapchainKHR swap_chains[] = { m_swap_chain };
 	VkPresentInfoKHR present_info = {};
@@ -170,6 +182,16 @@ std::vector<VkFramebuffer> Renderer::Vulkan::VulkanSwapchain::GetSwapchainFrameB
 std::vector<VkCommandBuffer> Renderer::Vulkan::VulkanSwapchain::GetCommandBuffers()
 {
 	return m_command_buffers;
+}
+
+VkSemaphore Renderer::Vulkan::VulkanSwapchain::GetImageAvailableSemaphore()
+{
+	return m_image_available_semaphore;
+}
+
+VkSemaphore Renderer::Vulkan::VulkanSwapchain::GetRenderFinishedSemaphore()
+{
+	return m_render_finished_semaphore;
 }
 
 void Renderer::Vulkan::VulkanSwapchain::RebuildCommandBuffers()

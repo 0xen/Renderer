@@ -60,8 +60,7 @@ set(imgui_src
     ../third_party/imgui/imgui.cpp
     ../third_party/imgui/imgui_demo.cpp
     ../third_party/imgui/imgui_draw.cpp
-    ../third_party/imgui/examples/imgui_impl_sdl.cpp
-    ../third_party/imgui/examples/imgui_impl_vulkan.cpp
+    ../third_party/imgui/imgui_widgets.cpp
 )
 set(imgui_headers
     ../third_party/imgui/imconfig.h
@@ -70,8 +69,6 @@ set(imgui_headers
     ../third_party/imgui/stb_rect_pack.h
     ../third_party/imgui/stb_textedit.h
     ../third_party/imgui/stb_truetype.h
-    ../third_party/imgui/examples/imgui_impl_sdl.h
-    ../third_party/imgui/examples/imgui_impl_vulkan.h
 )
 list(APPEND source ${imgui_src})
 list(APPEND headers ${imgui_headers})
