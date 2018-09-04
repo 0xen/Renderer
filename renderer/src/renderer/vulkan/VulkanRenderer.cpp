@@ -16,7 +16,6 @@
 #include <renderer\vulkan\VulkanDescriptorSet.hpp>
 #include <renderer\vulkan\VulkanCommon.hpp>
 
-
 #include <assert.h>
 
 using namespace Renderer;
@@ -91,6 +90,21 @@ void Renderer::Vulkan::VulkanRenderer::InitilizeImGUI()
 			sizeof(ImDrawVert),
 			0
 			});
+		m_screen_dim = glm::vec2(1080, 720);
+		m_screen_res_buffer = CreateUniformBuffer(&m_screen_dim, sizeof(glm::vec2), 1);
+		m_screen_res_buffer->SetData();
+		
+
+		m_screen_res_pool = CreateDescriptorPool({
+			CreateDescriptor(Renderer::DescriptorType::UNIFORM, Renderer::ShaderStage::VERTEX_SHADER, 0),
+			});
+		m_imgui_pipeline->AttachDescriptorPool(m_screen_res_pool);
+
+		m_screen_res_set = m_screen_res_pool->CreateDescriptorSet();
+		m_screen_res_set->AttachBuffer(0, m_screen_res_buffer);
+		m_screen_res_set->UpdateSet();
+
+		m_imgui_pipeline->AttachDescriptorSet(0, m_screen_res_set);
 
 
 
@@ -111,7 +125,7 @@ void Renderer::Vulkan::VulkanRenderer::InitilizeImGUI()
 		texture_descriptor_set = font_texture_pool->CreateDescriptorSet();
 		texture_descriptor_set->AttachBuffer(0, m_font_texture);
 		texture_descriptor_set->UpdateSet();
-		m_imgui_pipeline->AttachDescriptorSet(0, texture_descriptor_set);
+		m_imgui_pipeline->AttachDescriptorSet(1, texture_descriptor_set);
 
 
 		m_imgui_pipeline->Build();
@@ -342,6 +356,12 @@ void VulkanRenderer::Stop()
 void Renderer::Vulkan::VulkanRenderer::Rebuild()
 {
 	m_swapchain->RebuildSwapchain();
+
+	if (built_imgui)
+	{
+		m_screen_dim = glm::vec2(m_window_handle->width, m_window_handle->height);
+		m_screen_res_buffer->SetData();
+	}
 }
 
 IUniformBuffer * Renderer::Vulkan::VulkanRenderer::CreateUniformBuffer(void * dataPtr, unsigned int indexSize, unsigned int elementCount)
