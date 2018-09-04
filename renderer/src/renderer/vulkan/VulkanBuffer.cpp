@@ -11,11 +11,15 @@ Renderer::Vulkan::VulkanBuffer::VulkanBuffer(VulkanDevice * device, void * dataP
 
 	VulkanCommon::CreateBuffer(device, m_indexSize * m_elementCount, usage, memory_propertys_flag, m_buffer);
 	VulkanCommon::MapBufferMemory(device, m_buffer, m_buffer.size);
+	mapped = true;
 }
 
 Renderer::Vulkan::VulkanBuffer::~VulkanBuffer()
 {
-	VulkanCommon::UnMapBufferMemory(m_device, m_buffer);
+	if (mapped)
+	{
+		VulkanCommon::UnMapBufferMemory(m_device, m_buffer);
+	}
 	VulkanCommon::DestroyBuffer(m_device, m_buffer);
 }
 

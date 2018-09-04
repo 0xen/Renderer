@@ -18,6 +18,7 @@ namespace Renderer
 			void SetupLayersAndExtensions();
 			void InitVulkanInstance();
 			void DeInitVulkanInstance();
+			bool CheckLayersSupport();
 			std::vector<const char*> m_instance_extensions;
 			std::vector<const char*> m_instance_layers;
 			const uint32_t m_engine_version = VK_MAKE_VERSION(1, 0, 0);			// Engine version

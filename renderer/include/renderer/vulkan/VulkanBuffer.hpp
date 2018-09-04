@@ -34,6 +34,7 @@ namespace Renderer
 			};
 			VulkanBufferData m_buffer;
 			VulkanDevice * m_device;
+			bool mapped = false;
 		};
 	}
 }

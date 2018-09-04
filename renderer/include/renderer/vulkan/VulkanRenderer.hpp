@@ -65,6 +65,8 @@ namespace Renderer
 			VulkanSwapchain* m_swapchain;
 
 			//ImGUI
+			bool built_imgui = false;
+
 			VulkanTextureBuffer* m_font_texture;
 			VulkanGraphicsPipeline* m_imgui_pipeline;
 			VkRenderPass m_render_pass;
@@ -77,6 +79,10 @@ namespace Renderer
 			std::vector<VkCommandBuffer> m_command_buffers;
 			IDescriptorSet* texture_descriptor_set;
 			IDescriptorPool* font_texture_pool;
+
+			// Semaphores
+			VkSemaphore m_image_available_semaphore;
+			VkSemaphore m_render_finished_semaphore;
 		};
 	}
 }

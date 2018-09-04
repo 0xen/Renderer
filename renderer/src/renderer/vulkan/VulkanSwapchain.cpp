@@ -107,15 +107,14 @@ void Renderer::Vulkan::VulkanSwapchain::SubmitQueue(unsigned int currentBuffer)
 	assert(!HasError());
 }
 
-void Renderer::Vulkan::VulkanSwapchain::Present()
+void Renderer::Vulkan::VulkanSwapchain::Present(std::vector<VkSemaphore> signal_semaphores)
 {
-	VkSemaphore signal_semaphores[] = { m_render_finished_semaphore };
 	VkResult present_result = VkResult::VK_RESULT_MAX_ENUM;
 	VkSwapchainKHR swap_chains[] = { m_swap_chain };
 	VkPresentInfoKHR present_info = {};
 	present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-	present_info.waitSemaphoreCount = 1;
-	present_info.pWaitSemaphores = signal_semaphores;
+	present_info.waitSemaphoreCount = signal_semaphores.size();
+	present_info.pWaitSemaphores = signal_semaphores.data();
 	present_info.swapchainCount = 1;
 	present_info.pSwapchains = swap_chains;
 	present_info.pImageIndices = &m_active_swapchain_image;
@@ -509,7 +508,7 @@ void Renderer::Vulkan::VulkanSwapchain::InitDepthImage()
 	VulkanCommon::CreateImage(m_device,m_swap_chain_extent, m_depth_image_format, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_depth_image, m_depth_image_memory);
 	VulkanCommon::CreateImageView(m_device,m_depth_image, m_depth_image_format, VK_IMAGE_ASPECT_DEPTH_BIT, m_depth_image_view);
 
-	VulkanCommon::TransitionImageLayout(m_device, m_depth_image, m_depth_image_format, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+	//VulkanCommon::TransitionImageLayout(m_device, m_depth_image, m_depth_image_format, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 }
 
 void Renderer::Vulkan::VulkanSwapchain::InitFrameBuffer()

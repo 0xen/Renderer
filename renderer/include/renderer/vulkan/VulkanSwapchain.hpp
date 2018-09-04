@@ -24,7 +24,7 @@ namespace Renderer
 			unsigned int GetCurrentBuffer();
 			VkSubmitInfo GetSubmitInfo();
 			void SubmitQueue(unsigned int currentBuffer);
-			void Present();
+			void Present(std::vector<VkSemaphore> signal_semaphores);
 			VkRenderPass* GetRenderPass();
 			VkSurfaceKHR* GetSurface();
 			VkSwapchainKHR GetSwapchain();

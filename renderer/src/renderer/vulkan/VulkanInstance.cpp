@@ -1,11 +1,14 @@
 #include <renderer/vulkan/VulkanInstance.hpp>
 #include <renderer\vulkan\VulkanCommon.hpp>
 
+#include <assert.h>
+
 using namespace Renderer::Vulkan;
 
 VulkanInstance::VulkanInstance()
 {
 	SetupLayersAndExtensions();
+	assert(CheckLayersSupport() && "Unsupported Layers");
 	InitVulkanInstance();
 }
 
@@ -25,6 +28,7 @@ void VulkanInstance::SetupLayersAndExtensions()
 
 	m_instance_extensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
 
+	//m_instance_layers.push_back("VK_LAYER_LUNARG_standard_validation");
 
 #ifdef _WIN32
 	m_instance_extensions.push_back(VK_KHR_WIN32_SURFACE_EXTENSION_NAME);
@@ -44,6 +48,7 @@ void VulkanInstance::SetupLayersAndExtensions()
 
 void VulkanInstance::InitVulkanInstance()
 {
+
 	VkApplicationInfo app_info = VulkanInitializers::ApplicationInfo(
 		"Temporary Name",
 		VK_MAKE_VERSION(1, 0, 0),
@@ -69,4 +74,36 @@ void VulkanInstance::DeInitVulkanInstance()
 		m_instance,
 		NULL
 	);
+}
+
+bool Renderer::Vulkan::VulkanInstance::CheckLayersSupport()
+{
+
+	uint32_t layerCount;
+	vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
+
+	std::vector<VkLayerProperties> availableLayers(layerCount);
+	vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
+
+
+	for (const char* layerName : m_instance_layers)
+	{
+		bool layerFound = false;
+
+		for (const auto& layerProperties : availableLayers)
+		{
+			if (strcmp(layerName, layerProperties.layerName) == 0)
+			{
+				layerFound = true;
+				break;
+			}
+		}
+
+		if (!layerFound)
+		{
+			return false;
+		}
+	}
+
+	return true;
 }

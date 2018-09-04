@@ -14,7 +14,7 @@ Renderer::Vulkan::VulkanDevice::VulkanDevice(VulkanInstance * instance, VulkanPh
 
 	std::vector<uint32_t> unique_queue_families;
 	unique_queue_families.push_back(m_physical_device->GetQueueFamilies()->graphics_indices);
-	unique_queue_families.push_back(m_physical_device->GetQueueFamilies()->compute_indices);
+	//unique_queue_families.push_back(m_physical_device->GetQueueFamilies()->compute_indices);
 
 
 	for (auto queue_family : unique_queue_families)
@@ -65,7 +65,7 @@ Renderer::Vulkan::VulkanDevice::VulkanDevice(VulkanInstance * instance, VulkanPh
 
 	assert(!HasError() && "Unable to create compute command pool");
 
-	VkCommandPoolCreateInfo graphics_pool_info = VulkanInitializers::CommandPoolCreateInfo(m_physical_device->GetQueueFamilies()->graphics_indices);
+	VkCommandPoolCreateInfo graphics_pool_info = VulkanInitializers::CommandPoolCreateInfo(m_physical_device->GetQueueFamilies()->graphics_indices, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
 	ErrorCheck(vkCreateCommandPool(
 		m_device,
 		&graphics_pool_info,

@@ -86,6 +86,55 @@ struct Camera
 	glm::mat4 projection;
 };
 
+struct Hex
+{
+	static int Test(ImGuiTextEditCallbackData* data)
+	{
+		Hex* hex = (Hex*)data->UserData;
+		if (!data->HasSelection())
+			hex->cursor = data->CursorPos;
+		if (data->SelectionStart == 0 && data->SelectionEnd == data->BufTextLen)
+		{
+			data->DeleteChars(0, data->BufTextLen);
+			data->SelectionStart = 0;
+			data->SelectionEnd = data->CursorPos = 2;
+		}
+		return 0;
+	}
+	int cursor;
+};
+
+char input_buffer[32];
+void Hex8(unsigned char& data, bool editing)
+{
+	if (editing)
+	{
+		ImGuiInputTextFlags flags = ImGuiInputTextFlags_CharsHexadecimal | ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll | ImGuiInputTextFlags_NoHorizontalScroll | ImGuiInputTextFlags_AlwaysInsertMode | ImGuiInputTextFlags_CallbackAlways | ImGuiInputTextFlags_CharsUppercase;
+		sprintf(input_buffer, "%02X", data);
+		Hex a;
+		a.cursor = -1;
+		bool change = ImGui::InputText("##data", input_buffer, 32, flags, Hex::Test, &a) || a.cursor >= 2;
+
+		// Turn back into bytes
+		int data_input_value;
+		if (change && sscanf(input_buffer, "%X", &data_input_value) == 1)
+		{
+			data = (unsigned char)data_input_value;
+			std::cout << (int)data_input_value << std::endl;
+		}
+	}
+	else
+	{
+		//ImGui::TextDisabled("00 "); // Cool effect
+		ImGui::Text("%02X ", data);
+		if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(0))
+		{
+			std::cout << "Clicked!" << std::endl;
+		}
+	}
+	
+}
+
 
 int main(int argc, char **argv)
 {
@@ -244,14 +293,22 @@ int main(int argc, char **argv)
 	renderer->InitilizeImGUI();
 
 	ImGuiIO& io = ImGui::GetIO();
+	ImGuiStyle * style = &ImGui::GetStyle();
 	io.DisplaySize = ImVec2(1080, 720);
 	io.MouseDrawCursor = true;
-	io.Fonts->AddFontFromFileTTF("DroidSans.ttf", 24);
+	io.KeyMap[ImGuiKey_Backspace] = SDL_SCANCODE_BACKSPACE;
+	io.KeyMap[ImGuiKey_Enter] = SDL_SCANCODE_RETURN;
 	
 
 	float rot = 0.01;
 	float fpn = 0.01;
 	bool running = true;
+
+
+	unsigned char data[2 * (8 * 4)]{ 1,2,3,4 };
+
+	unsigned char temp_wright_buffer[32]{0};
+
 	while (running)
 	{
 		io.DeltaTime = rot;
@@ -263,30 +320,76 @@ int main(int argc, char **argv)
 
 		model_position_buffer1->SetData();
 
+
+
 		ImGui::NewFrame();
-		ImGui::Begin("Vulkan Example");
-		ImGui::Text("Test");
+		ImGui::Begin("Register",NULL, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize);
+
+
+
+		//ImGui::InputText("", test, 255);
+
+
+		//ImGui::InputScalar("input u32 hex", ImGuiDataType_U32, &test, NULL, NULL, "%08X", ImGuiInputTextFlags_CharsHexadecimal);
+		//ImGui::InputText("##addr", test, 32, ImGuiInputTextFlags_CharsHexadecimal | ImGuiInputTextFlags_EnterReturnsTrue);
+		//std::cout << (int)test[0] << std::endl;
+
+
+
+		//static char buf3[64] = ""; ImGui::InputTextMultiline("hexadecimal", buf3, 64, ImVec2(200, 100), ImGuiInputTextFlags_CharsHexadecimal | ImGuiInputTextFlags_CharsUppercase);
+		
+		int width = 8;
+		int height = 4;
+
+		ImGui::PushItemWidth(40.0f);
+		float line_offset = 0.0f;
+		for (int y = 0; y < height; y++)
+		{
+			for (int x = 0; x < width; x++)
+			{
+				line_offset += 40.0f;
+				Hex8(data[width + width * height],false);
+				ImGui::SameLine(line_offset + style->WindowPadding.x);
+			}
+			ImGui::NewLine();
+			line_offset = 0.0f;
+		}
+		/*ImGui::PushItemWidth(40.0f);
+
+		float offset = 0.0f;
+		for (int i = 0; i < 4; i++)
+		{
+			ImGui::SameLine(offset + style->WindowPadding.x);
+			offset += 40.0f;
+			// Read from memory and convert to hex
+			sprintf(temp_wright_buffer, "%02X", data[i]);
+			ImGui::InputText("##data", temp_wright_buffer, 3, flags);
+
+			// Turn back into bytes
+			int data_input_value;
+			if (sscanf(temp_wright_buffer, "%X", &data_input_value) == 1)
+			{
+				data[i] = (unsigned char)data_input_value;
+				std::cout << (int)data_input_value << std::endl;
+			}
+		}
+		*/
+
+
+		
+
+		/*ImGui::PushItemWidth(100.0f);
+		ImGui::InputFloat("", &rot);
+		ImGui::SameLine();
+		ImGui::InputFloat("", &rot);*/
+
+
+
 		ImGui::End();
+		ImGui::ShowTestWindow();
 		ImGui::Render();
 
 
-		/*ImGui::NewFrame();
-		ImGui::SetNextWindowSize(ImVec2(0, 0));
-		ImGui::SetNextWindowPos(ImVec2(650, 20));
-
-		ImGui::Begin("Vulkan Example", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
-
-		ImGui::SetWindowSize(ImVec2(200, 150));
-		ImGui::SetWindowPos(ImVec2(650, 250));
-		static float f = 0.0f;
-		ImGui::Text("Debug information");
-		ImGui::SliderFloat("float", &f, 0.0f, 1.0f);
-
-		ImGui::End();
-
-		ImGui::SetNextWindowPos(ImVec2(650, 20));
-		ImGui::ShowTestWindow();
-		ImGui::Render();*/
 
 
 		renderer->RenderImGUI();
@@ -318,20 +421,32 @@ int main(int argc, char **argv)
 				}
 				break;
 			case SDL_MOUSEBUTTONDOWN:
-				//do whatever you want to do after a mouse button was pressed,
-				// e.g.:
-				io.MouseDown[0] = true;
-				std::cout << (int)event.button.button << std::endl;
-				break;
 			case SDL_MOUSEBUTTONUP:
-				//do whatever you want to do after a mouse button was pressed,
-				// e.g.:
-				io.MouseDown[0] = false;
-				std::cout << (int)event.button.button << std::endl;
+				if (event.button.button == SDL_BUTTON_LEFT) io.MouseDown[0] = event.button.state == SDL_PRESSED;
+				if (event.button.button == SDL_BUTTON_RIGHT) io.MouseDown[1] = event.button.state == SDL_PRESSED;
+				if (event.button.button == SDL_BUTTON_MIDDLE) io.MouseDown[2] = event.button.state == SDL_PRESSED;
+				//io.MouseDown[0] = true;
 				break;
 			case SDL_MOUSEMOTION:
-
 				io.MousePos = ImVec2(event.motion.x, event.motion.y);
+				break;
+			case SDL_TEXTINPUT:
+			{
+				io.AddInputCharactersUTF8(event.text.text);
+				break;
+			}
+			case SDL_KEYDOWN:
+			case SDL_KEYUP:
+				{
+					int key = event.key.keysym.scancode;
+					IM_ASSERT(key >= 0 && key < IM_ARRAYSIZE(io.KeysDown));
+					io.KeysDown[key] = (event.type == SDL_KEYDOWN);
+					io.KeyShift = ((SDL_GetModState() & KMOD_SHIFT) != 0);
+					io.KeyCtrl = ((SDL_GetModState() & KMOD_CTRL) != 0);
+					io.KeyAlt = ((SDL_GetModState() & KMOD_ALT) != 0);
+					io.KeySuper = ((SDL_GetModState() & KMOD_GUI) != 0);
+
+				}
 				break;
 			}
 		}

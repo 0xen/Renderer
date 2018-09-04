@@ -220,7 +220,6 @@ void Renderer::Vulkan::VulkanCommon::UnMapBufferMemory(VulkanDevice * device, Vu
 
 void Renderer::Vulkan::VulkanCommon::DestroyBuffer(VulkanDevice * device, VulkanBufferData & buffer)
 {
-	UnMapBufferMemory(device, buffer);
 
 	vkDestroyBuffer(
 		*device->GetVulkanDevice(),
