@@ -313,9 +313,6 @@ int main(int argc, char **argv)
 	{
 		io.DeltaTime = rot;
 
-		//modelPos = glm::rotate(modelPos, glm::radians(rot), glm::vec3(1.0f, 0.0f, 0.0f));
-		//model2->SetData(0, modelPos);
-
 		model1->SetData(0, glm::rotate(model1->GetData<glm::mat4>(0), glm::radians(rot), glm::vec3(0.0f, 0.0f, 1.0f)));
 
 		model_position_buffer1->SetData();
@@ -323,77 +320,13 @@ int main(int argc, char **argv)
 
 
 		ImGui::NewFrame();
-		ImGui::Begin("Register",NULL, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize);
 
-
-
-		//ImGui::InputText("", test, 255);
-
-
-		//ImGui::InputScalar("input u32 hex", ImGuiDataType_U32, &test, NULL, NULL, "%08X", ImGuiInputTextFlags_CharsHexadecimal);
-		//ImGui::InputText("##addr", test, 32, ImGuiInputTextFlags_CharsHexadecimal | ImGuiInputTextFlags_EnterReturnsTrue);
-		//std::cout << (int)test[0] << std::endl;
-
-
-
-		//static char buf3[64] = ""; ImGui::InputTextMultiline("hexadecimal", buf3, 64, ImVec2(200, 100), ImGuiInputTextFlags_CharsHexadecimal | ImGuiInputTextFlags_CharsUppercase);
-		
-		int width = 8;
-		int height = 4;
-
-		ImGui::PushItemWidth(40.0f);
-		float line_offset = 0.0f;
-		for (int y = 0; y < height; y++)
-		{
-			for (int x = 0; x < width; x++)
-			{
-				line_offset += 40.0f;
-				Hex8(data[width + width * height],false);
-				ImGui::SameLine(line_offset + style->WindowPadding.x);
-			}
-			ImGui::NewLine();
-			line_offset = 0.0f;
-		}
-		/*ImGui::PushItemWidth(40.0f);
-
-		float offset = 0.0f;
-		for (int i = 0; i < 4; i++)
-		{
-			ImGui::SameLine(offset + style->WindowPadding.x);
-			offset += 40.0f;
-			// Read from memory and convert to hex
-			sprintf(temp_wright_buffer, "%02X", data[i]);
-			ImGui::InputText("##data", temp_wright_buffer, 3, flags);
-
-			// Turn back into bytes
-			int data_input_value;
-			if (sscanf(temp_wright_buffer, "%X", &data_input_value) == 1)
-			{
-				data[i] = (unsigned char)data_input_value;
-				std::cout << (int)data_input_value << std::endl;
-			}
-		}
-		*/
-
-
-		
-
-		/*ImGui::PushItemWidth(100.0f);
-		ImGui::InputFloat("", &rot);
-		ImGui::SameLine();
-		ImGui::InputFloat("", &rot);*/
-
-
-
-		ImGui::End();
 		ImGui::ShowTestWindow();
+
 		ImGui::Render();
 
 
-
-
 		renderer->RenderImGUI();
-
 
 
 		// Update all renderer's via there Update function
