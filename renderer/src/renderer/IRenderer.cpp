@@ -47,3 +47,8 @@ void Renderer::IRenderer::UnregisterRenderer(IRenderer * renderer)
 	if (it != m_renderers.end())
 		m_renderers.erase(it);
 }
+
+bool Renderer::IRenderer::IsRunning()
+{
+	return m_running;
+}

@@ -51,8 +51,8 @@ bool VulkanRenderer::Start(Renderer::NativeWindowHandle* window_handle)
 	Status::ErrorCheck(m_swapchain);
 	if (HasError())return false;
 
-
-	return true;
+	m_running = true;
+	return m_running;
 }
 
 void Renderer::Vulkan::VulkanRenderer::InitilizeImGUI()
@@ -307,6 +307,7 @@ void Renderer::Vulkan::VulkanRenderer::RenderImGUI()
 
 void VulkanRenderer::Update()
 {
+	if (!m_running)return;
 	unsigned int currentBuffer = m_swapchain->GetCurrentBuffer();
 
 	m_swapchain->SubmitQueue(currentBuffer);
@@ -351,6 +352,7 @@ void VulkanRenderer::Stop()
 	delete m_device;
 	delete m_physical_device;
 	delete m_instance;
+	m_running = false;
 }
 
 void Renderer::Vulkan::VulkanRenderer::Rebuild()
