@@ -1,6 +1,8 @@
 set(project_name Renderer)
 project(${project_name})
 
+set(HAVE_LIBC TRUE)
+
 set(common_src
     src/renderer/IRenderer.cpp
     src/renderer/IBuffer.cpp

@@ -8,6 +8,8 @@ set(src
 set(headers
 )
 
+set(HAVE_LIBC TRUE)
+
 # Load Lodepng
 set(lodepng_src
     ../../lodepng/lodepng.cpp

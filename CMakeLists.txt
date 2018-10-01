@@ -4,6 +4,7 @@ set(project_name demo)
 project(${project_name})
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
+set(HAVE_LIBC TRUE)
 
 add_subdirectory(third_party/SDL2)
 
