@@ -9,18 +9,16 @@ Renderer::Vulkan::VulkanBuffer::VulkanBuffer(VulkanDevice * device, void * dataP
 	m_indexSize = indexSize;
 	m_elementCount = elementCount;
 
-	VulkanCommon::CreateBuffer(device, m_indexSize * m_elementCount, usage, memory_propertys_flag, m_buffer);
-	VulkanCommon::MapBufferMemory(device, m_buffer, m_buffer.size);
+	m_usage = usage;
+	m_memory_propertys_flag = memory_propertys_flag;
+
+	CreateBuffer();
 	mapped = true;
 }
 
 Renderer::Vulkan::VulkanBuffer::~VulkanBuffer()
 {
-	if (mapped)
-	{
-		VulkanCommon::UnMapBufferMemory(m_device, m_buffer);
-	}
-	VulkanCommon::DestroyBuffer(m_device, m_buffer);
+	DestroyBuffer();
 }
 
 void Renderer::Vulkan::VulkanBuffer::SetData()
@@ -38,8 +36,13 @@ void Renderer::Vulkan::VulkanBuffer::SetData(unsigned int startIndex, unsigned i
 	memcpy(((char*)m_buffer.mapped_memory) + (startIndex * m_indexSize), ((char*)m_dataPtr) + (startIndex * m_indexSize), (::size_t)m_indexSize * count);
 }
 
-void Renderer::Vulkan::VulkanBuffer::Resize(unsigned int elementCount)
+void Renderer::Vulkan::VulkanBuffer::Resize(void * dataPtr, unsigned int elementCount)
 {
+	m_dataPtr = dataPtr;
+	m_bufferSize = m_indexSize * elementCount;
+	m_elementCount = elementCount;
+	DestroyBuffer();
+	CreateBuffer();
 }
 
 Renderer::Vulkan::VulkanBufferData * Renderer::Vulkan::VulkanBuffer::GetBufferData()
@@ -55,4 +58,19 @@ VkDescriptorImageInfo & Renderer::Vulkan::VulkanBuffer::GetDescriptorImageInfo()
 VkDescriptorBufferInfo & Renderer::Vulkan::VulkanBuffer::GetDescriptorBufferInfo()
 {
 	return m_buffer_info;
+}
+
+void Renderer::Vulkan::VulkanBuffer::CreateBuffer()
+{
+	VulkanCommon::CreateBuffer(m_device, m_indexSize * m_elementCount, m_usage, m_memory_propertys_flag, m_buffer);
+	VulkanCommon::MapBufferMemory(m_device, m_buffer, m_buffer.size);
+}
+
+void Renderer::Vulkan::VulkanBuffer::DestroyBuffer()
+{
+	if (mapped)
+	{
+		VulkanCommon::UnMapBufferMemory(m_device, m_buffer);
+	}
+	VulkanCommon::DestroyBuffer(m_device, m_buffer);
 }

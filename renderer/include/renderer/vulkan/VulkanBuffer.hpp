@@ -20,7 +20,7 @@ namespace Renderer
 			virtual void SetData(unsigned int count);
 			virtual void SetData(unsigned int startIndex, unsigned int count);
 
-			virtual void Resize(unsigned int elementCount);
+			virtual void Resize(void * dataPtr, unsigned int elementCount);
 
 			VulkanBufferData* GetBufferData();
 			VkDescriptorImageInfo& GetDescriptorImageInfo();
@@ -32,9 +32,13 @@ namespace Renderer
 				VkDescriptorImageInfo m_image_info;
 				VkDescriptorBufferInfo m_buffer_info;
 			};
+			void CreateBuffer();
+			void DestroyBuffer();
 			VulkanBufferData m_buffer;
 			VulkanDevice * m_device;
 			bool mapped = false;
+			VkBufferUsageFlags m_usage;
+			VkMemoryPropertyFlags m_memory_propertys_flag;
 		};
 	}
 }

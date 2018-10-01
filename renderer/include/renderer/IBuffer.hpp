@@ -9,7 +9,7 @@ namespace Renderer
 		virtual void SetData(unsigned int count) = 0;
 		virtual void SetData(unsigned int startIndex, unsigned int count) = 0;
 
-		virtual void Resize(unsigned int elementCount) = 0;
+		virtual void Resize(void * dataPtr, unsigned int elementCount) = 0;
 		
 		unsigned int GetIndexSize();
 		unsigned int GetElementCount();
