@@ -15,11 +15,17 @@ Renderer::Vulkan::VulkanComputeProgram::VulkanComputeProgram(VulkanDevice * devi
 Renderer::Vulkan::VulkanComputeProgram::~VulkanComputeProgram()
 {
 	vkDestroyFence(*m_device->GetVulkanDevice(), m_fence, NULL);
+	vkFreeCommandBuffers(
+		*m_device->GetVulkanDevice(),
+		*m_device->GetComputeCommandPool(),
+		1,
+		&m_command_buffer
+	);
 }
 
 void Renderer::Vulkan::VulkanComputeProgram::Build()
 {
-	m_command_buffer = VulkanCommon::BeginSingleTimeCommands(m_device, *m_device->GetGraphicsCommandPool());
+	m_command_buffer = VulkanCommon::BeginSingleTimeCommands(m_device, *m_device->GetComputeCommandPool());
 	for (auto cp : m_pipelines)
 	{
 		VulkanComputePipeline* vcp = dynamic_cast<VulkanComputePipeline*>(cp);
@@ -36,5 +42,10 @@ void Renderer::Vulkan::VulkanComputeProgram::Run()
 	VkSubmitInfo submitInfo = VulkanInitializers::SubmitInfo(m_command_buffer);
 
 	ErrorCheck(vkQueueSubmit(*m_device->GetComputeQueue(), 1, &submitInfo, m_fence));
+	assert(!HasError() && "Unable to submit queue");
+	vkQueueWaitIdle(
+		*m_device->GetComputeQueue()
+	);
 	ErrorCheck(vkWaitForFences(*m_device->GetVulkanDevice(), 1, &m_fence, VK_TRUE, LONG_MAX));
+	assert(!HasError() && "Unable to wait for fence");
 }
