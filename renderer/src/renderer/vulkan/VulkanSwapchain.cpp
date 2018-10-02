@@ -317,21 +317,23 @@ void Renderer::Vulkan::VulkanSwapchain::InitSwapchain()
 	assert(!HasError() && "Unable to create a swapchain");
 
 	// Get the swapchain image count
-	vkGetSwapchainImagesKHR(
+	ErrorCheck(vkGetSwapchainImagesKHR(
 		*m_device->GetVulkanDevice(),
 		m_swap_chain,
 		&image_count,
 		nullptr
-	);
+	));
+	assert(!HasError() && "Unable to get swapchain images");
 	m_swap_chain_images.resize(image_count);
 
 	// Get the swapchain images
-	vkGetSwapchainImagesKHR(
+	ErrorCheck(vkGetSwapchainImagesKHR(
 		*m_device->GetVulkanDevice(),
 		m_swap_chain,
 		&image_count,
 		m_swap_chain_images.data()
-	);
+	));
+	assert(!HasError() && "Unable to get swapchain images");
 }
 
 void Renderer::Vulkan::VulkanSwapchain::DeInitSwapchain()
@@ -356,20 +358,24 @@ void Renderer::Vulkan::VulkanSwapchain::CheckSwapChainSupport(VulkanSwapChainSup
 
 	// Get all formats
 	uint32_t format_count = 0;
-	vkGetPhysicalDeviceSurfaceFormatsKHR(*m_device->GetVulkanPhysicalDevice()->GetPhysicalDevice(), *m_surface, &format_count, nullptr);
+	ErrorCheck(vkGetPhysicalDeviceSurfaceFormatsKHR(*m_device->GetVulkanPhysicalDevice()->GetPhysicalDevice(), *m_surface, &format_count, nullptr));
 
+	assert(!HasError() && "Unable to get surface capabilities");
 	if (format_count == 0) return;
 	support.formats.resize(format_count);
-	vkGetPhysicalDeviceSurfaceFormatsKHR(*m_device->GetVulkanPhysicalDevice()->GetPhysicalDevice(), *m_surface, &format_count, support.formats.data());
+	ErrorCheck(vkGetPhysicalDeviceSurfaceFormatsKHR(*m_device->GetVulkanPhysicalDevice()->GetPhysicalDevice(), *m_surface, &format_count, support.formats.data()));
 
+	assert(!HasError() && "Unable to get surface capabilities");
 	// Get all the present modes
 	uint32_t present_mode_count;
-	vkGetPhysicalDeviceSurfacePresentModesKHR(*m_device->GetVulkanPhysicalDevice()->GetPhysicalDevice(), *m_surface, &present_mode_count, nullptr);
+	ErrorCheck(vkGetPhysicalDeviceSurfacePresentModesKHR(*m_device->GetVulkanPhysicalDevice()->GetPhysicalDevice(), *m_surface, &present_mode_count, nullptr));
 
+	assert(!HasError() && "Unable to get surface capabilities");
 	if (present_mode_count == 0) return;
 	support.present_modes.resize(present_mode_count);
-	vkGetPhysicalDeviceSurfacePresentModesKHR(*m_device->GetVulkanPhysicalDevice()->GetPhysicalDevice(), *m_surface, &present_mode_count, support.present_modes.data());
+	ErrorCheck(vkGetPhysicalDeviceSurfacePresentModesKHR(*m_device->GetVulkanPhysicalDevice()->GetPhysicalDevice(), *m_surface, &present_mode_count, support.present_modes.data()));
 
+	assert(!HasError() && "Unable to get surface capabilities");
 }
 
 VkSurfaceFormatKHR Renderer::Vulkan::VulkanSwapchain::ChooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& available_formats)

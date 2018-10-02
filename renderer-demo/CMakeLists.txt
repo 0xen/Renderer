@@ -31,6 +31,7 @@ add_executable(${project_name} ${src} ${headers})
 
 target_link_libraries(${project_name} Renderer)
 target_link_libraries(${project_name} SDL2main)
+target_link_libraries(${project_name} SDL2-static)
 
 
 find_package(Vulkan)

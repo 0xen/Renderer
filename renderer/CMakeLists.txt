@@ -152,7 +152,6 @@ endif()
 
 include_directories(include)
 add_library(${project_name} STATIC ${source} ${headers})
-target_link_libraries(${project_name} SDL2-static)
 
 if(Vulkan_FOUND)
     target_link_libraries(${project_name} Vulkan::Vulkan)
