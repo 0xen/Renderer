@@ -91,7 +91,7 @@ void Renderer::Vulkan::VulkanComputePipeline::AttachToCommandBuffer(VkCommandBuf
 			1,
 			&it->second->GetDescriptorSet(),
 			0,
-			NULL
+			0
 		);
 	}
 

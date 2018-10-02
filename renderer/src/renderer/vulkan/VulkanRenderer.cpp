@@ -424,6 +424,8 @@ VkDescriptorType Renderer::Vulkan::VulkanRenderer::ToDescriptorType(DescriptorTy
 	{
 	case UNIFORM:
 		return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	case STORAGE_BUFFER:
+		return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 	case IMAGE_SAMPLER:
 		return VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 	}

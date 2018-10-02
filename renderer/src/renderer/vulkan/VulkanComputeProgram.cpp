@@ -43,9 +43,6 @@ void Renderer::Vulkan::VulkanComputeProgram::Run()
 
 	ErrorCheck(vkQueueSubmit(*m_device->GetComputeQueue(), 1, &submitInfo, m_fence));
 	assert(!HasError() && "Unable to submit queue");
-	vkQueueWaitIdle(
-		*m_device->GetComputeQueue()
-	);
 	ErrorCheck(vkWaitForFences(*m_device->GetVulkanDevice(), 1, &m_fence, VK_TRUE, LONG_MAX));
 	assert(!HasError() && "Unable to wait for fence");
 }

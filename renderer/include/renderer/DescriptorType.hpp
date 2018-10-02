@@ -5,6 +5,7 @@ namespace Renderer
 	enum DescriptorType
 	{
 		UNIFORM,
-		IMAGE_SAMPLER
+		IMAGE_SAMPLER,
+		STORAGE_BUFFER
 	};
 }
