@@ -148,7 +148,7 @@ bool Renderer::Vulkan::VulkanGraphicsPipeline::CreatePipeline()
 	VkPipelineRasterizationStateCreateInfo rasterizer = VulkanInitializers::PipelineRasterizationStateCreateInfo(
 		VkCullModeFlagBits::VK_CULL_MODE_NONE,
 		VK_FRONT_FACE_COUNTER_CLOCKWISE,
-		VkPolygonMode::VK_POLYGON_MODE_FILL,
+		VkPolygonMode::VK_POLYGON_MODE_LINE,
 		1.0f);
 
 	// Multi sampling

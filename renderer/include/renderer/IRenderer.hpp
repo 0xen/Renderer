@@ -45,7 +45,7 @@ namespace Renderer
 		// Remove the renderer from the list of renderers to be updated when calling UpdateAll, the renderer will still work as a stand alone renderer
 		static void UnregisterRenderer(IRenderer* renderer);
 
-		virtual IUniformBuffer* CreateUniformBuffer(void* dataPtr, unsigned int indexSize, unsigned int elementCount) = 0;
+		virtual IUniformBuffer* CreateUniformBuffer(void* dataPtr, unsigned int indexSize, unsigned int elementCount, bool modifiable = false) = 0;
 
 		virtual IVertexBuffer* CreateVertexBuffer(void* dataPtr, unsigned int indexSize, unsigned int elementCount) = 0;
 

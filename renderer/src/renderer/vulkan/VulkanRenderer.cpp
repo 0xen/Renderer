@@ -91,7 +91,7 @@ void Renderer::Vulkan::VulkanRenderer::InitilizeImGUI()
 			0
 			});
 		m_screen_dim = glm::vec2(1080, 720);
-		m_screen_res_buffer = CreateUniformBuffer(&m_screen_dim, sizeof(glm::vec2), 1);
+		m_screen_res_buffer = CreateUniformBuffer(&m_screen_dim, sizeof(glm::vec2), 1, true);
 		m_screen_res_buffer->SetData();
 		
 
@@ -366,9 +366,9 @@ void Renderer::Vulkan::VulkanRenderer::Rebuild()
 	}
 }
 
-IUniformBuffer * Renderer::Vulkan::VulkanRenderer::CreateUniformBuffer(void * dataPtr, unsigned int indexSize, unsigned int elementCount)
+IUniformBuffer * Renderer::Vulkan::VulkanRenderer::CreateUniformBuffer(void * dataPtr, unsigned int indexSize, unsigned int elementCount, bool modifiable)
 {
-	return new VulkanUniformBuffer(m_device, dataPtr, indexSize, elementCount);
+	return new VulkanUniformBuffer(m_device, dataPtr, indexSize, elementCount, modifiable);
 }
 
 IVertexBuffer * Renderer::Vulkan::VulkanRenderer::CreateVertexBuffer(void * dataPtr, unsigned int indexSize, unsigned int elementCount)

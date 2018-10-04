@@ -168,7 +168,7 @@ int main(int argc, char **argv)
 			data[i] = 2 + i;
 		}
 
-		IUniformBuffer* buffer = renderer->CreateUniformBuffer(data, sizeof(float), 10);
+		IUniformBuffer* buffer = renderer->CreateUniformBuffer(data, sizeof(float), 10, true);
 		buffer->SetData();
 
 		// Create camera pool

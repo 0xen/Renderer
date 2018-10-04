@@ -6,7 +6,8 @@ Renderer::Vulkan::VulkanIndexBuffer::VulkanIndexBuffer(VulkanDevice * device, vo
 		VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
 {
-	
+	VkDeviceSize offset = 0;
+	m_buffer_info = VulkanInitializers::DescriptorBufferInfo(m_buffer.buffer, (uint32_t)m_buffer.size, offset);
 }
 
 Renderer::Vulkan::VulkanIndexBuffer::~VulkanIndexBuffer()
