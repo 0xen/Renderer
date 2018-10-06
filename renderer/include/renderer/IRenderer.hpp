@@ -59,6 +59,8 @@ namespace Renderer
 
 		virtual IModelPool* CreateModelPool(IVertexBuffer* vertex_buffer, IIndexBuffer* index_buffer) = 0;
 
+		virtual IModelPool* CreateModelPool(IVertexBuffer* vertex_buffer) = 0;
+
 		virtual ITextureBuffer* CreateTextureBuffer(void* dataPtr, DataFormat format, unsigned int width, unsigned int height) = 0;
 
 		virtual IDescriptor* CreateDescriptor(DescriptorType descriptor_type, ShaderStage shader_stage, unsigned int binding) = 0;

@@ -403,6 +403,11 @@ IModelPool * Renderer::Vulkan::VulkanRenderer::CreateModelPool(IVertexBuffer * v
 	return new VulkanModelPool(m_device, vertex_buffer, index_buffer);
 }
 
+IModelPool * Renderer::Vulkan::VulkanRenderer::CreateModelPool(IVertexBuffer * vertex_buffer)
+{
+	return new VulkanModelPool(m_device, vertex_buffer);
+}
+
 ITextureBuffer * Renderer::Vulkan::VulkanRenderer::CreateTextureBuffer(void * dataPtr, DataFormat format, unsigned int width, unsigned int height)
 {
 	return new VulkanTextureBuffer(m_device, dataPtr, format, width, height);

@@ -332,10 +332,13 @@ int main(int argc, char **argv)
 	model_pool1->AttachDescriptorSet(1, texture_descriptor_set1);
 
 
+	static const int POSITION_BUFFER = 0;
+
+
 	glm::mat4* model_position_array1 = new glm::mat4[1];
 	IUniformBuffer* model_position_buffer1 = renderer->CreateUniformBuffer(model_position_array1, sizeof(glm::mat4), 1);
 
-	model_pool1->AttachBuffer(0, model_position_buffer1);
+	model_pool1->AttachBuffer(POSITION_BUFFER, model_position_buffer1);
 
 	IModel* model1 = model_pool1->CreateModel();
 
@@ -343,7 +346,7 @@ int main(int argc, char **argv)
 	modelPos = glm::translate(modelPos, glm::vec3(2, 0, -20));
 	modelPos = glm::scale(modelPos, glm::vec3(1.0f, 1.0f, 1.0f));
 
-	model1->SetData(0, modelPos);
+	model1->SetData(POSITION_BUFFER, modelPos);
 
 
 	model_position_buffer1->SetData();

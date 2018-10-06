@@ -35,6 +35,8 @@ void Renderer::Vulkan::VulkanComputeProgram::Build()
 	ErrorCheck(vkEndCommandBuffer(
 		m_command_buffer
 	));
+
+	assert(!HasError() && "Unable to build pipeline");
 }
 
 void Renderer::Vulkan::VulkanComputeProgram::Run()
