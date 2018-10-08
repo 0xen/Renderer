@@ -31,6 +31,7 @@ std::map<Renderer::DataFormat, VkFormat> Renderer::Vulkan::VulkanGraphicsPipelin
 {
 	{ Renderer::DataFormat::R32G32_FLOAT,VkFormat::VK_FORMAT_R32G32_SFLOAT },
 	{ Renderer::DataFormat::R32G32B32_FLOAT,VkFormat::VK_FORMAT_R32G32B32_SFLOAT },
+	{ Renderer::DataFormat::R32G32B32A32_FLOAT,VkFormat::VK_FORMAT_R32G32B32A32_SFLOAT },
 	{ Renderer::DataFormat::R8G8B8A8_UNORM,VkFormat::VK_FORMAT_R8G8B8A8_UNORM },
 };
 
@@ -148,7 +149,7 @@ bool Renderer::Vulkan::VulkanGraphicsPipeline::CreatePipeline()
 	VkPipelineRasterizationStateCreateInfo rasterizer = VulkanInitializers::PipelineRasterizationStateCreateInfo(
 		VkCullModeFlagBits::VK_CULL_MODE_NONE,
 		VK_FRONT_FACE_COUNTER_CLOCKWISE,
-		VkPolygonMode::VK_POLYGON_MODE_LINE,
+		VkPolygonMode::VK_POLYGON_MODE_FILL,
 		1.0f);
 
 	// Multi sampling
