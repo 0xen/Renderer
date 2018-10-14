@@ -14,6 +14,7 @@ namespace Renderer
 		IModelPool(IVertexBuffer* vertex_buffer, IIndexBuffer* index_buffer);
 		bool Indexed();
 		virtual IModel * CreateModel() = 0;
+		virtual void Update() = 0;
 		virtual void AttachBuffer(unsigned int index, IUniformBuffer * buffer) = 0;
 		virtual void AttachDescriptorSet(unsigned int index, IDescriptorSet* descriptor_set) = 0;
 

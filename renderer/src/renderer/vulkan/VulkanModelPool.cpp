@@ -76,6 +76,14 @@ Renderer::IModel * Renderer::Vulkan::VulkanModelPool::CreateModel()
 	return model;
 }
 
+void Renderer::Vulkan::VulkanModelPool::Update()
+{
+	for (auto it = m_buffers.begin(); it != m_buffers.end(); it++)
+	{
+		it->second->SetData();
+	}
+}
+
 void Renderer::Vulkan::VulkanModelPool::AttachBuffer(unsigned int index, IUniformBuffer * buffer)
 {
 	m_buffers[index] = dynamic_cast<VulkanUniformBuffer*>(buffer);

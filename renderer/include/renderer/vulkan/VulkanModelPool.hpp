@@ -23,6 +23,7 @@ namespace Renderer
 			VulkanModelPool(VulkanDevice* device, IVertexBuffer* vertex_buffer, IIndexBuffer* index_buffer);
 			~VulkanModelPool();
 			virtual IModel * CreateModel();
+			virtual void Update();
 			virtual void AttachBuffer(unsigned int index, IUniformBuffer * buffer);
 			virtual void AttachDescriptorSet(unsigned int index, IDescriptorSet* descriptor_set);
 			void AttachToCommandBuffer(VkCommandBuffer & command_buffer, VulkanPipeline* pipeline);
