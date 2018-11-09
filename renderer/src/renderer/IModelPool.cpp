@@ -17,3 +17,13 @@ bool Renderer::IModelPool::Indexed()
 {
 	return m_indexed;
 }
+
+Renderer::IVertexBuffer * Renderer::IModelPool::GetVertexBuffer()
+{
+	return m_vertex_buffer;
+}
+
+Renderer::IIndexBuffer * Renderer::IModelPool::GetIndexBuffer()
+{
+	return m_index_buffer;
+}

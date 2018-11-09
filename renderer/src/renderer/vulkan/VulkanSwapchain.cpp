@@ -243,7 +243,7 @@ void Renderer::Vulkan::VulkanSwapchain::RebuildCommandBuffers()
 		);
 
 
-		vkCmdSetLineWidth(m_command_buffers[i], 3.0f);
+		vkCmdSetLineWidth(m_command_buffers[i], 1.0f);
 		const VkViewport viewport = VulkanInitializers::Viewport(m_window_handle->width, m_window_handle->height, 0, 0, 0.0f, 1.0f);
 		const VkRect2D scissor = VulkanInitializers::Scissor(m_window_handle->width, m_window_handle->height);
 		vkCmdSetViewport(m_command_buffers[i], 0, 1, &viewport);
@@ -407,7 +407,8 @@ VkPresentModeKHR Renderer::Vulkan::VulkanSwapchain::ChooseSwapPresentMode(const 
 		// Loop for tipple buffering
 		if (available_present_mode == VK_PRESENT_MODE_MAILBOX_KHR)
 		{
-			return available_present_mode;
+			// Temporerply dissable everything but V-SYNC
+			//return available_present_mode;
 		}
 	}
 	// Fallback format that is guaranteed to be available

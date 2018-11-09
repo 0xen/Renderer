@@ -139,8 +139,6 @@ void Hex8(unsigned char& data, bool editing)
 int main(int argc, char **argv)
 {
 
-
-
 	// Define what rendering api we are wanting to use
 	RenderingAPI rendering_api = RenderingAPI::VulkanAPI;
 
@@ -281,7 +279,7 @@ int main(int argc, char **argv)
 	pipeline->AttachVertexBinding({
 		VertexInputRate::INPUT_RATE_INSTANCE,
 		{ 
-			{ 4, DataFormat::MAT4_FLOAT,offsetof(PositionVertex,pos) } 
+			{ 4, DataFormat::MAT4_FLOAT,0 } 
 		},
 		sizeof(PositionVertex),
 		1 
@@ -335,7 +333,7 @@ int main(int argc, char **argv)
 	static const int POSITION_BUFFER = 0;
 
 
-	glm::mat4* model_position_array1 = new glm::mat4[1];
+	glm::mat4* model_position_array1 = new glm::mat4[12];
 	IUniformBuffer* model_position_buffer1 = renderer->CreateUniformBuffer(model_position_array1, sizeof(glm::mat4), 1);
 
 	model_pool1->AttachBuffer(POSITION_BUFFER, model_position_buffer1);
@@ -348,18 +346,34 @@ int main(int argc, char **argv)
 
 	model1->SetData(POSITION_BUFFER, modelPos);
 
+	IModel* model2 = model_pool1->CreateModel();
+
+	modelPos = glm::mat4(1.0f);
+	modelPos = glm::translate(modelPos, glm::vec3(2, 0, -10));
+	modelPos = glm::scale(modelPos, glm::vec3(1.0f, 1.0f, 1.0f));
+
+	model2->SetData(POSITION_BUFFER, modelPos);
+
+	model1->ShouldRender(true);
+	model2->ShouldRender(true);
+
+	for (int i = 0; i < 12; i++)
+	{
+		glm::mat4& a = model_position_array1[i];
+		std::cout << "a";
+	}
+
 
 	model_position_buffer1->SetData();
 
 	pipeline->AttachModelPool(model_pool1);
-
 
 	renderer->InitilizeImGUI();
 
 	ImGuiIO& io = ImGui::GetIO();
 	ImGuiStyle * style = &ImGui::GetStyle();
 	io.DisplaySize = ImVec2(1080, 720);
-	io.MouseDrawCursor = true;
+	io.MouseDrawCursor = false;
 	io.KeyMap[ImGuiKey_Backspace] = SDL_SCANCODE_BACKSPACE;
 	io.KeyMap[ImGuiKey_Enter] = SDL_SCANCODE_RETURN;
 	

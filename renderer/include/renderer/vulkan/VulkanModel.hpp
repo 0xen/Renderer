@@ -7,10 +7,14 @@ namespace Renderer
 
 	namespace Vulkan
 	{
+		class VulkanModelPool;
 		class VulkanModel : public IModel
 		{
 		public:
-			VulkanModel(unsigned int model_pool_index);
+			VulkanModel(VulkanModelPool* pool, unsigned int model_pool_index);
+			virtual void ShouldRender(bool render);
+		private:
+			VulkanModelPool * m_pool;
 		};
 	}
 }

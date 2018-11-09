@@ -18,6 +18,8 @@ namespace Renderer
 		virtual void AttachBuffer(unsigned int index, IUniformBuffer * buffer) = 0;
 		virtual void AttachDescriptorSet(unsigned int index, IDescriptorSet* descriptor_set) = 0;
 
+		IVertexBuffer * GetVertexBuffer();
+		IIndexBuffer * GetIndexBuffer();
 	protected:
 		bool m_indexed;
 		IVertexBuffer * m_vertex_buffer;

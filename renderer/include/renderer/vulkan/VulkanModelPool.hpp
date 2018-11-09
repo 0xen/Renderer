@@ -29,15 +29,26 @@ namespace Renderer
 			void AttachToCommandBuffer(VkCommandBuffer & command_buffer, VulkanPipeline* pipeline);
 			bool HasChanged();
 		private:
+			void ResizeIndirectArray(unsigned int size);
+			void Render(unsigned int index, bool should_render);
 			unsigned int m_current_index;
 			VulkanDevice * m_device;
 			std::map<unsigned int, VulkanDescriptorSet*> m_descriptor_sets;
 			std::map<unsigned int, VulkanUniformBuffer*> m_buffers;
 			std::map<unsigned int, VulkanModel*> m_models;
-			VulkanBuffer* m_indirect_draw_buffer;
-			VkDrawIndirectCommand m_vertex_indirect_command;
-			VkDrawIndexedIndirectCommand m_indexed_indirect_command;
+			static const unsigned int m_indirect_array_padding;
+			VulkanBuffer* m_indirect_draw_buffer = nullptr;
+
+			union
+			{
+				void* m_indirect_command;
+				VkDrawIndirectCommand* m_vertex_indirect_command;
+				VkDrawIndexedIndirectCommand* m_indexed_indirect_command;
+			};
+
 			bool m_change;
+
+			friend VulkanModel;
 		};
 	}
 }

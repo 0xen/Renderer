@@ -15,6 +15,7 @@ namespace Renderer
 		template <class T>
 		T& GetData(unsigned int index);
 		unsigned int GetModelPoolIndex();
+		virtual void ShouldRender(bool render) = 0;
 	protected:
 		unsigned int m_model_pool_index;
 		std::map<unsigned int, void*> m_data_pointers;
