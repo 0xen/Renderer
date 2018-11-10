@@ -408,7 +408,7 @@ VkPresentModeKHR Renderer::Vulkan::VulkanSwapchain::ChooseSwapPresentMode(const 
 		if (available_present_mode == VK_PRESENT_MODE_MAILBOX_KHR)
 		{
 			// Temporerply dissable everything but V-SYNC
-			//return available_present_mode;
+			return available_present_mode;
 		}
 	}
 	// Fallback format that is guaranteed to be available

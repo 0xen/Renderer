@@ -111,7 +111,6 @@ void Renderer::Vulkan::VulkanModelPool::AttachToCommandBuffer(VkCommandBuffer & 
 
 
 	std::vector<VkBuffer> vertex_buffers;
-
 	for (auto buffer  = m_buffers.begin(); buffer!= m_buffers.end();buffer++)
 	{
 		vertex_buffers.push_back(buffer->second->GetBufferData()->buffer);
@@ -125,10 +124,11 @@ void Renderer::Vulkan::VulkanModelPool::AttachToCommandBuffer(VkCommandBuffer & 
 		offsets
 	);
 
-	// Can we draw all models in one draw pass
+	// Check to see if we can render all models in one draw pass
 	if (m_device->GetVulkanPhysicalDevice()->GetDeviceFeatures()->multiDrawIndirect &&
 		m_device->GetVulkanPhysicalDevice()->GetPhysicalDeviceProperties()->limits.maxDrawIndirectCount >= m_current_index)
 	{
+		// Render using a index buffer if one was provided
 		if (Indexed())
 		{
 			vkCmdDrawIndexedIndirect(
@@ -150,7 +150,7 @@ void Renderer::Vulkan::VulkanModelPool::AttachToCommandBuffer(VkCommandBuffer & 
 			);
 		}
 	}
-	else // If we cant, loop through for each draw
+	else // If we cant, loop through for each draw*/
 	{
 		if (Indexed())
 		{
@@ -233,12 +233,12 @@ void Renderer::Vulkan::VulkanModelPool::ResizeIndirectArray(unsigned int size)
 				indexed_indirect_command.instanceCount = 0;
 				indexed_indirect_command.firstIndex = 0;
 				indexed_indirect_command.vertexOffset = 0;
-				indexed_indirect_command.firstInstance = 0;
+				indexed_indirect_command.firstInstance = i;
 			}
 			else
 			{
 				VkDrawIndirectCommand& vertex_indirect_command = m_vertex_indirect_command[i];
-				vertex_indirect_command.firstInstance = 0;
+				vertex_indirect_command.firstInstance = i;
 				vertex_indirect_command.firstVertex = 0;
 				vertex_indirect_command.instanceCount = 0;
 				vertex_indirect_command.vertexCount = GetVertexBuffer()->GetElementCount();
@@ -255,7 +255,7 @@ void Renderer::Vulkan::VulkanModelPool::ResizeIndirectArray(unsigned int size)
 	{
 		m_indirect_command = indirect_command;
 		m_indirect_draw_buffer = new VulkanBuffer(m_device, m_indirect_command, instance_size, size,
-			VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
+			VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 		for (int i = 0; i < size; i++)
 		{
@@ -266,12 +266,12 @@ void Renderer::Vulkan::VulkanModelPool::ResizeIndirectArray(unsigned int size)
 				indexed_indirect_command.instanceCount = 0;
 				indexed_indirect_command.firstIndex = 0;
 				indexed_indirect_command.vertexOffset = 0;
-				indexed_indirect_command.firstInstance = 0;
+				indexed_indirect_command.firstInstance = i;
 			}
 			else
 			{
 				VkDrawIndirectCommand& vertex_indirect_command = m_vertex_indirect_command[i];
-				vertex_indirect_command.firstInstance = 0;
+				vertex_indirect_command.firstInstance = i;
 				vertex_indirect_command.firstVertex = 0;
 				vertex_indirect_command.instanceCount = 0;
 				vertex_indirect_command.vertexCount = GetVertexBuffer()->GetElementCount();
@@ -291,12 +291,12 @@ void Renderer::Vulkan::VulkanModelPool::Render(unsigned int index, bool should_r
 	if (Indexed())
 	{
 		VkDrawIndexedIndirectCommand& indexed_indirect_command = m_indexed_indirect_command[index];
-		indexed_indirect_command.instanceCount = (int)should_render;
+		indexed_indirect_command.instanceCount = (should_render ? 1 : 0);
 	}
 	else
 	{
 		VkDrawIndirectCommand& vertex_indirect_command = m_vertex_indirect_command[index];
-		vertex_indirect_command.instanceCount = (int)should_render;
+		vertex_indirect_command.instanceCount = (should_render ? 1 : 0);
 	}
 
 	m_indirect_draw_buffer->SetData(index, 1);

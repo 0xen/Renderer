@@ -155,66 +155,6 @@ int main(int argc, char **argv)
 
 
 
-
-
-	{
-
-		float* data = new float[10];
-
-		for (int i = 0; i < 10; i++)
-		{
-			data[i] = 2 + i;
-		}
-
-		IUniformBuffer* buffer = renderer->CreateUniformBuffer(data, sizeof(float), 10, true);
-		buffer->SetData();
-
-		// Create camera pool
-		// This is a layout for the camera input data
-		IDescriptorPool* example_pool = renderer->CreateDescriptorPool({
-			renderer->CreateDescriptor(Renderer::DescriptorType::STORAGE_BUFFER, Renderer::ShaderStage::COMPUTE_SHADER, 0),
-			});
-
-		// Create camera descriptor set from the tempalte
-		IDescriptorSet* example_descriptor_set = example_pool->CreateDescriptorSet();
-		// Attach the buffer
-		example_descriptor_set->AttachBuffer(0, buffer);
-		example_descriptor_set->UpdateSet();
-
-
-		IComputePipeline* pipeline = renderer->CreateComputePipeline("../../renderer-demo/Shaders/Compute/comp.spv", 10, 1, 1);
-
-
-		// Tell the pipeline what the input data will be payed out like
-		pipeline->AttachDescriptorPool(example_pool);
-		// Attach the camera descriptor set to the pipeline
-		pipeline->AttachDescriptorSet(0, example_descriptor_set);
-
-
-
-		assert(pipeline->Build() && "Unable to build pipeline");
-
-		IComputeProgram* program = renderer->CreateComputeProgram();
-		program->AttachPipeline(pipeline);
-		program->Build();
-		program->Run();
-
-		buffer->GetData();
-
-
-		for (int i = 0; i < 10; i++)
-		{
-			std::cout << data[i] << std::endl;
-		}
-
-	}
-
-
-
-
-
-
-
 	std::vector<MeshVertex> vertexData = {
 		MeshVertex(glm::vec3(1.0f,1.0f,0.0f), glm::vec2(0.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(1.0f,1.0f,0.0f)),
 		MeshVertex(glm::vec3(1.0f,-1.0f,0.0f), glm::vec2(0.0f,1.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(0.0f,1.0f,0.0f)),
@@ -334,14 +274,14 @@ int main(int argc, char **argv)
 
 
 	glm::mat4* model_position_array1 = new glm::mat4[12];
-	IUniformBuffer* model_position_buffer1 = renderer->CreateUniformBuffer(model_position_array1, sizeof(glm::mat4), 1);
+	IUniformBuffer* model_position_buffer1 = renderer->CreateUniformBuffer(model_position_array1, sizeof(glm::mat4), 2);
 
 	model_pool1->AttachBuffer(POSITION_BUFFER, model_position_buffer1);
 
 	IModel* model1 = model_pool1->CreateModel();
 
 	glm::mat4 modelPos = glm::mat4(1.0f);
-	modelPos = glm::translate(modelPos, glm::vec3(2, 0, -20));
+	modelPos = glm::translate(modelPos, glm::vec3(0, 0, -20));
 	modelPos = glm::scale(modelPos, glm::vec3(1.0f, 1.0f, 1.0f));
 
 	model1->SetData(POSITION_BUFFER, modelPos);
@@ -349,7 +289,7 @@ int main(int argc, char **argv)
 	IModel* model2 = model_pool1->CreateModel();
 
 	modelPos = glm::mat4(1.0f);
-	modelPos = glm::translate(modelPos, glm::vec3(2, 0, -10));
+	modelPos = glm::translate(modelPos, glm::vec3(0, 0, -10));
 	modelPos = glm::scale(modelPos, glm::vec3(1.0f, 1.0f, 1.0f));
 
 	model2->SetData(POSITION_BUFFER, modelPos);

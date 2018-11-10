@@ -2,6 +2,7 @@
 #include <renderer\vulkan\VulkanCommon.hpp>
 
 #include <assert.h>
+#include <iostream>
 
 using namespace Renderer::Vulkan;
 
@@ -22,13 +23,17 @@ VkInstance * VulkanInstance::GetInstance()
 	return &m_instance;
 }
 
+
 void VulkanInstance::SetupLayersAndExtensions()
 {
 	m_instance_extensions.empty();
 
 	m_instance_extensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
+	
+	m_instance_layers.push_back("VK_LAYER_LUNARG_standard_validation");
 
-	//m_instance_layers.push_back("VK_LAYER_LUNARG_standard_validation");
+	m_instance_extensions.push_back(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
+	m_instance_extensions.push_back("VK_EXT_debug_report");
 
 #ifdef _WIN32
 	m_instance_extensions.push_back(VK_KHR_WIN32_SURFACE_EXTENSION_NAME);
@@ -45,6 +50,21 @@ void VulkanInstance::SetupLayersAndExtensions()
 #endif
 
 }
+
+VKAPI_ATTR VkBool32 VKAPI_CALL MyDebugReportCallback(
+	VkDebugReportFlagsEXT       flags,
+	VkDebugReportObjectTypeEXT  objectType,
+	uint64_t                    object,
+	size_t                      location,
+	int32_t                     messageCode,
+	const char*                 pLayerPrefix,
+	const char*                 pMessage,
+	void*                       pUserData)
+{
+	std::cerr << pMessage << std::endl;
+	return VK_FALSE;
+}
+
 
 void VulkanInstance::InitVulkanInstance()
 {
@@ -66,6 +86,30 @@ void VulkanInstance::InitVulkanInstance()
 		NULL,											// Memory allocation callback
 		&m_instance										// The Vulkan instance to be initialized
 	));
+	/*
+	PFN_vkCreateDebugReportCallbackEXT vkCreateDebugReportCallbackEXT =
+		reinterpret_cast<PFN_vkCreateDebugReportCallbackEXT>
+		(vkGetInstanceProcAddr(m_instance, "vkCreateDebugReportCallbackEXT"));
+	PFN_vkDebugReportMessageEXT vkDebugReportMessageEXT =
+		reinterpret_cast<PFN_vkDebugReportMessageEXT>
+		(vkGetInstanceProcAddr(m_instance, "vkDebugReportMessageEXT"));
+	PFN_vkDestroyDebugReportCallbackEXT vkDestroyDebugReportCallbackEXT =
+		reinterpret_cast<PFN_vkDestroyDebugReportCallbackEXT>
+		(vkGetInstanceProcAddr(m_instance, "vkDestroyDebugReportCallbackEXT"));
+
+
+
+	VkDebugReportCallbackCreateInfoEXT callbackCreateInfo;
+	callbackCreateInfo.sType = VK_STRUCTURE_TYPE_DEBUG_REPORT_CREATE_INFO_EXT;
+	callbackCreateInfo.pNext = nullptr;
+	callbackCreateInfo.flags = VK_DEBUG_REPORT_ERROR_BIT_EXT |
+		VK_DEBUG_REPORT_WARNING_BIT_EXT |
+		VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT;
+	callbackCreateInfo.pfnCallback = &MyDebugReportCallback;
+	callbackCreateInfo.pUserData = nullptr;
+
+	VkDebugReportCallbackEXT callback;
+	VkResult result = vkCreateDebugReportCallbackEXT(m_instance, &callbackCreateInfo, nullptr, &callback);*/
 }
 
 void VulkanInstance::DeInitVulkanInstance()
