@@ -26,6 +26,7 @@ namespace Renderer
 			virtual void AttachModelPool(IModelPool* model_pool);
 			virtual void AttachVertexBinding(VertexBase vertex_binding);
 			virtual void UseDepth(bool depth);
+			virtual void UseCulling(bool culling);
 			bool HasChanged();
 		private:
 			static VkShaderStageFlagBits GetShaderStageFlag(ShaderStage stage);
@@ -44,6 +45,7 @@ namespace Renderer
 			std::vector<VertexBase> m_vertex_bases;
 			bool m_change;
 			bool m_use_depth_stencil = true;
+			bool m_use_culling = false;
 		};
 	}
 }

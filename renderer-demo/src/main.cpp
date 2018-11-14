@@ -193,11 +193,6 @@ int main(int argc, char **argv)
 	ITextureBuffer* texture = renderer->CreateTextureBuffer(image.data(), Renderer::DataFormat::R8G8B8A8_FLOAT, width, height);
 
 
-	IUniformBuffer* cameraBuffer = renderer->CreateUniformBuffer(&camera, sizeof(Camera), 1);
-	cameraBuffer->SetData();
-
-
-
 	IGraphicsPipeline* pipeline = renderer->CreateGraphicsPipeline({
 		{ ShaderStage::VERTEX_SHADER, "../../renderer-demo/Shaders/vert.spv" },
 		{ ShaderStage::FRAGMENT_SHADER, "../../renderer-demo/Shaders/frag.spv" }
@@ -224,6 +219,10 @@ int main(int argc, char **argv)
 		sizeof(PositionVertex),
 		1 
 		});
+
+
+	IUniformBuffer* cameraBuffer = renderer->CreateUniformBuffer(&camera, sizeof(Camera), 1);
+	cameraBuffer->SetData();
 
 
 	IDescriptorPool* camera_pool = renderer->CreateDescriptorPool({

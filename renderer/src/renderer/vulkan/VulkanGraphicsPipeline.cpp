@@ -115,7 +115,7 @@ bool Renderer::Vulkan::VulkanGraphicsPipeline::CreatePipeline()
 			{
 			case DataFormat::MAT4_FLOAT:
 			{
-				VkFormat format = VK_FORMAT_R32G32B32A32_UINT;
+				VkFormat format = VK_FORMAT_R32G32B32A32_SFLOAT;
 				uint32_t location = vertex->GetLocation();
 				unsigned int size_of = sizeof(glm::vec4);
 				m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(1, location, format, vertex->GetOffset() + 0));
@@ -147,7 +147,7 @@ bool Renderer::Vulkan::VulkanGraphicsPipeline::CreatePipeline()
 	// Rasteriser
 	// Needs to be abstracted
 	VkPipelineRasterizationStateCreateInfo rasterizer = VulkanInitializers::PipelineRasterizationStateCreateInfo(
-		VkCullModeFlagBits::VK_CULL_MODE_NONE,
+		m_use_culling? VkCullModeFlagBits::VK_CULL_MODE_BACK_BIT :VkCullModeFlagBits::VK_CULL_MODE_NONE,
 		VK_FRONT_FACE_COUNTER_CLOCKWISE,
 		VkPolygonMode::VK_POLYGON_MODE_FILL,
 		1.0f);
@@ -237,6 +237,11 @@ void Renderer::Vulkan::VulkanGraphicsPipeline::AttachVertexBinding(VertexBase ve
 void Renderer::Vulkan::VulkanGraphicsPipeline::UseDepth(bool depth)
 {
 	m_use_depth_stencil = depth;
+}
+
+void Renderer::Vulkan::VulkanGraphicsPipeline::UseCulling(bool culling)
+{
+	m_use_culling = culling;
 }
 
 bool Renderer::Vulkan::VulkanGraphicsPipeline::HasChanged()

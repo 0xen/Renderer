@@ -183,14 +183,14 @@ void Renderer::Vulkan::VulkanCommon::CreateBuffer(VulkanDevice * device, VkDevic
 		buffer.buffer,
 		&mem_requirements
 	);
-
+	
 
 	VkMemoryAllocateInfo alloc_info = VulkanInitializers::MemoryAllocateInfo(mem_requirements.size, FindMemoryType(
 		device->GetVulkanPhysicalDevice(),
 		mem_requirements.memoryTypeBits,
 		properties
 	));
-	buffer.size = mem_requirements.size;
+	buffer.size = mem_requirements.size > size ? size : mem_requirements.size;
 	buffer.alignment = mem_requirements.alignment;
 	vkAllocateMemory(
 		*device->GetVulkanDevice(),
@@ -319,8 +319,11 @@ void Renderer::Vulkan::VulkanCommon::CopyBuffer(VulkanDevice * device, VkBuffer 
 	);
 }
 
-void Renderer::Vulkan::VulkanCommon::SetImageLayout(VkCommandBuffer cmdbuffer, VkImage image, VkImageLayout oldImageLayout, VkImageLayout newImageLayout, VkImageSubresourceRange subresourceRange, VkPipelineStageFlags srcStageMask, VkPipelineStageFlags dstStageMask)
+void Renderer::Vulkan::VulkanCommon::SetImageLayout(VkCommandBuffer cmdbuffer, VkImage image, VkImageLayout oldImageLayout, VkImageLayout newImageLayout, VkImageSubresourceRange subresourceRange)
 {
+	VkPipelineStageFlags srcStageMask;
+	VkPipelineStageFlags dstStageMask;
+
 	// Create an image barrier object
 	VkImageMemoryBarrier imageMemoryBarrier = VulkanInitializers::ImageMemoryBarrier();
 	imageMemoryBarrier.oldLayout = oldImageLayout;
@@ -331,7 +334,7 @@ void Renderer::Vulkan::VulkanCommon::SetImageLayout(VkCommandBuffer cmdbuffer, V
 	// Source layouts (old)
 	// Source access mask controls actions that have to be finished on the old layout
 	// before it will be transitioned to the new layout
-	switch (oldImageLayout)
+	/*switch (oldImageLayout)
 	{
 	case VK_IMAGE_LAYOUT_UNDEFINED:
 		// Image layout is undefined (or does not matter)
@@ -421,7 +424,33 @@ void Renderer::Vulkan::VulkanCommon::SetImageLayout(VkCommandBuffer cmdbuffer, V
 	default:
 		// Other source layouts aren't handled (yet)
 		break;
+	}*/
+
+
+	if (oldImageLayout == VK_IMAGE_LAYOUT_UNDEFINED && newImageLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
+	{
+		imageMemoryBarrier.srcAccessMask = 0;
+		imageMemoryBarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+		
+		srcStageMask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+		dstStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
 	}
+	else if (oldImageLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && newImageLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+	{
+		imageMemoryBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+		imageMemoryBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+		srcStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+		dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+	}
+	else
+	{
+		throw std::invalid_argument("unsupported layout transition!");
+	}
+
+
+
+
 
 	// Put barrier inside setup command buffer
 	vkCmdPipelineBarrier(
@@ -434,12 +463,12 @@ void Renderer::Vulkan::VulkanCommon::SetImageLayout(VkCommandBuffer cmdbuffer, V
 		1, &imageMemoryBarrier);
 }
 
-void Renderer::Vulkan::VulkanCommon::SetImageLayout(VkCommandBuffer cmdbuffer, VkImage image, VkImageAspectFlags aspectMask, VkImageLayout oldImageLayout, VkImageLayout newImageLayout, VkPipelineStageFlags srcStageMask, VkPipelineStageFlags dstStageMask)
+void Renderer::Vulkan::VulkanCommon::SetImageLayout(VkCommandBuffer cmdbuffer, VkImage image, VkImageAspectFlags aspectMask, VkImageLayout oldImageLayout, VkImageLayout newImageLayout)
 {
 	VkImageSubresourceRange subresourceRange = {};
 	subresourceRange.aspectMask = aspectMask;
 	subresourceRange.baseMipLevel = 0;
 	subresourceRange.levelCount = 1;
 	subresourceRange.layerCount = 1;
-	SetImageLayout(cmdbuffer, image, oldImageLayout, newImageLayout, subresourceRange, srcStageMask, dstStageMask);
+	SetImageLayout(cmdbuffer, image, oldImageLayout, newImageLayout, subresourceRange);
 }

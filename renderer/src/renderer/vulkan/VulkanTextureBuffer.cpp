@@ -193,9 +193,10 @@ void Renderer::Vulkan::VulkanTextureBuffer::MoveDataToImage()
 		m_image,
 		VK_IMAGE_LAYOUT_UNDEFINED,
 		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-		subresourceRange,
-		VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-		VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT);
+		subresourceRange//,
+		//VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+		//VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT
+	);
 
 
 	// Copy mip levels from staging buffer
@@ -216,9 +217,10 @@ void Renderer::Vulkan::VulkanTextureBuffer::MoveDataToImage()
 		m_image,
 		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 		m_image_layout,
-		subresourceRange,
-		VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-		VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT);
+		subresourceRange//,
+		//VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+		//VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT
+		);
 
 
 	ErrorCheck(vkEndCommandBuffer(copy_cmd));

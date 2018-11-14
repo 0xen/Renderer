@@ -29,7 +29,7 @@ Renderer::Vulkan::VulkanDescriptorPool::VulkanDescriptorPool(VulkanDevice * devi
 	}
 
 
-	VkDescriptorPoolCreateInfo create_info = VulkanInitializers::DescriptorPoolCreateInfo(m_descriptor_pool_sizes, 2);
+	VkDescriptorPoolCreateInfo create_info = VulkanInitializers::DescriptorPoolCreateInfo(m_descriptor_pool_sizes, 20);
 
 	ErrorCheck(vkCreateDescriptorPool(
 		*m_device->GetVulkanDevice(),
