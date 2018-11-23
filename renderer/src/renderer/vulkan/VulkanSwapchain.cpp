@@ -210,7 +210,6 @@ VkExtent2D Renderer::Vulkan::VulkanSwapchain::GetSwapchainExtent()
 void Renderer::Vulkan::VulkanSwapchain::RebuildCommandBuffers()
 {
 	VkCommandBufferBeginInfo begin_info = VulkanInitializers::CommandBufferBeginInfo(VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
-
 	std::array<VkClearValue, 2> clear_values;
 	
 	std::copy(std::begin(m_window_handle->clear_color.float32), std::end(m_window_handle->clear_color.float32), std::begin(clear_values[0].color.float32));

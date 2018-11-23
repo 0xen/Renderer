@@ -46,7 +46,8 @@ void WindowSetup(RenderingAPI api, const char* title, int width, int height)
 
 	SDL_SysWMinfo info;
 	SDL_VERSION(&info.version);
-	assert(SDL_GetWindowWMInfo(window, &info) && "Error, unable to get window info");
+	bool sucsess = SDL_GetWindowWMInfo(window, &info);
+	assert(sucsess && "Error, unable to get window info");
 
 	window_handle = new NativeWindowHandle(info.info.win.window, width, height);
 	window_handle->clear_color = { 0.2f,0.2f,0.2f,1.0f };
