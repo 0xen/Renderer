@@ -222,8 +222,8 @@ int main(int argc, char **argv)
 		});
 
 
-	IUniformBuffer* cameraBuffer = renderer->CreateUniformBuffer(&camera, sizeof(Camera), 1);
-	cameraBuffer->SetData();
+	IUniformBuffer* cameraBuffer = renderer->CreateUniformBuffer(&camera, BufferChain::Single, sizeof(Camera), 1);
+	cameraBuffer->SetData(BufferSlot::Primary);
 
 
 	IDescriptorPool* camera_pool = renderer->CreateDescriptorPool({
@@ -252,13 +252,8 @@ int main(int argc, char **argv)
 	IVertexBuffer* vertexBuffer = renderer->CreateVertexBuffer(vertexData.data(), sizeof(MeshVertex), vertexData.size());
 	IIndexBuffer* indexBuffer = renderer->CreateIndexBuffer(indexData.data(), sizeof(uint16_t), indexData.size());
 
-	vertexBuffer->SetData();
-	indexBuffer->SetData();
-
-
-
-
-
+	vertexBuffer->SetData(BufferSlot::Primary);
+	indexBuffer->SetData(BufferSlot::Primary);
 
 
 	IModelPool* model_pool1 = renderer->CreateModelPool(vertexBuffer, indexBuffer);
@@ -274,7 +269,7 @@ int main(int argc, char **argv)
 
 
 	glm::mat4* model_position_array1 = new glm::mat4[12];
-	IUniformBuffer* model_position_buffer1 = renderer->CreateUniformBuffer(model_position_array1, sizeof(glm::mat4), 2);
+	IUniformBuffer* model_position_buffer1 = renderer->CreateUniformBuffer(model_position_array1, BufferChain::Single, sizeof(glm::mat4), 2);
 
 	model_pool1->AttachBuffer(POSITION_BUFFER, model_position_buffer1);
 
@@ -300,11 +295,10 @@ int main(int argc, char **argv)
 	for (int i = 0; i < 12; i++)
 	{
 		glm::mat4& a = model_position_array1[i];
-		std::cout << "a";
 	}
 
 
-	model_position_buffer1->SetData();
+	model_position_buffer1->SetData(BufferSlot::Primary);
 
 	pipeline->AttachModelPool(model_pool1);
 
@@ -333,7 +327,7 @@ int main(int argc, char **argv)
 
 		model1->SetData(0, glm::rotate(model1->GetData<glm::mat4>(0), glm::radians(rot), glm::vec3(0.0f, 0.0f, 1.0f)));
 
-		model_position_buffer1->SetData();
+		model_position_buffer1->SetData(BufferSlot::Primary);
 
 
 

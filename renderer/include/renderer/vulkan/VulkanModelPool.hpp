@@ -26,12 +26,14 @@ namespace Renderer
 			virtual void Update();
 			virtual void AttachBuffer(unsigned int index, IUniformBuffer * buffer);
 			virtual void AttachDescriptorSet(unsigned int index, IDescriptorSet* descriptor_set);
+			virtual void SetVertexDrawCount(unsigned int count);
 			void AttachToCommandBuffer(VkCommandBuffer & command_buffer, VulkanPipeline* pipeline);
 			bool HasChanged();
 		private:
 			void ResizeIndirectArray(unsigned int size);
 			void Render(unsigned int index, bool should_render);
 			unsigned int m_current_index;
+			unsigned int m_vertex_draw_count;
 			VulkanDevice * m_device;
 			std::map<unsigned int, VulkanDescriptorSet*> m_descriptor_sets;
 			std::map<unsigned int, VulkanUniformBuffer*> m_buffers;

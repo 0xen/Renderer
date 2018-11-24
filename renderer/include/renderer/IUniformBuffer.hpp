@@ -9,8 +9,9 @@ namespace Renderer
 	class IUniformBuffer : public virtual IBuffer
 	{
 	public:
-		virtual void GetData() = 0;
-		virtual void GetData(unsigned int count) = 0;
-		virtual void GetData(unsigned int startIndex, unsigned int count) = 0;
+		IUniformBuffer(BufferChain level) : IBuffer(level) {}
+		virtual void GetData(BufferSlot slot) = 0;
+		virtual void GetData(BufferSlot slot, unsigned int count) = 0;
+		virtual void GetData(BufferSlot slot, unsigned int startIndex, unsigned int count) = 0;
 	};
 }

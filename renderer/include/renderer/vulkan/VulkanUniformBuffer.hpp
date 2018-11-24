@@ -11,12 +11,12 @@ namespace Renderer
 		class VulkanUniformBuffer : public IUniformBuffer, public VulkanBuffer
 		{
 		public:
-			VulkanUniformBuffer(VulkanDevice* device, void* dataPtr, unsigned int indexSize, unsigned int elementCount,bool modifiable);
+			VulkanUniformBuffer(VulkanDevice* device, BufferChain level, void* dataPtr, unsigned int indexSize, unsigned int elementCount,bool modifiable);
 			~VulkanUniformBuffer();
 
-			virtual void GetData();
-			virtual void GetData(unsigned int count);
-			virtual void GetData(unsigned int startIndex, unsigned int count);
+			virtual void GetData(BufferSlot slot);
+			virtual void GetData(BufferSlot slot,unsigned int count);
+			virtual void GetData(BufferSlot slot, unsigned int startIndex, unsigned int count);
 		};
 	}
 }

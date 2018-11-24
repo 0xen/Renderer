@@ -31,11 +31,11 @@ void Renderer::Vulkan::VulkanDescriptorSet::UpdateSet()
 			VulkanBuffer* buffer = m_bufers[vulkan_descriptor->GetBinding()];
 			if (vulkan_descriptor->GetDescriptorType() == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
 			{
-				m_write_descriptor_sets.push_back(VulkanInitializers::WriteDescriptorSet(m_descriptor_set, buffer->GetDescriptorImageInfo(), vulkan_descriptor->GetVulkanDescriptorType(), vulkan_descriptor->GetBinding()));
+				m_write_descriptor_sets.push_back(VulkanInitializers::WriteDescriptorSet(m_descriptor_set, buffer->GetDescriptorImageInfo(BufferSlot::Primary), vulkan_descriptor->GetVulkanDescriptorType(), vulkan_descriptor->GetBinding()));
 			}
 			else
 			{
-				m_write_descriptor_sets.push_back(VulkanInitializers::WriteDescriptorSet(m_descriptor_set, buffer->GetDescriptorBufferInfo(), vulkan_descriptor->GetVulkanDescriptorType(), vulkan_descriptor->GetBinding()));
+				m_write_descriptor_sets.push_back(VulkanInitializers::WriteDescriptorSet(m_descriptor_set, buffer->GetDescriptorBufferInfo(BufferSlot::Primary), vulkan_descriptor->GetVulkanDescriptorType(), vulkan_descriptor->GetBinding()));
 			}
 		}
 	}

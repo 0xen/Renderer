@@ -13,32 +13,40 @@ namespace Renderer
 		class VulkanBuffer : public virtual IBuffer
 		{
 		public:
-			VulkanBuffer(VulkanDevice* device, void* dataPtr, unsigned int indexSize, unsigned int elementCount, VkBufferUsageFlags _usage, VkMemoryPropertyFlags _memory_propertys_flag);
+			VulkanBuffer(VulkanDevice* device, BufferChain level, void* dataPtr, unsigned int indexSize, unsigned int elementCount, VkBufferUsageFlags _usage, VkMemoryPropertyFlags _memory_propertys_flag);
 			~VulkanBuffer();
 
-			virtual void SetData();
-			virtual void SetData(unsigned int count);
-			virtual void SetData(unsigned int startIndex, unsigned int count);
+			virtual void SetData(BufferSlot slot);
+			virtual void SetData(BufferSlot slot, unsigned int count);
+			virtual void SetData(BufferSlot slot, unsigned int startIndex, unsigned int count);
 
-			virtual void Resize(void * dataPtr, unsigned int elementCount);
+			virtual void Resize(BufferSlot slot, void * dataPtr, unsigned int elementCount);
 
-			VulkanBufferData* GetBufferData();
-			VkDescriptorImageInfo& GetDescriptorImageInfo();
-			VkDescriptorBufferInfo& GetDescriptorBufferInfo();
+			virtual void Swap(BufferSlot s1, BufferSlot s2);
+
+			VulkanBufferData* GetBufferData(BufferSlot slot);
+			VkDescriptorImageInfo& GetDescriptorImageInfo(BufferSlot slot);
+			VkDescriptorBufferInfo& GetDescriptorBufferInfo(BufferSlot slot);
 
 		protected:
-			union
-			{
-				VkDescriptorImageInfo m_image_info;
-				VkDescriptorBufferInfo m_buffer_info;
-			};
-			void CreateBuffer();
-			void DestroyBuffer();
-			VulkanBufferData m_buffer;
+			void CreateBuffer(BufferSlot slot);
+			void DestroyBuffer(BufferSlot slot);
 			VulkanDevice * m_device;
-			bool mapped = false;
 			VkBufferUsageFlags m_usage;
 			VkMemoryPropertyFlags m_memory_propertys_flag;
+
+			struct GpuBufferAllocation
+			{
+				bool mapped = false;
+				VulkanBufferData buffer;
+				union
+				{
+					VkDescriptorImageInfo image_info;
+					VkDescriptorBufferInfo buffer_info;
+				};
+			};
+			GpuBufferAllocation* m_gpu_allocation = nullptr;
+
 		};
 	}
 }

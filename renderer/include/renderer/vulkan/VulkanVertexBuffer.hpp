@@ -14,14 +14,15 @@ namespace Renderer
 			VulkanVertexBuffer(VulkanDevice* device, void* dataPtr, unsigned int indexSize, unsigned int elementCount);
 			~VulkanVertexBuffer();
 
-			virtual void SetData();
-			virtual void SetData(unsigned int count);
-			virtual void SetData(unsigned int startIndex, unsigned int count);
+			virtual void SetData(BufferSlot slot);
+			virtual void SetData(BufferSlot slot, unsigned int count);
+			virtual void SetData(BufferSlot slot, unsigned int startIndex, unsigned int count);
 
 		private:
-			void CreateStageingBuffer();
-			void DestroyStagingBuffer();
+			void CreateStageingBuffer(BufferSlot slot);
+			void DestroyStagingBuffer(BufferSlot slot);
 			VulkanBuffer * m_staging_buffer;
+			static const BufferChain m_level;
 		};
 	}
 }

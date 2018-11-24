@@ -8,6 +8,6 @@ namespace Renderer
 	class IVertexBuffer : public virtual IBuffer
 	{
 	public:
-
+		IVertexBuffer(BufferChain level) : IBuffer(level) {}
 	};
 }

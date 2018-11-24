@@ -6,15 +6,17 @@ using namespace Renderer;
 using namespace Renderer::Vulkan;
 
 Renderer::Vulkan::VulkanTextureBuffer::VulkanTextureBuffer(VulkanDevice* device, void* dataPtr, DataFormat format, unsigned int width, unsigned int height):
-	VulkanBuffer(device, dataPtr, GetFormatSize(format) * width * height, 1,
+	VulkanBuffer(device, BufferChain::Single, dataPtr, GetFormatSize(format) * width * height, 1,
 		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT),
+	IBuffer(BufferChain::Single),
+	ITextureBuffer(BufferChain::Single)
 {
 	m_format = format;
 	m_width = width;
 	m_height = height;
 	InitTexture();
-	m_image_info = VulkanInitializers::DescriptorImageInfo(m_sampler,m_view, m_image_layout);
+	m_gpu_allocation[BufferChain::Single].image_info = VulkanInitializers::DescriptorImageInfo(m_sampler,m_view, m_image_layout);
 }
 
 Renderer::Vulkan::VulkanTextureBuffer::~VulkanTextureBuffer()
@@ -26,10 +28,15 @@ VkImage & Renderer::Vulkan::VulkanTextureBuffer::GetImage()
 	return m_image;
 }
 
-void Renderer::Vulkan::VulkanTextureBuffer::SetData()
+void Renderer::Vulkan::VulkanTextureBuffer::SetData(BufferSlot slot)
 {
-	VulkanBuffer::SetData();
+	VulkanBuffer::SetData(slot);
 	MoveDataToImage();
+}
+
+intptr_t Renderer::Vulkan::VulkanTextureBuffer::GetTextureID()
+{
+	return (intptr_t)m_image;
 }
 
 void Renderer::Vulkan::VulkanTextureBuffer::InitTexture()
@@ -106,7 +113,7 @@ void Renderer::Vulkan::VulkanTextureBuffer::InitTexture()
 	));
 
 
-	SetData();
+	SetData(BufferSlot::Primary);
 
 
 
@@ -202,7 +209,7 @@ void Renderer::Vulkan::VulkanTextureBuffer::MoveDataToImage()
 	// Copy mip levels from staging buffer
 	vkCmdCopyBufferToImage(
 		copy_cmd,
-		GetBufferData()->buffer,
+		GetBufferData(BufferSlot::Primary)->buffer,
 		m_image,
 		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 		static_cast<uint32_t>(m_bufferCopyRegions.size()),

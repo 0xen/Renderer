@@ -8,6 +8,7 @@ namespace Renderer
 	class IIndexBuffer : public virtual IBuffer
 	{
 	public:
+		IIndexBuffer(BufferChain level) : IBuffer(level) {}
 
 	};
 }

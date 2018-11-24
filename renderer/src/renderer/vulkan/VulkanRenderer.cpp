@@ -91,8 +91,8 @@ void Renderer::Vulkan::VulkanRenderer::InitilizeImGUI()
 			0
 			});
 		m_screen_dim = glm::vec2(1080, 720);
-		m_screen_res_buffer = CreateUniformBuffer(&m_screen_dim, sizeof(glm::vec2), 1, true);
-		m_screen_res_buffer->SetData();
+		m_screen_res_buffer = CreateUniformBuffer(&m_screen_dim, BufferChain::Single, sizeof(glm::vec2), 1, true);
+		m_screen_res_buffer->SetData(BufferSlot::Primary);
 		
 
 		m_screen_res_pool = CreateDescriptorPool({
@@ -183,13 +183,13 @@ void Renderer::Vulkan::VulkanRenderer::RenderImGUI()
 	{
 		ImDrawData* imDrawData = ImGui::GetDrawData();
 
-		if (vertexBuffer != nullptr && vertexBuffer->GetElementCount() != imDrawData->TotalVtxCount)
+		if (vertexBuffer != nullptr && vertexBuffer->GetElementCount(BufferSlot::Primary) != imDrawData->TotalVtxCount)
 		{
 			delete vertexBuffer;
 			vertexBuffer = nullptr;
 			delete vertexData;
 		}
-		if (indexBuffer != nullptr && indexBuffer->GetElementCount() != imDrawData->TotalIdxCount)
+		if (indexBuffer != nullptr && indexBuffer->GetElementCount(BufferSlot::Primary) != imDrawData->TotalIdxCount)
 		{
 			delete indexBuffer;
 			indexBuffer = nullptr;
@@ -220,8 +220,8 @@ void Renderer::Vulkan::VulkanRenderer::RenderImGUI()
 				vtxDst += cmd_list->VtxBuffer.Size;
 				idxDst += cmd_list->IdxBuffer.Size;
 			}
-			vertexBuffer->SetData();
-			indexBuffer->SetData();
+			vertexBuffer->SetData(BufferSlot::Primary);
+			indexBuffer->SetData(BufferSlot::Primary);
 		}
 
 
@@ -261,8 +261,8 @@ void Renderer::Vulkan::VulkanRenderer::RenderImGUI()
 				vkCmdSetLineWidth(m_command_buffers[i], 1.0f);
 
 				VkDeviceSize offsets[1] = { 0 };
-				vkCmdBindVertexBuffers(m_command_buffers[i], 0, 1, &vertexBuffer->GetBufferData()->buffer, offsets);
-				vkCmdBindIndexBuffer(m_command_buffers[i], indexBuffer->GetBufferData()->buffer, 0, VK_INDEX_TYPE_UINT16);
+				vkCmdBindVertexBuffers(m_command_buffers[i], 0, 1, &vertexBuffer->GetBufferData(BufferSlot::Primary)->buffer, offsets);
+				vkCmdBindIndexBuffer(m_command_buffers[i], indexBuffer->GetBufferData(BufferSlot::Primary)->buffer, 0, VK_INDEX_TYPE_UINT16);
 
 				ImGuiIO& io = ImGui::GetIO();
 				const VkViewport viewport = VulkanInitializers::Viewport(io.DisplaySize.x, io.DisplaySize.y, 0, 0, 0.0f, 1.0f);
@@ -362,18 +362,18 @@ void Renderer::Vulkan::VulkanRenderer::Rebuild()
 	if (built_imgui)
 	{
 		m_screen_dim = glm::vec2(m_window_handle->width, m_window_handle->height);
-		m_screen_res_buffer->SetData();
+		m_screen_res_buffer->SetData(BufferSlot::Primary);
 	}
 }
 
-IUniformBuffer * Renderer::Vulkan::VulkanRenderer::CreateUniformBuffer(void * dataPtr, unsigned int indexSize, unsigned int elementCount, bool modifiable)
+IUniformBuffer * Renderer::Vulkan::VulkanRenderer::CreateUniformBuffer(void * dataPtr, BufferChain level, unsigned int indexSize, unsigned int elementCount, bool modifiable)
 {
-	return new VulkanUniformBuffer(m_device, dataPtr, indexSize, elementCount, modifiable);
+	return new VulkanUniformBuffer(m_device, level, dataPtr, indexSize, elementCount, modifiable);
 }
 
 IVertexBuffer * Renderer::Vulkan::VulkanRenderer::CreateVertexBuffer(void * dataPtr, unsigned int indexSize, unsigned int elementCount)
 {
-	return new VulkanVertexBuffer(m_device, dataPtr, indexSize, elementCount);
+	return new VulkanVertexBuffer(m_device,  dataPtr, indexSize, elementCount);
 }
 
 IIndexBuffer * Renderer::Vulkan::VulkanRenderer::CreateIndexBuffer(void * dataPtr, unsigned int indexSize, unsigned int elementCount)

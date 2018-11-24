@@ -35,7 +35,7 @@ namespace Renderer
 			virtual void Update();
 			virtual void Stop();
 			virtual void Rebuild();
-			virtual IUniformBuffer* CreateUniformBuffer(void* dataPtr, unsigned int indexSize, unsigned int elementCount, bool modifiable);
+			virtual IUniformBuffer* CreateUniformBuffer(void* dataPtr, BufferChain level, unsigned int indexSize, unsigned int elementCount, bool modifiable);
 
 			virtual IVertexBuffer* CreateVertexBuffer(void* dataPtr, unsigned int indexSize, unsigned int elementCount);
 
