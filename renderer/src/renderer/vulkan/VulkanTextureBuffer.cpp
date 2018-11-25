@@ -21,6 +21,26 @@ Renderer::Vulkan::VulkanTextureBuffer::VulkanTextureBuffer(VulkanDevice* device,
 
 Renderer::Vulkan::VulkanTextureBuffer::~VulkanTextureBuffer()
 {
+	vkDestroyImage(
+		*m_device->GetVulkanDevice(),
+		m_image,
+		nullptr
+	);
+	vkDestroySampler(
+		*m_device->GetVulkanDevice(),
+		m_sampler,
+		nullptr
+	);
+	vkDestroyImageView(
+		*m_device->GetVulkanDevice(),
+		m_view,
+		nullptr
+	);
+	vkFreeMemory(
+		*m_device->GetVulkanDevice(),
+		m_device_memory,
+		nullptr
+	);
 }
 
 VkImage & Renderer::Vulkan::VulkanTextureBuffer::GetImage()

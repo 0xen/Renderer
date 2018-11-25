@@ -12,7 +12,7 @@ namespace Renderer
 		{
 		public:
 			VulkanVertexBuffer(VulkanDevice* device, void* dataPtr, unsigned int indexSize, unsigned int elementCount);
-			~VulkanVertexBuffer();
+			virtual ~VulkanVertexBuffer();
 
 			virtual void SetData(BufferSlot slot);
 			virtual void SetData(BufferSlot slot, unsigned int count);

@@ -12,6 +12,7 @@ namespace Renderer
 	public:
 		IModelPool(IVertexBuffer* vertex_buffer);
 		IModelPool(IVertexBuffer* vertex_buffer, IIndexBuffer* index_buffer);
+		virtual ~IModelPool() {};
 		bool Indexed();
 		virtual IModel * CreateModel() = 0;
 		virtual void Update() = 0;

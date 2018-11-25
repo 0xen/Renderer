@@ -9,6 +9,5 @@ namespace Renderer
 	{
 	public:
 		IIndexBuffer(BufferChain level) : IBuffer(level) {}
-
 	};
 }

@@ -278,6 +278,7 @@ void Renderer::Vulkan::VulkanSwapchain::CreateSwapchain()
 void Renderer::Vulkan::VulkanSwapchain::DestroySwapchain()
 {
 	DeInitFrameBuffer();
+	DeInitDepthImage();
 	DeInitRenderPass();
 	DeInitSwapchainImages();
 	DeInitSwapchain();
@@ -515,6 +516,25 @@ void Renderer::Vulkan::VulkanSwapchain::InitDepthImage()
 	VulkanCommon::CreateImageView(m_device,m_depth_image, m_depth_image_format, VK_IMAGE_ASPECT_DEPTH_BIT, m_depth_image_view);
 
 	//VulkanCommon::TransitionImageLayout(m_device, m_depth_image, m_depth_image_format, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+}
+
+void Renderer::Vulkan::VulkanSwapchain::DeInitDepthImage()
+{
+	vkDestroyImageView(
+		*m_device->GetVulkanDevice(),
+		m_depth_image_view,
+		nullptr
+	);
+	vkFreeMemory(
+		*m_device->GetVulkanDevice(),
+		m_depth_image_memory,
+		nullptr
+	);
+	vkDestroyImage(
+		*m_device->GetVulkanDevice(),
+		m_depth_image,
+		nullptr
+	);
 }
 
 void Renderer::Vulkan::VulkanSwapchain::InitFrameBuffer()

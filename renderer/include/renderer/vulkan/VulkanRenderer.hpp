@@ -8,8 +8,6 @@
 
 #include <glm\glm.hpp>
 
-#include <imgui.h>
-
 namespace Renderer
 {
 	namespace Vulkan
@@ -30,8 +28,6 @@ namespace Renderer
 			VulkanRenderer();
 			~VulkanRenderer();
 			virtual bool Start(Renderer::NativeWindowHandle* window_handle);
-			virtual void InitilizeImGUI();
-			virtual void RenderImGUI();
 			virtual void Update();
 			virtual void Stop();
 			virtual void Rebuild();
@@ -68,31 +64,6 @@ namespace Renderer
 			VulkanPhysicalDevice* m_physical_device;
 			VulkanDevice* m_device;
 			VulkanSwapchain* m_swapchain;
-
-			//ImGUI
-			bool built_imgui = false;
-
-			VulkanTextureBuffer* m_font_texture;
-			VulkanGraphicsPipeline* m_imgui_pipeline;
-			VkRenderPass m_render_pass;
-
-			VulkanVertexBuffer* vertexBuffer = nullptr;
-			VulkanIndexBuffer* indexBuffer = nullptr;
-			IUniformBuffer* m_screen_res_buffer;
-
-			IDescriptorSet* m_screen_res_set;
-
-			ImDrawIdx* indexData = nullptr;
-			ImDrawVert* vertexData = nullptr;
-			std::vector<VkCommandBuffer> m_command_buffers;
-			IDescriptorSet* texture_descriptor_set;
-			IDescriptorPool* font_texture_pool;
-			IDescriptorPool* m_screen_res_pool;
-			glm::vec2 m_screen_dim;
-
-			// Semaphores
-			VkSemaphore m_image_available_semaphore;
-			VkSemaphore m_render_finished_semaphore;
 		};
 	}
 }

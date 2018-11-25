@@ -21,7 +21,7 @@ namespace Renderer
 	{
 	public:
 		IBuffer(BufferChain level);
-		~IBuffer();
+		virtual ~IBuffer();
 		virtual void SetData(BufferSlot slot) = 0;
 		virtual void SetData(BufferSlot slot, unsigned int count) = 0;
 		virtual void SetData(BufferSlot slot, unsigned int startIndex, unsigned int count) = 0;

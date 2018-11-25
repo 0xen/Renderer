@@ -68,6 +68,8 @@ namespace Renderer
 
 			// Depth image
 			void InitDepthImage();
+			void DeInitDepthImage();
+
 			// Frame buffer
 			void InitFrameBuffer();
 			void DeInitFrameBuffer();

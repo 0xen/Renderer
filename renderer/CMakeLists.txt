@@ -57,30 +57,6 @@ set(headers
     ${common_headers}
 )
 
-# Load imgui
-set(imgui_src
-    ../third_party/imgui/imgui.cpp
-    ../third_party/imgui/imgui_demo.cpp
-    ../third_party/imgui/imgui_draw.cpp
-    ../third_party/imgui/imgui_widgets.cpp
-    ../third_party/imgui/examples/imgui_impl_sdl.cpp
-)
-set(imgui_headers
-    ../third_party/imgui/imconfig.h
-    ../third_party/imgui/imgui.h
-    ../third_party/imgui/imgui_internal.h
-    ../third_party/imgui/stb_rect_pack.h
-    ../third_party/imgui/stb_textedit.h
-    ../third_party/imgui/stb_truetype.h
-    ../third_party/imgui/examples/imgui_impl_sdl.h
-)
-list(APPEND source ${imgui_src})
-list(APPEND headers ${imgui_headers})
-
-source_group("Source Files\\External\\imgui" FILES ${imgui_src})
-source_group("Header Files\\External\\imgui" FILES ${imgui_headers})
-
-
 find_package(Vulkan)
 
 if(Vulkan_FOUND)

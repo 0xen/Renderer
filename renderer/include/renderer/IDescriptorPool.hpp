@@ -8,6 +8,7 @@ namespace Renderer
 	class IDescriptorPool
 	{
 	public:
+		virtual ~IDescriptorPool() {}
 		virtual IDescriptorSet * CreateDescriptorSet() = 0;
 	};
 }

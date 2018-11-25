@@ -12,7 +12,7 @@ namespace Renderer
 		{
 		public:
 			VulkanIndexBuffer(VulkanDevice* device, void* dataPtr, unsigned int indexSize, unsigned int elementCount);
-			~VulkanIndexBuffer();
+			virtual ~VulkanIndexBuffer();
 
 			virtual void SetData(BufferSlot slot);
 			virtual void SetData(BufferSlot slot,unsigned int count);

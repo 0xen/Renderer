@@ -18,7 +18,7 @@ namespace Renderer
 		{
 		public:
 			VulkanGraphicsPipeline(VulkanDevice * device, VulkanSwapchain* swapchain, std::map<ShaderStage, const char*> paths);
-			~VulkanGraphicsPipeline();
+			virtual ~VulkanGraphicsPipeline();
 			virtual bool Build();
 			virtual bool CreatePipeline();
 			virtual void DestroyPipeline();
@@ -39,6 +39,7 @@ namespace Renderer
 
 
 			VulkanSwapchain * m_swapchain;
+			std::vector<VkPipelineShaderStageCreateInfo> m_shader_stages;
 			std::vector<VkVertexInputBindingDescription> m_binding_descriptions;
 			std::vector<VkVertexInputAttributeDescription> m_attribute_descriptions;
 			std::vector<VulkanModelPool*> m_model_pools;

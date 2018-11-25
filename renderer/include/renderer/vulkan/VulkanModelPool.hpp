@@ -21,7 +21,7 @@ namespace Renderer
 		public:
 			VulkanModelPool(VulkanDevice* device, IVertexBuffer* vertex_buffer);
 			VulkanModelPool(VulkanDevice* device, IVertexBuffer* vertex_buffer, IIndexBuffer* index_buffer);
-			~VulkanModelPool();
+			virtual ~VulkanModelPool();
 			virtual IModel * CreateModel();
 			virtual void Update();
 			virtual void AttachBuffer(unsigned int index, IUniformBuffer * buffer);

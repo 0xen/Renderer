@@ -16,6 +16,7 @@ namespace Renderer
 		{
 		public:
 			VulkanDescriptorPool(VulkanDevice * device, std::vector<IDescriptor*> descriptor);
+			virtual ~VulkanDescriptorPool();
 			VkDescriptorPool GetDescriptorPool();
 			VkDescriptorSetLayout GetDescriptorSetLayout();
 			std::vector<IDescriptor*> GetDescriptors();

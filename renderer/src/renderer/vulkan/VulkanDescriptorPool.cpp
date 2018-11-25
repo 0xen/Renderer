@@ -52,6 +52,25 @@ Renderer::Vulkan::VulkanDescriptorPool::VulkanDescriptorPool(VulkanDevice * devi
 	if (HasError())assert(0 && "Unable To Create Descriptor Set Layout");
 }
 
+Renderer::Vulkan::VulkanDescriptorPool::~VulkanDescriptorPool()
+{
+	for (int i = 0; i < m_descriptor.size(); i++)
+	{
+		delete m_descriptor[i];
+	}
+	vkDestroyDescriptorSetLayout(
+		*m_device->GetVulkanDevice(),
+		m_descriptor_set_layout,
+		nullptr
+	);
+	vkDestroyDescriptorPool(
+		*m_device->GetVulkanDevice(),
+		m_descriptor_pool,
+		nullptr
+	);
+
+}
+
 VkDescriptorPool Renderer::Vulkan::VulkanDescriptorPool::GetDescriptorPool()
 {
 	return m_descriptor_pool;

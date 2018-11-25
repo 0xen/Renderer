@@ -14,7 +14,6 @@
 #include <renderer\VertexBase.hpp>
 
 #include <lodepng.h>
-#include <imgui.h>
 
 #include <iostream>
 
@@ -86,60 +85,35 @@ struct Camera
 	glm::mat4 view;
 	glm::mat4 projection;
 };
-
-struct Hex
+/*
+class A
 {
-	static int Test(ImGuiTextEditCallbackData* data)
+public:
+	virtual ~A()
 	{
-		Hex* hex = (Hex*)data->UserData;
-		if (!data->HasSelection())
-			hex->cursor = data->CursorPos;
-		if (data->SelectionStart == 0 && data->SelectionEnd == data->BufTextLen)
-		{
-			data->DeleteChars(0, data->BufTextLen);
-			data->SelectionStart = 0;
-			data->SelectionEnd = data->CursorPos = 2;
-		}
-		return 0;
+		std::cout << "a";
 	}
-	int cursor;
 };
-
-char input_buffer[32];
-void Hex8(unsigned char& data, bool editing)
+class B : public A
 {
-	if (editing)
+public:
+};
+class C : public B
+{
+public:
+	virtual ~C()
 	{
-		ImGuiInputTextFlags flags = ImGuiInputTextFlags_CharsHexadecimal | ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll | ImGuiInputTextFlags_NoHorizontalScroll | ImGuiInputTextFlags_AlwaysInsertMode | ImGuiInputTextFlags_CallbackAlways | ImGuiInputTextFlags_CharsUppercase;
-		sprintf(input_buffer, "%02X", data);
-		Hex a;
-		a.cursor = -1;
-		bool change = ImGui::InputText("##data", input_buffer, 32, flags, Hex::Test, &a) || a.cursor >= 2;
+		std::cout << "c";
+	}
+};*/
 
-		// Turn back into bytes
-		int data_input_value;
-		if (change && sscanf(input_buffer, "%X", &data_input_value) == 1)
-		{
-			data = (unsigned char)data_input_value;
-			std::cout << (int)data_input_value << std::endl;
-		}
-	}
-	else
-	{
-		//ImGui::TextDisabled("00 "); // Cool effect
-		ImGui::Text("%02X ", data);
-		if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(0))
-		{
-			std::cout << "Clicked!" << std::endl;
-		}
-	}
-	
-}
 
 
 int main(int argc, char **argv)
 {
-
+	/*A* b = new C;
+	delete b;
+	exit(0);*/
 	// Define what rendering api we are wanting to use
 	RenderingAPI rendering_api = RenderingAPI::VulkanAPI;
 
@@ -155,7 +129,7 @@ int main(int argc, char **argv)
 	renderer->Start(window_handle);
 
 
-
+	
 	std::vector<MeshVertex> vertexData = {
 		MeshVertex(glm::vec3(1.0f,1.0f,0.0f), glm::vec2(0.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(1.0f,1.0f,0.0f)),
 		MeshVertex(glm::vec3(1.0f,-1.0f,0.0f), glm::vec2(0.0f,1.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(0.0f,1.0f,0.0f)),
@@ -193,13 +167,13 @@ int main(int argc, char **argv)
 
 	ITextureBuffer* texture = renderer->CreateTextureBuffer(image.data(), Renderer::DataFormat::R8G8B8A8_FLOAT, width, height);
 
-
+	
 	IGraphicsPipeline* pipeline = renderer->CreateGraphicsPipeline({
 		{ ShaderStage::VERTEX_SHADER, "../../renderer-demo/Shaders/vert.spv" },
 		{ ShaderStage::FRAGMENT_SHADER, "../../renderer-demo/Shaders/frag.spv" }
 		});
-
-
+	
+	
 	pipeline->AttachVertexBinding({
 		VertexInputRate::INPUT_RATE_VERTEX,
 		{
@@ -224,7 +198,6 @@ int main(int argc, char **argv)
 
 	IUniformBuffer* cameraBuffer = renderer->CreateUniformBuffer(&camera, BufferChain::Single, sizeof(Camera), 1);
 	cameraBuffer->SetData(BufferSlot::Primary);
-
 
 	IDescriptorPool* camera_pool = renderer->CreateDescriptorPool({
 		renderer->CreateDescriptor(Renderer::DescriptorType::UNIFORM, Renderer::ShaderStage::VERTEX_SHADER, 0),
@@ -301,15 +274,6 @@ int main(int argc, char **argv)
 	model_position_buffer1->SetData(BufferSlot::Primary);
 
 	pipeline->AttachModelPool(model_pool1);
-
-	renderer->InitilizeImGUI();
-
-	ImGuiIO& io = ImGui::GetIO();
-	ImGuiStyle * style = &ImGui::GetStyle();
-	io.DisplaySize = ImVec2(1080, 720);
-	io.MouseDrawCursor = false;
-	io.KeyMap[ImGuiKey_Backspace] = SDL_SCANCODE_BACKSPACE;
-	io.KeyMap[ImGuiKey_Enter] = SDL_SCANCODE_RETURN;
 	
 
 	float rot = 0.01;
@@ -319,27 +283,14 @@ int main(int argc, char **argv)
 
 	unsigned char data[2 * (8 * 4)]{ 1,2,3,4 };
 
+	
 	unsigned char temp_wright_buffer[32]{0};
-
 	while (running)
 	{
-		io.DeltaTime = rot;
 
 		model1->SetData(0, glm::rotate(model1->GetData<glm::mat4>(0), glm::radians(rot), glm::vec3(0.0f, 0.0f, 1.0f)));
 
 		model_position_buffer1->SetData(BufferSlot::Primary);
-
-
-
-		ImGui::NewFrame();
-
-		ImGui::ShowTestWindow();
-
-		ImGui::Render();
-
-
-		renderer->RenderImGUI();
-
 
 		// Update all renderer's via there Update function
 		IRenderer::UpdateAll();
@@ -361,48 +312,27 @@ int main(int argc, char **argv)
 					window_handle->width = event.window.data1;
 					window_handle->height = event.window.data2;
 					renderer->Rebuild();
-					io.DisplaySize = ImVec2(window_handle->width, window_handle->height);
 					break;
-				}
-				break;
-			case SDL_MOUSEBUTTONDOWN:
-			case SDL_MOUSEBUTTONUP:
-				if (event.button.button == SDL_BUTTON_LEFT) io.MouseDown[0] = event.button.state == SDL_PRESSED;
-				if (event.button.button == SDL_BUTTON_RIGHT) io.MouseDown[1] = event.button.state == SDL_PRESSED;
-				if (event.button.button == SDL_BUTTON_MIDDLE) io.MouseDown[2] = event.button.state == SDL_PRESSED;
-				//io.MouseDown[0] = true;
-				break;
-			case SDL_MOUSEMOTION:
-				io.MousePos = ImVec2(event.motion.x, event.motion.y);
-				break;
-			case SDL_TEXTINPUT:
-			{
-				io.AddInputCharactersUTF8(event.text.text);
-				break;
-			}
-			case SDL_KEYDOWN:
-			case SDL_KEYUP:
-				{
-					int key = event.key.keysym.scancode;
-					IM_ASSERT(key >= 0 && key < IM_ARRAYSIZE(io.KeysDown));
-					io.KeysDown[key] = (event.type == SDL_KEYDOWN);
-					io.KeyShift = ((SDL_GetModState() & KMOD_SHIFT) != 0);
-					io.KeyCtrl = ((SDL_GetModState() & KMOD_CTRL) != 0);
-					io.KeyAlt = ((SDL_GetModState() & KMOD_ALT) != 0);
-					io.KeySuper = ((SDL_GetModState() & KMOD_GUI) != 0);
-
 				}
 				break;
 			}
 		}
 	}
 
-
-	//delete pipeline;
-
+	delete cameraBuffer;
+	delete texture;
+	delete pipeline;
+	delete camera_pool;
+	delete camera_descriptor_set;
+	delete texture_pool;
 	delete indexBuffer;
 	delete vertexBuffer;
-
+	delete texture_descriptor_set1;
+	delete model1;
+	delete model2;
+	delete model_pool1;
+	delete model_position_buffer1;
+	
 	renderer->Stop();
 
 	delete renderer;

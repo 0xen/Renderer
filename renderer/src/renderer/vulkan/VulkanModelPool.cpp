@@ -37,7 +37,7 @@ Renderer::Vulkan::VulkanModelPool::VulkanModelPool(VulkanDevice* device, IVertex
 
 Renderer::Vulkan::VulkanModelPool::~VulkanModelPool()
 {
-
+	delete m_indirect_draw_buffer;
 }
 
 Renderer::IModel * Renderer::Vulkan::VulkanModelPool::CreateModel()

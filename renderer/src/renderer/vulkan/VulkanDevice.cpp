@@ -84,16 +84,18 @@ Renderer::Vulkan::VulkanDevice::~VulkanDevice()
 		m_graphics_command_pool,
 		nullptr
 	);
+	m_graphics_command_pool = VK_NULL_HANDLE;
 	vkDestroyCommandPool(
 		m_device,
 		m_compute_command_pool,
 		nullptr
 	);
-
+	m_compute_command_pool = VK_NULL_HANDLE;
 	vkDestroyDevice(
 		m_device,
 		nullptr
 	);
+	m_device = VK_NULL_HANDLE;
 }
 
 VkDevice * Renderer::Vulkan::VulkanDevice::GetVulkanDevice()

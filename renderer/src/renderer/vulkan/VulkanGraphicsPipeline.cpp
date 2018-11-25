@@ -54,6 +54,25 @@ Renderer::Vulkan::VulkanGraphicsPipeline::VulkanGraphicsPipeline(VulkanDevice * 
 
 Renderer::Vulkan::VulkanGraphicsPipeline::~VulkanGraphicsPipeline()
 {
+	vkDestroyPipeline(
+		*m_device->GetVulkanDevice(),
+		m_pipeline,
+		nullptr
+	);
+	vkDestroyPipelineLayout(
+		*m_device->GetVulkanDevice(),
+		m_pipeline_layout,
+		nullptr
+	);
+	for (int i = 0; i < m_shader_stages.size(); i++)
+	{
+		vkDestroyShaderModule(
+			*m_device->GetVulkanDevice(),
+			m_shader_stages[i].module,
+			nullptr
+		);
+	}
+
 }
 
 bool Renderer::Vulkan::VulkanGraphicsPipeline::Build()
@@ -84,7 +103,6 @@ bool Renderer::Vulkan::VulkanGraphicsPipeline::CreatePipeline()
 	auto shaders = GetPaths();
 
 
-	std::vector<VkPipelineShaderStageCreateInfo> shader_stages;
 
 	for (auto shader = shaders.begin(); shader != shaders.end(); shader++)
 	{
@@ -92,7 +110,7 @@ bool Renderer::Vulkan::VulkanGraphicsPipeline::CreatePipeline()
 
 		auto shader_module = VulkanCommon::CreateShaderModule(m_device, shaderCode);
 
-		shader_stages.push_back(VulkanInitializers::PipelineShaderStageCreateInfo(shader_module, "main", GetShaderStageFlag(shader->first)));
+		m_shader_stages.push_back(VulkanInitializers::PipelineShaderStageCreateInfo(shader_module, "main", GetShaderStageFlag(shader->first)));
 	}
 
 	m_binding_descriptions.clear();
@@ -175,7 +193,7 @@ bool Renderer::Vulkan::VulkanGraphicsPipeline::CreatePipeline()
 	// Triangle pipeline
 	VkPipelineInputAssemblyStateCreateInfo input_assembly = VulkanInitializers::PipelineInputAssemblyStateCreateInfo(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
 
-	VkGraphicsPipelineCreateInfo pipeline_info = VulkanInitializers::GraphicsPipelineCreateInfo(shader_stages, vertex_input_info, input_assembly,
+	VkGraphicsPipelineCreateInfo pipeline_info = VulkanInitializers::GraphicsPipelineCreateInfo(m_shader_stages, vertex_input_info, input_assembly,
 		viewport_state, rasterizer, multisampling, color_blending, depth_stencil, m_pipeline_layout, *m_swapchain->GetRenderPass(), dynamic_states_info);
 
 	ErrorCheck(vkCreateGraphicsPipelines(
