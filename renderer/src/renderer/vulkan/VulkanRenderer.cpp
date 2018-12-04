@@ -72,6 +72,7 @@ void VulkanRenderer::Update()
 
 void VulkanRenderer::Stop()
 {
+	if (!m_running)return;
 	delete m_swapchain;
 	delete m_device;
 	delete m_physical_device;

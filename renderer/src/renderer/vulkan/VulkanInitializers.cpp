@@ -665,3 +665,12 @@ VkSamplerCreateInfo Renderer::Vulkan::VulkanInitializers::SamplerCreateInfo()
 	sampler_create_info.maxAnisotropy = 1.0f;
 	return sampler_create_info;
 }
+
+VkMappedMemoryRange Renderer::Vulkan::VulkanInitializers::MappedMemoryRange(VkDeviceMemory & memory, VkDeviceSize size)
+{
+	VkMappedMemoryRange memoryRange = {};
+	memoryRange.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+	memoryRange.memory = memory;
+	memoryRange.size = VK_WHOLE_SIZE;
+	return memoryRange;
+}

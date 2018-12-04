@@ -127,6 +127,8 @@ namespace Renderer
 
 			VkSamplerCreateInfo SamplerCreateInfo();
 
+			VkMappedMemoryRange MappedMemoryRange(VkDeviceMemory& memory, VkDeviceSize size);
+
 		}
 	}
 }

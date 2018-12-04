@@ -39,6 +39,8 @@ void Renderer::Vulkan::VulkanBuffer::SetData(BufferSlot slot)
 		m_local_allocation[(unsigned int)slot].dataPtr,
 		(::size_t)m_local_allocation[(unsigned int)slot].bufferSize
 	);
+	VkMappedMemoryRange memoryRange = VulkanInitializers::MappedMemoryRange(m_gpu_allocation[(unsigned int)slot].buffer.buffer_memory, m_gpu_allocation[(unsigned int)slot].buffer.size);
+	vkFlushMappedMemoryRanges(*m_device->GetVulkanDevice(), 1, &memoryRange);
 }
 
 void Renderer::Vulkan::VulkanBuffer::SetData(BufferSlot slot, unsigned int count)
@@ -48,6 +50,8 @@ void Renderer::Vulkan::VulkanBuffer::SetData(BufferSlot slot, unsigned int count
 		m_local_allocation[(unsigned int)slot].dataPtr, 
 		(::size_t)m_local_allocation[(unsigned int)slot].indexSize * count
 	);
+	VkMappedMemoryRange memoryRange = VulkanInitializers::MappedMemoryRange(m_gpu_allocation[(unsigned int)slot].buffer.buffer_memory, m_gpu_allocation[(unsigned int)slot].buffer.size);
+	vkFlushMappedMemoryRanges(*m_device->GetVulkanDevice(), 1, &memoryRange);
 }
 
 void Renderer::Vulkan::VulkanBuffer::SetData(BufferSlot slot, unsigned int startIndex, unsigned int count)
@@ -56,6 +60,8 @@ void Renderer::Vulkan::VulkanBuffer::SetData(BufferSlot slot, unsigned int start
 		((char*)m_local_allocation[(unsigned int)slot].dataPtr) + (startIndex * m_local_allocation[(unsigned int)slot].indexSize),
 		(::size_t)m_local_allocation[(unsigned int)slot].indexSize * count
 	);
+	VkMappedMemoryRange memoryRange = VulkanInitializers::MappedMemoryRange(m_gpu_allocation[(unsigned int)slot].buffer.buffer_memory, m_gpu_allocation[(unsigned int)slot].buffer.size);
+	vkFlushMappedMemoryRanges(*m_device->GetVulkanDevice(), 1, &memoryRange);
 }
 
 void Renderer::Vulkan::VulkanBuffer::Resize(BufferSlot slot, void * dataPtr, unsigned int elementCount)
