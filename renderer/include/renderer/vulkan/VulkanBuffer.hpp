@@ -22,7 +22,7 @@ namespace Renderer
 
 			virtual void Resize(BufferSlot slot, void * dataPtr, unsigned int elementCount);
 
-			virtual void Swap(BufferSlot s1, BufferSlot s2);
+			virtual void Transfer(BufferSlot to, BufferSlot from);
 
 			VulkanBufferData* GetBufferData(BufferSlot slot);
 			VkDescriptorImageInfo& GetDescriptorImageInfo(BufferSlot slot);
@@ -31,6 +31,7 @@ namespace Renderer
 		protected:
 			void CreateBuffer(BufferSlot slot);
 			void DestroyBuffer(BufferSlot slot);
+			void Flush(BufferSlot slot);
 			VulkanDevice * m_device;
 			VkBufferUsageFlags m_usage;
 			VkMemoryPropertyFlags m_memory_propertys_flag;

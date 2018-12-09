@@ -242,14 +242,14 @@ int main(int argc, char **argv)
 
 
 	glm::mat4* model_position_array1 = new glm::mat4[12];
-	IUniformBuffer* model_position_buffer1 = renderer->CreateUniformBuffer(model_position_array1, BufferChain::Single, sizeof(glm::mat4), 2);
+	IUniformBuffer* model_position_buffer1 = renderer->CreateUniformBuffer(model_position_array1, BufferChain::Double, sizeof(glm::mat4), 2);
 
 	model_pool1->AttachBuffer(POSITION_BUFFER, model_position_buffer1);
 
 	IModel* model1 = model_pool1->CreateModel();
 
 	glm::mat4 modelPos = glm::mat4(1.0f);
-	modelPos = glm::translate(modelPos, glm::vec3(0, 0, -20));
+	modelPos = glm::translate(modelPos, glm::vec3(-2, 0, -20));
 	modelPos = glm::scale(modelPos, glm::vec3(1.0f, 1.0f, 1.0f));
 
 	model1->SetData(POSITION_BUFFER, modelPos);
@@ -257,7 +257,7 @@ int main(int argc, char **argv)
 	IModel* model2 = model_pool1->CreateModel();
 
 	modelPos = glm::mat4(1.0f);
-	modelPos = glm::translate(modelPos, glm::vec3(0, 0, -10));
+	modelPos = glm::translate(modelPos, glm::vec3(2, 0, -20));
 	modelPos = glm::scale(modelPos, glm::vec3(1.0f, 1.0f, 1.0f));
 
 	model2->SetData(POSITION_BUFFER, modelPos);
@@ -271,7 +271,8 @@ int main(int argc, char **argv)
 	}
 
 
-	model_position_buffer1->SetData(BufferSlot::Primary);
+	model_position_buffer1->SetData(BufferSlot::Secondery);
+	model_position_buffer1->Transfer(BufferSlot::Primary, BufferSlot::Secondery);
 
 	pipeline->AttachModelPool(model_pool1);
 	
@@ -290,7 +291,8 @@ int main(int argc, char **argv)
 
 		model1->SetData(0, glm::rotate(model1->GetData<glm::mat4>(0), glm::radians(rot), glm::vec3(0.0f, 0.0f, 1.0f)));
 
-		model_position_buffer1->SetData(BufferSlot::Primary);
+		model_position_buffer1->SetData(BufferSlot::Secondery);
+		model_position_buffer1->Transfer(BufferSlot::Primary, BufferSlot::Secondery);
 
 		// Update all renderer's via there Update function
 		IRenderer::UpdateAll();

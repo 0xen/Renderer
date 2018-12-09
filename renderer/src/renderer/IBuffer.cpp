@@ -1,9 +1,9 @@
 #include <renderer/IBuffer.hpp>
 #include <cstring>
 
-void Renderer::IBuffer::Swap(BufferSlot s1, BufferSlot s2)
+void Renderer::IBuffer::Transfer(BufferSlot to, BufferSlot from)
 {
-	memcpy(m_local_allocation + (unsigned int)s1, m_local_allocation + (unsigned int)s2, sizeof(BufferLocalAllocation));
+	memcpy(m_local_allocation + (unsigned int)to, m_local_allocation + (unsigned int)from, sizeof(BufferLocalAllocation));
 }
 
 unsigned int Renderer::IBuffer::GetIndexSize(BufferSlot slot)

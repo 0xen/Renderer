@@ -41,12 +41,17 @@ namespace Renderer
 			static const unsigned int m_indirect_array_padding;
 			VulkanBuffer* m_indirect_draw_buffer = nullptr;
 
-			union
+
+
+			std::vector<VkDrawIndirectCommand> m_vertex_indirect_command;
+			std::vector<VkDrawIndexedIndirectCommand> m_indexed_indirect_command;
+
+			/*union
 			{
-				void* m_indirect_command;
-				VkDrawIndirectCommand* m_vertex_indirect_command;
-				VkDrawIndexedIndirectCommand* m_indexed_indirect_command;
-			};
+				//void* m_indirect_command;
+				//VkDrawIndirectCommand* m_vertex_indirect_command;
+				//VkDrawIndexedIndirectCommand* m_indexed_indirect_command;
+			};*/
 
 			bool m_change;
 

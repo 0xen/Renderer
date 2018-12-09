@@ -28,7 +28,7 @@ namespace Renderer
 
 		virtual void Resize(BufferSlot slot, void * dataPtr, unsigned int elementCount) = 0;
 
-		virtual void Swap(BufferSlot s1, BufferSlot s2);
+		virtual void Transfer(BufferSlot to, BufferSlot from);
 		
 		unsigned int GetIndexSize(BufferSlot slot);
 		unsigned int GetElementCount(BufferSlot slot);

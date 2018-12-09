@@ -4,7 +4,7 @@
 
 const Renderer::BufferChain Renderer::Vulkan::VulkanVertexBuffer::m_level = BufferChain::Single;
 
-Renderer::Vulkan::VulkanVertexBuffer::VulkanVertexBuffer(VulkanDevice * device, void * dataPtr, unsigned int indexSize, unsigned int elementCount):
+Renderer::Vulkan::VulkanVertexBuffer::VulkanVertexBuffer(VulkanDevice * device, void * dataPtr, unsigned int indexSize, unsigned int elementCount) :
 	VulkanBuffer(device, m_level, dataPtr, indexSize, elementCount,
 		VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT),
@@ -32,7 +32,7 @@ void Renderer::Vulkan::VulkanVertexBuffer::SetData(BufferSlot slot)
 void Renderer::Vulkan::VulkanVertexBuffer::SetData(BufferSlot slot, unsigned int count)
 {
 	CreateStageingBuffer(slot);
-	m_staging_buffer->SetData(slot,count);
+	m_staging_buffer->SetData(slot, count);
 	VulkanCommon::CopyBuffer(m_device, m_staging_buffer->GetBufferData(slot)->buffer, this->GetBufferData(slot)->buffer, m_local_allocation[slot].bufferSize);
 	DestroyStagingBuffer(slot);
 }

@@ -15,8 +15,8 @@ namespace Renderer
 			virtual ~VulkanIndexBuffer();
 
 			virtual void SetData(BufferSlot slot);
-			virtual void SetData(BufferSlot slot,unsigned int count);
-			virtual void SetData(BufferSlot slot,unsigned int startIndex, unsigned int count);
+			virtual void SetData(BufferSlot slot, unsigned int count);
+			virtual void SetData(BufferSlot slot, unsigned int startIndex, unsigned int count);
 
 		private:
 			void CreateStageingBuffer(BufferSlot slot);
