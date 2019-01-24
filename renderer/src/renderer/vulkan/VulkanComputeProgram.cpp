@@ -25,7 +25,7 @@ Renderer::Vulkan::VulkanComputeProgram::~VulkanComputeProgram()
 
 void Renderer::Vulkan::VulkanComputeProgram::Build()
 {
-	m_command_buffer = VulkanCommon::BeginSingleTimeCommands(m_device, *m_device->GetComputeCommandPool());
+	m_command_buffer = VulkanCommon::BeginSimultaneousCommand(m_device, *m_device->GetComputeCommandPool());
 	for (auto cp : m_pipelines)
 	{
 		VulkanComputePipeline* vcp = dynamic_cast<VulkanComputePipeline*>(cp);
@@ -47,4 +47,9 @@ void Renderer::Vulkan::VulkanComputeProgram::Run()
 	assert(!HasError() && "Unable to submit queue");
 	ErrorCheck(vkWaitForFences(*m_device->GetVulkanDevice(), 1, &m_fence, VK_TRUE, LONG_MAX));
 	assert(!HasError() && "Unable to wait for fence");
+	vkResetFences(
+		*m_device->GetVulkanDevice(),
+		1,
+		&m_fence
+	);
 }

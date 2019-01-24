@@ -100,10 +100,10 @@ IIndexBuffer * Renderer::Vulkan::VulkanRenderer::CreateIndexBuffer(void * dataPt
 	return new VulkanIndexBuffer(m_device, dataPtr, indexSize, elementCount);
 }
 
-IGraphicsPipeline * Renderer::Vulkan::VulkanRenderer::CreateGraphicsPipeline(std::map<ShaderStage, const char*> paths)
+IGraphicsPipeline * Renderer::Vulkan::VulkanRenderer::CreateGraphicsPipeline(std::map<ShaderStage, const char*> paths, bool priority)
 {
 	VulkanGraphicsPipeline* graphics_pipeline = new VulkanGraphicsPipeline(m_device, m_swapchain, paths);
-	m_swapchain->AttachGraphicsPipeline(graphics_pipeline);
+	m_swapchain->AttachGraphicsPipeline(graphics_pipeline, priority);
 	return graphics_pipeline;
 }
 

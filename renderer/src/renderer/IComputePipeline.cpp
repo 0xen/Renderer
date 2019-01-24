@@ -24,3 +24,18 @@ unsigned int Renderer::IComputePipeline::GetZ()
 {
 	return m_z;
 }
+
+void Renderer::IComputePipeline::SetX(unsigned int x)
+{
+	m_x = x;
+}
+
+void Renderer::IComputePipeline::SetY(unsigned int y)
+{
+	m_y = y;
+}
+
+void Renderer::IComputePipeline::SetZ(unsigned int z)
+{
+	m_z = z;
+}

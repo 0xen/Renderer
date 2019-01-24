@@ -29,6 +29,8 @@ namespace Renderer
 
 			VkCommandBuffer BeginSingleTimeCommands(VulkanDevice* device, VkCommandPool command_pool);
 
+			VkCommandBuffer BeginSimultaneousCommand(VulkanDevice* device, VkCommandPool command_pool);
+
 			void EndSingleTimeCommands(VulkanDevice* device, VkCommandBuffer command_buffer, VkCommandPool command_pool);
 
 			bool HasStencilComponent(VkFormat format);

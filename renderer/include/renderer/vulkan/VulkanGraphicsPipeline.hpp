@@ -12,6 +12,7 @@ namespace Renderer
 {
 	namespace Vulkan
 	{
+
 		class VulkanSwapchain;
 		class VulkanModelPool;
 		class VulkanGraphicsPipeline : public IGraphicsPipeline, public VulkanPipeline, public VulkanStatus
@@ -27,6 +28,7 @@ namespace Renderer
 			virtual void AttachVertexBinding(VertexBase vertex_binding);
 			virtual void UseDepth(bool depth);
 			virtual void UseCulling(bool culling);
+			virtual void DefinePrimitiveTopology(PrimitiveTopology top);
 			bool HasChanged();
 		private:
 			static VkShaderStageFlagBits GetShaderStageFlag(ShaderStage stage);
@@ -44,6 +46,7 @@ namespace Renderer
 			std::vector<VkVertexInputAttributeDescription> m_attribute_descriptions;
 			std::vector<VulkanModelPool*> m_model_pools;
 			std::vector<VertexBase> m_vertex_bases;
+			VkPrimitiveTopology m_topology;
 			bool m_change;
 			bool m_use_depth_stencil = true;
 			bool m_use_culling = false;

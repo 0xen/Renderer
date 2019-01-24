@@ -18,6 +18,11 @@ bool Renderer::IModelPool::Indexed()
 	return m_indexed;
 }
 
+void Renderer::IModelPool::SetVertexBuffer(IVertexBuffer * vertex_buffer)
+{
+	m_vertex_buffer = vertex_buffer;
+}
+
 Renderer::IVertexBuffer * Renderer::IModelPool::GetVertexBuffer()
 {
 	return m_vertex_buffer;

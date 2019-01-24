@@ -152,9 +152,16 @@ VkPresentModeKHR Renderer::Vulkan::VulkanSwapchain::GetSurfacePresentMode()
 	return present_mode;
 }
 
-void Renderer::Vulkan::VulkanSwapchain::AttachGraphicsPipeline(VulkanGraphicsPipeline * pipeline)
+void Renderer::Vulkan::VulkanSwapchain::AttachGraphicsPipeline(VulkanGraphicsPipeline * pipeline, bool priority)
 {
-	m_pipelines.push_back(pipeline);
+	if (priority)
+	{
+		m_pipelines.push_back(pipeline);
+	}
+	else
+	{
+		m_pipelines.insert(m_pipelines.begin(), pipeline);
+	}
 }
 
 uint32_t Renderer::Vulkan::VulkanSwapchain::GetImageCount()
@@ -412,6 +419,7 @@ VkPresentModeKHR Renderer::Vulkan::VulkanSwapchain::ChooseSwapPresentMode(const 
 		}
 	}
 	// Fallback format that is guaranteed to be available
+	// This locks the rendering to V-Sync
 	return VK_PRESENT_MODE_FIFO_KHR;
 }
 

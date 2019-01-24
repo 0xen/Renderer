@@ -12,7 +12,7 @@ namespace Renderer
 		{
 		public:
 			VulkanComputeProgram(VulkanDevice * device);
-			~VulkanComputeProgram();
+			virtual ~VulkanComputeProgram();
 			virtual void Build();
 			virtual void Run();
 		private:

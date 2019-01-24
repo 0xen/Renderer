@@ -50,6 +50,7 @@ Renderer::Vulkan::VulkanGraphicsPipeline::VulkanGraphicsPipeline(VulkanDevice * 
 	m_swapchain = swapchain;
 
 	m_change = false;
+	m_topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 }
 
 Renderer::Vulkan::VulkanGraphicsPipeline::~VulkanGraphicsPipeline()
@@ -191,7 +192,7 @@ bool Renderer::Vulkan::VulkanGraphicsPipeline::CreatePipeline()
 	VkPipelineColorBlendStateCreateInfo color_blending = VulkanInitializers::PipelineColorBlendStateCreateInfo(color_blend_attachment);
 
 	// Triangle pipeline
-	VkPipelineInputAssemblyStateCreateInfo input_assembly = VulkanInitializers::PipelineInputAssemblyStateCreateInfo(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+	VkPipelineInputAssemblyStateCreateInfo input_assembly = VulkanInitializers::PipelineInputAssemblyStateCreateInfo(m_topology);
 
 	VkGraphicsPipelineCreateInfo pipeline_info = VulkanInitializers::GraphicsPipelineCreateInfo(m_shader_stages, vertex_input_info, input_assembly,
 		viewport_state, rasterizer, multisampling, color_blending, depth_stencil, m_pipeline_layout, *m_swapchain->GetRenderPass(), dynamic_states_info);
@@ -260,6 +261,23 @@ void Renderer::Vulkan::VulkanGraphicsPipeline::UseDepth(bool depth)
 void Renderer::Vulkan::VulkanGraphicsPipeline::UseCulling(bool culling)
 {
 	m_use_culling = culling;
+}
+
+void Renderer::Vulkan::VulkanGraphicsPipeline::DefinePrimitiveTopology(PrimitiveTopology top)
+{
+	switch (top)
+	{
+	case PointList:
+	{
+		m_topology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
+	}
+	break;
+	case TriangleList:
+	{
+		m_topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+	}
+	break;
+	}
 }
 
 bool Renderer::Vulkan::VulkanGraphicsPipeline::HasChanged()

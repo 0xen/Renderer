@@ -140,6 +140,26 @@ VkCommandBuffer VulkanCommon::BeginSingleTimeCommands(VulkanDevice * device, VkC
 	return command_buffer;
 }
 
+VkCommandBuffer Renderer::Vulkan::VulkanCommon::BeginSimultaneousCommand(VulkanDevice * device, VkCommandPool command_pool)
+{
+	VkCommandBufferAllocateInfo alloc_info = VulkanInitializers::CommandBufferAllocateInfo(
+		command_pool,
+		1
+	);
+	VkCommandBuffer command_buffer;
+	vkAllocateCommandBuffers(
+		*device->GetVulkanDevice(),
+		&alloc_info,
+		&command_buffer
+	);
+	VkCommandBufferBeginInfo begin_info = VulkanInitializers::CommandBufferBeginInfo(VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
+	vkBeginCommandBuffer(
+		command_buffer,
+		&begin_info
+	);
+	return command_buffer;
+}
+
 void VulkanCommon::EndSingleTimeCommands(VulkanDevice * device, VkCommandBuffer command_buffer, VkCommandPool command_pool)
 {
 	vkEndCommandBuffer(command_buffer);

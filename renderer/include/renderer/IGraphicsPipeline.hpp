@@ -6,6 +6,15 @@
 
 namespace Renderer
 {
+
+
+
+	enum PrimitiveTopology
+	{
+		PointList,
+		TriangleList
+	};
+
 	class IModelPool;
 	class VertexBase;
 	class IGraphicsPipeline : public virtual IPipeline
@@ -17,6 +26,7 @@ namespace Renderer
 		virtual void AttachVertexBinding(VertexBase vertex_binding) = 0;
 		virtual void UseDepth(bool depth) = 0;
 		virtual void UseCulling(bool culling) = 0;
+		virtual void DefinePrimitiveTopology(PrimitiveTopology top) = 0;
 	private:
 	};
 }

@@ -17,6 +17,24 @@ Renderer::Vulkan::VulkanComputePipeline::VulkanComputePipeline(VulkanDevice * de
 
 Renderer::Vulkan::VulkanComputePipeline::~VulkanComputePipeline()
 {
+	vkDestroyPipeline(
+		*m_device->GetVulkanDevice(),
+		m_pipeline,
+		nullptr
+	);
+
+	vkDestroyPipelineLayout(
+		*m_device->GetVulkanDevice(),
+		m_pipeline_layout,
+		nullptr
+	);
+
+	vkDestroyShaderModule(
+		*m_device->GetVulkanDevice(),
+		m_shader_module,
+		nullptr
+	);
+	
 }
 
 bool Renderer::Vulkan::VulkanComputePipeline::Build()
@@ -48,10 +66,9 @@ bool Renderer::Vulkan::VulkanComputePipeline::CreatePipeline()
 	if (shaders[ShaderStage::COMPUTE_SHADER] == nullptr) return false;
 
 	std::vector<char> shaderCode = VulkanCommon::ReadFile(shaders[ShaderStage::COMPUTE_SHADER]);
+	m_shader_module = VulkanCommon::CreateShaderModule(m_device, shaderCode);
 
-	auto shader_module = VulkanCommon::CreateShaderModule(m_device, shaderCode);
-
-	VkPipelineShaderStageCreateInfo shader_info = VulkanInitializers::PipelineShaderStageCreateInfo(shader_module, "main", VK_SHADER_STAGE_COMPUTE_BIT);
+	VkPipelineShaderStageCreateInfo shader_info = VulkanInitializers::PipelineShaderStageCreateInfo(m_shader_module, "main", VK_SHADER_STAGE_COMPUTE_BIT);
 	VkComputePipelineCreateInfo compute_pipeline_create_info = VulkanInitializers::ComputePipelineCreateInfo(m_pipeline_layout, shader_info);
 
 	ErrorCheck(vkCreateComputePipelines(
