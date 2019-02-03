@@ -14,6 +14,7 @@ namespace Renderer
 			VulkanModel(VulkanModelPool* pool, unsigned int model_pool_index);
 			virtual void ShouldRender(bool render);
 			virtual bool Rendering();
+			virtual IModelPool* GetModelPool();
 		private:
 			VulkanModelPool * m_pool;
 			bool m_rendering;

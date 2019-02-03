@@ -17,3 +17,8 @@ bool Renderer::Vulkan::VulkanModel::Rendering()
 {
 	return m_rendering;
 }
+
+Renderer::IModelPool * Renderer::Vulkan::VulkanModel::GetModelPool()
+{
+	return m_pool;
+}

@@ -1,4 +1,5 @@
 #include <renderer/IModel.hpp>
+#include <renderer\IModelPool.hpp>
 
 Renderer::IModel::IModel(unsigned int model_pool_index)
 {
@@ -18,4 +19,9 @@ void Renderer::IModel::SetData(unsigned int index, void * data, unsigned int siz
 unsigned int Renderer::IModel::GetModelPoolIndex()
 {
 	return m_model_pool_index;
+}
+
+void Renderer::IModel::Remove()
+{
+	GetModelPool()->RemoveModel(this);
 }

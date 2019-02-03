@@ -4,6 +4,7 @@
 
 namespace Renderer
 {
+	class IModelPool;
 	class IModel
 	{
 	public:
@@ -17,6 +18,8 @@ namespace Renderer
 		unsigned int GetModelPoolIndex();
 		virtual void ShouldRender(bool render) = 0;
 		virtual bool Rendering() = 0;
+		virtual IModelPool* GetModelPool() = 0;
+		void Remove();
 	protected:
 		unsigned int m_model_pool_index;
 		std::map<unsigned int, void*> m_data_pointers;

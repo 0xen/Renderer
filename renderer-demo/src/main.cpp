@@ -256,7 +256,7 @@ int main(int argc, char **argv)
 
 	IModel* model2 = model_pool1->CreateModel();
 
-	model_pool1->RemoveModel(model2);
+	model2->Remove();
 
 	model2 = model_pool1->CreateModel();
 
