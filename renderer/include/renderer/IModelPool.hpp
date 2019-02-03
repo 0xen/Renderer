@@ -15,6 +15,7 @@ namespace Renderer
 		virtual ~IModelPool() {};
 		bool Indexed();
 		virtual IModel * CreateModel() = 0;
+		virtual void RemoveModel(IModel* model) = 0;
 		virtual void Update() = 0;
 		virtual void AttachBuffer(unsigned int index, IUniformBuffer * buffer) = 0;
 		virtual void AttachDescriptorSet(unsigned int index, IDescriptorSet* descriptor_set) = 0;

@@ -256,6 +256,10 @@ int main(int argc, char **argv)
 
 	IModel* model2 = model_pool1->CreateModel();
 
+	model_pool1->RemoveModel(model2);
+
+	model2 = model_pool1->CreateModel();
+
 	modelPos = glm::mat4(1.0f);
 	modelPos = glm::translate(modelPos, glm::vec3(2, 0, -20));
 	modelPos = glm::scale(modelPos, glm::vec3(1.0f, 1.0f, 1.0f));
@@ -269,6 +273,7 @@ int main(int argc, char **argv)
 	{
 		glm::mat4& a = model_position_array1[i];
 	}
+
 
 
 	model_position_buffer1->SetData(BufferSlot::Secondery);

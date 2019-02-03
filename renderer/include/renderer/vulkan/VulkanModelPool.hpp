@@ -23,6 +23,7 @@ namespace Renderer
 			VulkanModelPool(VulkanDevice* device, IVertexBuffer* vertex_buffer, IIndexBuffer* index_buffer);
 			virtual ~VulkanModelPool();
 			virtual IModel * CreateModel();
+			virtual void RemoveModel(IModel* model);
 			virtual void Update();
 			virtual void AttachBuffer(unsigned int index, IUniformBuffer * buffer);
 			virtual void AttachDescriptorSet(unsigned int index, IDescriptorSet* descriptor_set);
@@ -33,6 +34,7 @@ namespace Renderer
 			void ResizeIndirectArray(unsigned int size);
 			void Render(unsigned int index, bool should_render);
 			unsigned int m_current_index;
+			std::vector<unsigned int> m_free_indexs;
 			unsigned int m_vertex_draw_count;
 			VulkanDevice * m_device;
 			std::map<unsigned int, VulkanDescriptorSet*> m_descriptor_sets;

@@ -40,20 +40,58 @@ Renderer::Vulkan::VulkanModelPool::~VulkanModelPool()
 
 Renderer::IModel * Renderer::Vulkan::VulkanModelPool::CreateModel()
 {
-	VulkanModel* model = new VulkanModel(this, m_current_index);
-	m_models[m_current_index] = model;
+	unsigned int new_index = 0;
+	if (m_free_indexs.size() > 0)
+	{
+		// Get a index from the free array
+		new_index = m_free_indexs[0];
+		// Remove the index from the free array
+		m_free_indexs.erase(m_free_indexs.begin());
+	}
+	else
+	{
+		new_index = m_current_index;
+		m_current_index++;
+	}
+
+
+
+	VulkanModel* model = new VulkanModel(this, new_index);
+	m_models[new_index] = model;
 	for (auto buffer = m_buffers.begin(); buffer != m_buffers.end(); buffer++)
 	{
 		void* data = buffer->second->GetDataPointer(BufferSlot::Primary);
-		model->SetDataPointer(buffer->first, ((char*)data) + (buffer->second->GetIndexSize(BufferSlot::Primary) * m_current_index));
+		model->SetDataPointer(buffer->first, ((char*)data) + (buffer->second->GetIndexSize(BufferSlot::Primary) * new_index));
 	}
 	m_change = true;
 
-	Render(m_current_index, true);
+	Render(new_index, true);
 
-	m_current_index++;
 
 	return model;
+}
+
+void Renderer::Vulkan::VulkanModelPool::RemoveModel(IModel * model)
+{
+	unsigned int index = model->GetModelPoolIndex();
+	auto it = m_models.find(index);
+	// Do we have that index and dose the model match out records
+	if (it != m_models.end() && it->second == model)
+	{
+
+		model->ShouldRender(false);
+
+		// Remove local model record
+		m_models.erase(it);
+
+		// Add the index to the free array
+		m_free_indexs.push_back(index);
+
+		delete model;
+
+		m_change = true;
+	}
+
 }
 
 void Renderer::Vulkan::VulkanModelPool::Update()
