@@ -49,6 +49,8 @@ namespace Renderer
 
 		virtual IGraphicsPipeline* CreateGraphicsPipeline(std::map<ShaderStage, const char*> paths, bool priority = false) = 0;
 
+		virtual void RemoveGraphicsPipeline(IGraphicsPipeline* pipeline) = 0;
+
 		virtual IComputePipeline* CreateComputePipeline(const char* path, unsigned int x, unsigned int y, unsigned int z) = 0;
 
 		virtual IComputeProgram* CreateComputeProgram() = 0;

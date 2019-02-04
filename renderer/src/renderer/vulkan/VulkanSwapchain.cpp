@@ -164,6 +164,16 @@ void Renderer::Vulkan::VulkanSwapchain::AttachGraphicsPipeline(VulkanGraphicsPip
 	}
 }
 
+void Renderer::Vulkan::VulkanSwapchain::RemoveGraphicsPipeline(VulkanGraphicsPipeline * pipeline)
+{
+	auto it = std::find(m_pipelines.begin(), m_pipelines.end(), pipeline);
+	if (it != m_pipelines.end())
+	{
+		m_pipelines.erase(it);
+		RebuildSwapchain();
+	}
+}
+
 uint32_t Renderer::Vulkan::VulkanSwapchain::GetImageCount()
 {
 	return image_count;

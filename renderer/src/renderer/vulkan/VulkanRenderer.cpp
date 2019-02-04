@@ -107,6 +107,11 @@ IGraphicsPipeline * Renderer::Vulkan::VulkanRenderer::CreateGraphicsPipeline(std
 	return graphics_pipeline;
 }
 
+void Renderer::Vulkan::VulkanRenderer::RemoveGraphicsPipeline(IGraphicsPipeline * pipeline)
+{
+	m_swapchain->RemoveGraphicsPipeline(static_cast<VulkanGraphicsPipeline*>(pipeline));
+}
+
 IComputePipeline * Renderer::Vulkan::VulkanRenderer::CreateComputePipeline(const char * path, unsigned int x, unsigned int y, unsigned int z)
 {
 	return new VulkanComputePipeline(m_device,path, x, y, z);

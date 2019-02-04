@@ -29,8 +29,9 @@ namespace Renderer
 			VkSurfaceKHR* GetSurface();
 			VkSwapchainKHR GetSwapchain();
 			VkSurfaceFormatKHR GetSurfaceFormat();
-			VkPresentModeKHR GetSurfacePresentMode(); 
-			void AttachGraphicsPipeline(VulkanGraphicsPipeline* pipeline,bool priority = false);
+			VkPresentModeKHR GetSurfacePresentMode();
+			void AttachGraphicsPipeline(VulkanGraphicsPipeline* pipeline, bool priority = false);
+			void RemoveGraphicsPipeline(VulkanGraphicsPipeline* pipeline);
 
 			uint32_t GetImageCount();
 			std::vector<VkImage> GetSwapchainImages();
