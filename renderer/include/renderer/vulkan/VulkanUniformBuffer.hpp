@@ -11,6 +11,7 @@ namespace Renderer
 		class VulkanUniformBuffer : public IUniformBuffer, public VulkanBuffer
 		{
 		public:
+
 			VulkanUniformBuffer(VulkanDevice* device, BufferChain level, void* dataPtr, unsigned int indexSize, unsigned int elementCount,bool modifiable);
 			virtual ~VulkanUniformBuffer();
 

@@ -396,7 +396,7 @@ VkPipelineLayoutCreateInfo Renderer::Vulkan::VulkanInitializers::PipelineLayoutC
 {
 	VkPipelineLayoutCreateInfo pipeline_layout_info = {};
 	pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-	pipeline_layout_info.setLayoutCount = descriptor_set_layout.size();
+	pipeline_layout_info.setLayoutCount = (uint32_t)descriptor_set_layout.size();
 	pipeline_layout_info.pSetLayouts = descriptor_set_layout.data();
 	pipeline_layout_info.pushConstantRangeCount = 0;
 	pipeline_layout_info.pPushConstantRanges = 0;

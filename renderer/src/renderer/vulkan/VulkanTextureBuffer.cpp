@@ -151,7 +151,7 @@ void Renderer::Vulkan::VulkanTextureBuffer::InitTexture()
 	sampler_info.compareOp = VK_COMPARE_OP_NEVER;
 	sampler_info.minLod = 0.0f;
 	// Set max level-of-detail to mip level count of the texture
-	sampler_info.maxLod = m_mipLevels;
+	sampler_info.maxLod = (float)m_mipLevels;
 	// Enable anisotropic filtering
 	// This feature is optional, so we must check if it's supported on the device
 	if (m_device->GetVulkanPhysicalDevice()->GetDeviceFeatures()->samplerAnisotropy)

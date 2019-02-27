@@ -87,8 +87,21 @@ bool Renderer::Vulkan::VulkanComputePipeline::CreatePipeline()
 
 void Renderer::Vulkan::VulkanComputePipeline::DestroyPipeline()
 {
-	vkDestroyPipelineLayout(*m_device->GetVulkanDevice(), m_pipeline_layout, nullptr);
-	vkDestroyPipeline(*m_device->GetVulkanDevice(), m_pipeline, nullptr);
+	vkDestroyPipelineLayout(
+		*m_device->GetVulkanDevice(),
+		m_pipeline_layout,
+		nullptr
+	);
+	vkDestroyPipeline(
+		*m_device->GetVulkanDevice(),
+		m_pipeline,
+		nullptr
+	);
+	vkDestroyShaderModule(
+		*m_device->GetVulkanDevice(),
+		m_shader_module,
+		nullptr
+	);
 }
 
 void Renderer::Vulkan::VulkanComputePipeline::AttachToCommandBuffer(VkCommandBuffer & command_buffer)

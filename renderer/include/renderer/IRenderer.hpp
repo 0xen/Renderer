@@ -36,6 +36,9 @@ namespace Renderer
 
 		// Creates a instance of the renderer based on the chosen API. this IRenderer can be cast into the parent class
 		static IRenderer* CreateRenderer(const RenderingAPI api);
+
+		static void DestroyRenderer(IRenderer* renderer);
+
 		// Call the update function on all of the renderer's that have been created
 		static void UpdateAll();
 		// Remove the renderer from the list of renderers to be updated when calling UpdateAll, the renderer will still work as a stand alone renderer

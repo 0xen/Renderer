@@ -113,7 +113,7 @@ void Renderer::Vulkan::VulkanSwapchain::Present(std::vector<VkSemaphore> signal_
 	VkSwapchainKHR swap_chains[] = { m_swap_chain };
 	VkPresentInfoKHR present_info = {};
 	present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-	present_info.waitSemaphoreCount = signal_semaphores.size();
+	present_info.waitSemaphoreCount = (uint32_t)signal_semaphores.size();
 	present_info.pWaitSemaphores = signal_semaphores.data();
 	present_info.swapchainCount = 1;
 	present_info.pSwapchains = swap_chains;
@@ -260,7 +260,7 @@ void Renderer::Vulkan::VulkanSwapchain::RebuildCommandBuffers()
 
 
 		vkCmdSetLineWidth(m_command_buffers[i], 1.0f);
-		const VkViewport viewport = VulkanInitializers::Viewport(m_window_handle->width, m_window_handle->height, 0, 0, 0.0f, 1.0f);
+		const VkViewport viewport = VulkanInitializers::Viewport((float)m_window_handle->width, (float)m_window_handle->height, 0.0f, 0.0f, 0.0f, 1.0f);
 		const VkRect2D scissor = VulkanInitializers::Scissor(m_window_handle->width, m_window_handle->height);
 		vkCmdSetViewport(m_command_buffers[i], 0, 1, &viewport);
 		vkCmdSetScissor(m_command_buffers[i], 0, 1, &scissor);

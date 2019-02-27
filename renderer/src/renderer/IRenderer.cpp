@@ -27,6 +27,17 @@ IRenderer * Renderer::IRenderer::CreateRenderer(const RenderingAPI api)
 	return renderer;
 }
 
+
+void Renderer::IRenderer::DestroyRenderer(IRenderer* renderer)
+{
+	auto it = std::find(m_renderers.begin(), m_renderers.end(), renderer);
+	if (it != m_renderers.end())
+	{
+		m_renderers.erase(it);
+	}
+	delete renderer;
+}
+
 void Renderer::IRenderer::UpdateAll()
 {
 	for (int i = 0; i < m_renderers.size(); i++)

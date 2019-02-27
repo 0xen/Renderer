@@ -85,40 +85,16 @@ struct Camera
 	glm::mat4 view;
 	glm::mat4 projection;
 };
-/*
-class A
-{
-public:
-	virtual ~A()
-	{
-		std::cout << "a";
-	}
-};
-class B : public A
-{
-public:
-};
-class C : public B
-{
-public:
-	virtual ~C()
-	{
-		std::cout << "c";
-	}
-};*/
-
 
 
 int main(int argc, char **argv)
 {
-	/*A* b = new C;
-	delete b;
-	exit(0);*/
 	// Define what rendering api we are wanting to use
 	RenderingAPI rendering_api = RenderingAPI::VulkanAPI;
 
 
 	WindowSetup(rendering_api, "Renderer", 1080, 720);
+
 
 	// Create a instance of the renderer
 	IRenderer* renderer = IRenderer::CreateRenderer(rendering_api);
@@ -282,7 +258,7 @@ int main(int argc, char **argv)
 	pipeline->AttachModelPool(model_pool1);
 	
 
-	float rot = 0.01;
+	float rot = 0.1;
 	float fpn = 0.01;
 	bool running = true;
 
@@ -345,6 +321,6 @@ int main(int argc, char **argv)
 	delete renderer;
 
 	DestroyWindow();
-
+	
     return 0;
 }
