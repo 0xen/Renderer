@@ -23,6 +23,7 @@ namespace Renderer
 		void SetVertexBuffer(IVertexBuffer* vertex_buffer);
 		IVertexBuffer * GetVertexBuffer();
 		IIndexBuffer * GetIndexBuffer();
+		virtual unsigned int GetLargestIndex()= 0;
 	protected:
 		bool m_indexed;
 		IVertexBuffer * m_vertex_buffer;

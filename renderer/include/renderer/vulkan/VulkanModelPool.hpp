@@ -28,12 +28,14 @@ namespace Renderer
 			virtual void AttachBuffer(unsigned int index, IUniformBuffer * buffer);
 			virtual void AttachDescriptorSet(unsigned int index, IDescriptorSet* descriptor_set);
 			virtual void SetVertexDrawCount(unsigned int count);
+			virtual unsigned int GetLargestIndex();
 			void AttachToCommandBuffer(VkCommandBuffer & command_buffer, VulkanPipeline* pipeline);
 			bool HasChanged();
 		private:
 			void ResizeIndirectArray(unsigned int size);
 			void Render(unsigned int index, bool should_render);
 			unsigned int m_current_index;
+			unsigned int m_largest_index;
 			std::vector<unsigned int> m_free_indexs;
 			unsigned int m_vertex_draw_count;
 			VulkanDevice * m_device;

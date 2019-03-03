@@ -16,6 +16,7 @@ Renderer::Vulkan::VulkanModelPool::VulkanModelPool(VulkanDevice * device, IVerte
 {
 	m_device = device;
 	m_current_index = 0;
+	m_largest_index = 0;
 	m_vertex_draw_count = vertex_buffer->GetElementCount(BufferSlot::Primary);
 	m_change = false;
 
@@ -27,6 +28,7 @@ Renderer::Vulkan::VulkanModelPool::VulkanModelPool(VulkanDevice* device, IVertex
 {
 	m_device = device;
 	m_current_index = 0;
+	m_largest_index = 0;
 	m_vertex_draw_count = index_buffer->GetElementCount(BufferSlot::Primary);
 	m_change = false;
 
@@ -52,6 +54,7 @@ Renderer::IModel * Renderer::Vulkan::VulkanModelPool::CreateModel()
 	{
 		new_index = m_current_index;
 		m_current_index++;
+		m_largest_index = m_current_index;
 	}
 
 
@@ -134,6 +137,11 @@ void Renderer::Vulkan::VulkanModelPool::SetVertexDrawCount(unsigned int count)
 		}
 	}
 	m_indirect_draw_buffer->SetData(BufferSlot::Primary);
+}
+
+unsigned int Renderer::Vulkan::VulkanModelPool::GetLargestIndex()
+{
+	return m_largest_index;
 }
 
 void Renderer::Vulkan::VulkanModelPool::AttachToCommandBuffer(VkCommandBuffer & command_buffer, VulkanPipeline* pipeline)
