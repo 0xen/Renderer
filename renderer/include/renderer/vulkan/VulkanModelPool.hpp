@@ -27,8 +27,9 @@ namespace Renderer
 			virtual void Update();
 			virtual void AttachBuffer(unsigned int index, IUniformBuffer * buffer);
 			virtual void AttachDescriptorSet(unsigned int index, IDescriptorSet* descriptor_set);
+			virtual std::vector<IDescriptorSet*> GetDescriptorSets();
 			virtual void SetVertexDrawCount(unsigned int count);
-			virtual unsigned int GetLargestIndex();
+			virtual unsigned int GetLargestIndex(); 
 			void AttachToCommandBuffer(VkCommandBuffer & command_buffer, VulkanPipeline* pipeline);
 			bool HasChanged();
 		private:

@@ -115,6 +115,16 @@ void Renderer::Vulkan::VulkanModelPool::AttachDescriptorSet(unsigned int index, 
 	m_descriptor_sets[index] = static_cast<VulkanDescriptorSet*>(descriptor_set);
 }
 
+std::vector<Renderer::IDescriptorSet*> Renderer::Vulkan::VulkanModelPool::GetDescriptorSets()
+{
+	std::vector<Renderer::IDescriptorSet*> sets;
+	for (auto& set : m_descriptor_sets)
+	{
+		sets.push_back(set.second);
+	 }
+	return sets;
+}
+
 void Renderer::Vulkan::VulkanModelPool::SetVertexDrawCount(unsigned int count)
 {
 	m_vertex_draw_count = count;

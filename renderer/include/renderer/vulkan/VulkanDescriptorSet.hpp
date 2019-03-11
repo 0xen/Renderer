@@ -20,6 +20,7 @@ namespace Renderer
 			VkDescriptorSet& GetDescriptorSet();
 			virtual void UpdateSet();
 			virtual void AttachBuffer(unsigned int location, IBuffer* buffer);
+			virtual std::vector<IBuffer*> GetBuffers();
 			bool HasBufferAtLocation(unsigned int location);
 		private:
 			VulkanDescriptorPool * m_descriptor_pool;

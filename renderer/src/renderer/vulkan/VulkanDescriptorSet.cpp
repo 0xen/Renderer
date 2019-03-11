@@ -47,6 +47,16 @@ void Renderer::Vulkan::VulkanDescriptorSet::AttachBuffer(unsigned int location, 
 	m_bufers[location] = dynamic_cast<VulkanBuffer*>(buffer);
 }
 
+std::vector<IBuffer*> Renderer::Vulkan::VulkanDescriptorSet::GetBuffers()
+{
+	std::vector<IBuffer*> buffers;
+	for (auto& buffer : m_bufers)
+	{
+		buffers.push_back(buffer.second);
+	}
+	return buffers;
+}
+
 bool Renderer::Vulkan::VulkanDescriptorSet::HasBufferAtLocation(unsigned int location)
 {
 	return m_bufers.find(location) != m_bufers.end();

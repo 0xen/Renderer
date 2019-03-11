@@ -1,5 +1,7 @@
 #pragma once
 
+#include <vector>
+
 namespace Renderer
 {
 	class IVertexBuffer;
@@ -19,6 +21,7 @@ namespace Renderer
 		virtual void Update() = 0;
 		virtual void AttachBuffer(unsigned int index, IUniformBuffer * buffer) = 0;
 		virtual void AttachDescriptorSet(unsigned int index, IDescriptorSet* descriptor_set) = 0;
+		virtual std::vector<IDescriptorSet*> GetDescriptorSets() = 0;
 		virtual void SetVertexDrawCount(unsigned int count) = 0;
 		void SetVertexBuffer(IVertexBuffer* vertex_buffer);
 		IVertexBuffer * GetVertexBuffer();
