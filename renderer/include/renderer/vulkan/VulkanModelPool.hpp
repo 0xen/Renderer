@@ -23,9 +23,11 @@ namespace Renderer
 			VulkanModelPool(VulkanDevice* device, IVertexBuffer* vertex_buffer, IIndexBuffer* index_buffer);
 			virtual ~VulkanModelPool();
 			virtual IModel * CreateModel();
+			virtual IModel* GetModel(int index);
 			virtual void RemoveModel(IModel* model);
 			virtual void Update();
 			virtual void AttachBuffer(unsigned int index, IUniformBuffer * buffer);
+			virtual void UpdateModelBuffer(unsigned int index);
 			virtual void AttachDescriptorSet(unsigned int index, IDescriptorSet* descriptor_set);
 			virtual std::vector<IDescriptorSet*> GetDescriptorSets();
 			virtual void SetVertexDrawCount(unsigned int count);

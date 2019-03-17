@@ -74,6 +74,11 @@ Renderer::IModel * Renderer::Vulkan::VulkanModelPool::CreateModel()
 	return model;
 }
 
+Renderer::IModel* Renderer::Vulkan::VulkanModelPool::GetModel(int index)
+{
+	return m_models[index];
+}
+
 void Renderer::Vulkan::VulkanModelPool::RemoveModel(IModel * model)
 {
 	unsigned int index = model->GetModelPoolIndex();
@@ -91,6 +96,7 @@ void Renderer::Vulkan::VulkanModelPool::RemoveModel(IModel * model)
 		m_free_indexs.push_back(index);
 
 		delete model;
+		model = nullptr;
 
 		m_change = true;
 	}
@@ -108,6 +114,18 @@ void Renderer::Vulkan::VulkanModelPool::Update()
 void Renderer::Vulkan::VulkanModelPool::AttachBuffer(unsigned int index, IUniformBuffer * buffer)
 {
 	m_buffers[index] = dynamic_cast<VulkanUniformBuffer*>(buffer);
+}
+
+void Renderer::Vulkan::VulkanModelPool::UpdateModelBuffer(unsigned int index)
+{
+	for (auto& it : m_models)
+	{
+		if (it.second != nullptr)
+		{
+			void* data = m_buffers[index]->GetDataPointer(BufferSlot::Primary);
+			it.second->SetDataPointer(index, ((char*)data) + (m_buffers[index]->GetIndexSize(BufferSlot::Primary) * it.first));
+		}
+	}
 }
 
 void Renderer::Vulkan::VulkanModelPool::AttachDescriptorSet(unsigned int index, IDescriptorSet * descriptor_set)
