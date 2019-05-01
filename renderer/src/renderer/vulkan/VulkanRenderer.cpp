@@ -1,5 +1,6 @@
 #include <renderer/vulkan/VulkanRenderer.hpp>
 #include <renderer/vulkan/VulkanInstance.hpp>
+#include <renderer\vulkan\VulkanFlags.hpp>
 #include <renderer/vulkan/VulkanPhysicalDevice.hpp>
 #include <renderer/vulkan/VulkanDevice.hpp>
 #include <renderer/vulkan/VulkanSwapchain.hpp>
@@ -15,6 +16,7 @@
 #include <renderer\vulkan\VulkanDescriptorPool.hpp>
 #include <renderer\vulkan\VulkanDescriptorSet.hpp>
 #include <renderer\vulkan\VulkanCommon.hpp>
+#include <renderer\vulkan\VulkanRaytracePipeline.hpp>
 
 #include <assert.h>
 
@@ -29,11 +31,11 @@ VulkanRenderer::~VulkanRenderer()
 	Stop();
 }
 
-bool VulkanRenderer::Start(Renderer::NativeWindowHandle* window_handle)
+bool Renderer::Vulkan::VulkanRenderer::Start(Renderer::NativeWindowHandle* window_handle, VulkanFlags flags)
 {
 	m_window_handle = window_handle;
 
-	m_instance = new VulkanInstance();
+	m_instance = new VulkanInstance(flags);
 	Status::ErrorCheck(m_instance);
 	if (HasError())return false;
 
@@ -53,6 +55,11 @@ bool VulkanRenderer::Start(Renderer::NativeWindowHandle* window_handle)
 
 	m_running = true;
 	return m_running;
+}
+
+bool VulkanRenderer::Start(Renderer::NativeWindowHandle* window_handle)
+{
+	return Start(window_handle, Renderer::Vulkan::VulkanFlags::None);
 }
 
 
@@ -145,6 +152,13 @@ IDescriptor * Renderer::Vulkan::VulkanRenderer::CreateDescriptor(DescriptorType 
 IDescriptorPool * Renderer::Vulkan::VulkanRenderer::CreateDescriptorPool(std::vector<IDescriptor*> descriptors)
 {
 	return new VulkanDescriptorPool(m_device, descriptors);
+}
+
+VulkanRaytracePipeline * Renderer::Vulkan::VulkanRenderer::CreateRaytracePipeline(std::map<ShaderStage, const char*> paths, bool priority)
+{
+	VulkanRaytracePipeline* graphics_pipeline = new VulkanRaytracePipeline(m_device, m_swapchain, paths);
+	m_swapchain->AttachGraphicsPipeline(graphics_pipeline, priority);
+	return graphics_pipeline;
 }
 
 VkDescriptorType Renderer::Vulkan::VulkanRenderer::ToDescriptorType(DescriptorType descriptor_type)

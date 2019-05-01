@@ -6,7 +6,7 @@
 
 using namespace Renderer::Vulkan;
 
-VulkanInstance::VulkanInstance()
+VulkanInstance::VulkanInstance(VulkanFlags flags) : m_flags(flags)
 {
 	SetupLayersAndExtensions();
 	assert(CheckLayersSupport() && "Unsupported Layers");
@@ -23,17 +23,30 @@ VkInstance * VulkanInstance::GetInstance()
 	return &m_instance;
 }
 
+VulkanFlags & Renderer::Vulkan::VulkanInstance::GetFlags()
+{
+	return m_flags;
+}
+
 
 void VulkanInstance::SetupLayersAndExtensions()
 {
 	m_instance_extensions.empty();
 
 	m_instance_extensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
+
+	// If the user has opted to enable raytracing
+	if (Raytrace& m_flags == Raytrace)
+	{
+		m_instance_extensions.push_back(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
+	}
+
 	
 	m_instance_layers.push_back("VK_LAYER_LUNARG_standard_validation");
 
-	m_instance_extensions.push_back(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
 	m_instance_extensions.push_back("VK_EXT_debug_report");
+
+
 
 #ifdef _WIN32
 	m_instance_extensions.push_back(VK_KHR_WIN32_SURFACE_EXTENSION_NAME);

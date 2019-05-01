@@ -4,7 +4,7 @@
 #include <set>
 #include <assert.h>
 
-Renderer::Vulkan::VulkanPhysicalDevice::VulkanPhysicalDevice(VkPhysicalDevice device, VulkanQueueFamilyIndices queue_family)
+Renderer::Vulkan::VulkanPhysicalDevice::VulkanPhysicalDevice(VkPhysicalDevice device, VulkanQueueFamilyIndices queue_family, VulkanFlags flags)
 {
 	m_device = device;
 	m_queue_family = queue_family;
@@ -14,18 +14,47 @@ Renderer::Vulkan::VulkanPhysicalDevice::VulkanPhysicalDevice(VkPhysicalDevice de
 		&m_physical_device_properties
 	);
 
+
+	// Gives us access to Ray tracing specific data such as maxRecursionDepth and shaderHeaderSize
+	m_device_raytracing_properties = {};
+	m_device_raytracing_properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PROPERTIES_NV;
+	m_device_raytracing_properties.pNext = nullptr;
+	m_device_raytracing_properties.maxRecursionDepth = 0;
+	m_device_raytracing_properties.shaderGroupHandleSize = 0;
+
+	m_physical_device_properties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+	m_physical_device_properties2.pNext = &m_device_raytracing_properties;
+	m_physical_device_properties2.properties = {};
+
+	vkGetPhysicalDeviceProperties2(
+		m_device,
+		&m_physical_device_properties2
+	);
+
 	// Get the devices physical features
 	vkGetPhysicalDeviceFeatures(
 		m_device,
 		&m_device_features
 	);
 
+
+	VkPhysicalDeviceDescriptorIndexingFeaturesEXT descIndexFeatures = {};
+	descIndexFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES_EXT;
+
+	m_device_features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+	m_device_features2.pNext = &descIndexFeatures;
+
+	vkGetPhysicalDeviceFeatures2(
+		m_device,
+		&m_device_features2
+	);
+	
 	// Get the GPU's memory props
 	vkGetPhysicalDeviceMemoryProperties(
 		m_device,
 		&m_physical_device_mem_properties
 	);
-	m_device_extensions = GetDeviceExtenstions();
+	m_device_extensions = GetDeviceExtenstions(flags);
 }
 
 VkPhysicalDevice * Renderer::Vulkan::VulkanPhysicalDevice::GetPhysicalDevice()
@@ -38,14 +67,29 @@ Renderer::Vulkan::VulkanQueueFamilyIndices * Renderer::Vulkan::VulkanPhysicalDev
 	return &m_queue_family;
 }
 
+VkPhysicalDeviceRayTracingPropertiesNV * Renderer::Vulkan::VulkanPhysicalDevice::GetPhysicalDeviceRayTracingProperties()
+{
+	return &m_device_raytracing_properties;
+}
+
 VkPhysicalDeviceProperties * Renderer::Vulkan::VulkanPhysicalDevice::GetPhysicalDeviceProperties()
 {
 	return &m_physical_device_properties;
 }
 
+VkPhysicalDeviceProperties2 * Renderer::Vulkan::VulkanPhysicalDevice::GetPhysicalDeviceProperties2()
+{
+	return &m_physical_device_properties2;
+}
+
 VkPhysicalDeviceFeatures * Renderer::Vulkan::VulkanPhysicalDevice::GetDeviceFeatures()
 {
 	return &m_device_features;
+}
+
+VkPhysicalDeviceFeatures2 * Renderer::Vulkan::VulkanPhysicalDevice::GetDeviceFeatures2()
+{
+	return &m_device_features2;
 }
 
 VkPhysicalDeviceMemoryProperties * Renderer::Vulkan::VulkanPhysicalDevice::GetPhysicalDeviceMemoryProperties()
@@ -76,7 +120,7 @@ Renderer::Vulkan::VulkanPhysicalDevice * Renderer::Vulkan::VulkanPhysicalDevice:
 	for (auto& device : devices)
 	{
 		VulkanQueueFamilyIndices queue_family;
-		if (CheckPhysicalDevice(device) && SupportsQueueFamily(instance,device, queue_family, surface))
+		if (CheckPhysicalDevice(instance, device) && SupportsQueueFamily(instance,device, queue_family, surface))
 		{
 			VkPhysicalDeviceProperties temp_physical_device_properties;
 			vkGetPhysicalDeviceProperties(
@@ -93,7 +137,7 @@ Renderer::Vulkan::VulkanPhysicalDevice * Renderer::Vulkan::VulkanPhysicalDevice:
 	}
 
 	assert(chosen_device != VK_NULL_HANDLE && "No suitable device");
-	device_instance = new VulkanPhysicalDevice(chosen_device, chosen_queue_family);
+	device_instance = new VulkanPhysicalDevice(chosen_device, chosen_queue_family, instance->GetFlags());
 	return device_instance;
 }
 
@@ -120,21 +164,27 @@ std::vector<VkPhysicalDevice> Renderer::Vulkan::VulkanPhysicalDevice::GetPhysica
 	return devices;
 }
 
-std::vector<const char*> Renderer::Vulkan::VulkanPhysicalDevice::GetDeviceExtenstions()
+std::vector<const char*> Renderer::Vulkan::VulkanPhysicalDevice::GetDeviceExtenstions(VulkanFlags flags)
 {
-	return{
+	std::vector<const char*> extentions = {
 		VK_KHR_SWAPCHAIN_EXTENSION_NAME
 	};
+	if (Raytrace & flags == Raytrace)
+	{
+		extentions.push_back(VK_NV_RAY_TRACING_EXTENSION_NAME);
+		extentions.push_back(VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME);
+	}
+	return extentions;
 }
 
-bool Renderer::Vulkan::VulkanPhysicalDevice::CheckPhysicalDevice(VkPhysicalDevice & device)
+bool Renderer::Vulkan::VulkanPhysicalDevice::CheckPhysicalDevice(VulkanInstance* instance, VkPhysicalDevice & device)
 {
-	bool supportsExtentions = CheckDeviceExtensionSupport(device);
+	bool supportsExtentions = CheckDeviceExtensionSupport(instance, device);
 	// For now i will just return the first one thats supported
 	return supportsExtentions;
 }
 
-bool Renderer::Vulkan::VulkanPhysicalDevice::CheckDeviceExtensionSupport(VkPhysicalDevice & device)
+bool Renderer::Vulkan::VulkanPhysicalDevice::CheckDeviceExtensionSupport(VulkanInstance* instance, VkPhysicalDevice & device)
 {
 	// Get extension count
 	uint32_t extension_count;
@@ -143,7 +193,7 @@ bool Renderer::Vulkan::VulkanPhysicalDevice::CheckDeviceExtensionSupport(VkPhysi
 	std::vector<VkExtensionProperties> available_extensions(extension_count);
 	vkEnumerateDeviceExtensionProperties(device, nullptr, &extension_count, available_extensions.data());
 	// Get all extension names
-	std::vector<const char*> device_extensions = GetDeviceExtenstions();
+	std::vector<const char*> device_extensions = GetDeviceExtenstions(instance->GetFlags());
 	// Put them into a set so we can use the erase function
 	std::set<std::string> required_extensions(device_extensions.begin(), device_extensions.end());
 	// Loop through extensions and check 

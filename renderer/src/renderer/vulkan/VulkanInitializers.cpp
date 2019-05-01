@@ -58,6 +58,18 @@ VkDeviceCreateInfo Renderer::Vulkan::VulkanInitializers::DeviceCreateInfo(std::v
 	return create_info;
 }
 
+VkDeviceCreateInfo Renderer::Vulkan::VulkanInitializers::DeviceCreateInfo(std::vector<VkDeviceQueueCreateInfo>& queue_create_infos, const std::vector<const char*>& device_extensions, VkPhysicalDeviceFeatures2 & device_features)
+{
+	VkDeviceCreateInfo create_info = {};
+	create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+	create_info.pQueueCreateInfos = queue_create_infos.data();
+	create_info.queueCreateInfoCount = static_cast<uint32_t>(queue_create_infos.size());
+	create_info.pEnabledFeatures = &(device_features.features);
+	create_info.enabledExtensionCount = (uint32_t)device_extensions.size();
+	create_info.ppEnabledExtensionNames = device_extensions.data();
+	return create_info;
+}
+
 VkCommandPoolCreateInfo Renderer::Vulkan::VulkanInitializers::CommandPoolCreateInfo(uint32_t queue_family_index, VkCommandPoolCreateFlags flags)
 {
 	VkCommandPoolCreateInfo pool_info = {};
@@ -664,5 +676,18 @@ VkSamplerCreateInfo Renderer::Vulkan::VulkanInitializers::SamplerCreateInfo()
 	sampler_create_info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
 	sampler_create_info.maxAnisotropy = 1.0f;
 	return sampler_create_info;
+}
+
+VkRayTracingShaderGroupCreateInfoNV Renderer::Vulkan::VulkanInitializers::RayTracingShaderGroupCreateNV(VkRayTracingShaderGroupTypeNV type)
+{
+	VkRayTracingShaderGroupCreateInfoNV groupInfo{};
+	groupInfo.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_NV;
+	groupInfo.pNext = nullptr;
+	groupInfo.type = type;
+	groupInfo.generalShader = VK_SHADER_UNUSED_NV;
+	groupInfo.closestHitShader = VK_SHADER_UNUSED_NV;
+	groupInfo.anyHitShader = VK_SHADER_UNUSED_NV;
+	groupInfo.intersectionShader = VK_SHADER_UNUSED_NV;
+	return groupInfo;
 }
 

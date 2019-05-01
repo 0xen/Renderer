@@ -24,6 +24,11 @@ std::map<Renderer::ShaderStage, VkShaderStageFlagBits> Renderer::Vulkan::VulkanG
 { Renderer::ShaderStage::FRAGMENT_SHADER , VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT },
 { Renderer::ShaderStage::VERTEX_SHADER , VkShaderStageFlagBits::VK_SHADER_STAGE_VERTEX_BIT },
 { Renderer::ShaderStage::GEOMETRY_SHADER , VkShaderStageFlagBits::VK_SHADER_STAGE_GEOMETRY_BIT },
+
+
+{ Renderer::ShaderStage::RAY_GEN , VkShaderStageFlagBits::VK_SHADER_STAGE_RAYGEN_BIT_NV },
+{ Renderer::ShaderStage::MISS , VkShaderStageFlagBits::VK_SHADER_STAGE_MISS_BIT_NV },
+{ Renderer::ShaderStage::CLOSEST_HIT , VkShaderStageFlagBits::VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV },
 };
 
 
@@ -43,9 +48,9 @@ std::map<Renderer::VertexInputRate, VkVertexInputRate> Renderer::Vulkan::VulkanG
 };
 
 Renderer::Vulkan::VulkanGraphicsPipeline::VulkanGraphicsPipeline(VulkanDevice * device, VulkanSwapchain* swapchain, std::map<ShaderStage, const char*> paths) :
+	IPipeline(paths),
 	IGraphicsPipeline(paths),
-	VulkanPipeline(device, paths),
-	IPipeline(paths)
+	VulkanPipeline(device, paths)
 {
 	m_swapchain = swapchain;
 

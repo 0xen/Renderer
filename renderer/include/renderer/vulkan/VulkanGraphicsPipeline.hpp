@@ -15,7 +15,7 @@ namespace Renderer
 
 		class VulkanSwapchain;
 		class VulkanModelPool;
-		class VulkanGraphicsPipeline : public IGraphicsPipeline, public VulkanPipeline, public VulkanStatus
+		class VulkanGraphicsPipeline : public virtual IPipeline, public IGraphicsPipeline, public VulkanPipeline, public VulkanStatus
 		{
 		public:
 			VulkanGraphicsPipeline(VulkanDevice * device, VulkanSwapchain* swapchain, std::map<ShaderStage, const char*> paths);
@@ -30,11 +30,12 @@ namespace Renderer
 			virtual void UseCulling(bool culling);
 			virtual void DefinePrimitiveTopology(PrimitiveTopology top);
 			bool HasChanged();
-		private:
+		protected:
 			static VkShaderStageFlagBits GetShaderStageFlag(ShaderStage stage);
 			static VkFormat GetFormat(Renderer::DataFormat format);
 			static VkVertexInputRate GetVertexInputRate(Renderer::VertexInputRate input_rate);
 
+		private:
 			static std::map<Renderer::ShaderStage, VkShaderStageFlagBits> m_shader_stage_flags;
 			static std::map<Renderer::DataFormat, VkFormat> m_formats;
 			static std::map<Renderer::VertexInputRate, VkVertexInputRate> m_vertex_input_rates;

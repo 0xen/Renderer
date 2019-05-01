@@ -24,6 +24,8 @@ namespace Renderer
 
 			VkDeviceCreateInfo DeviceCreateInfo(std::vector<VkDeviceQueueCreateInfo>& queue_create_infos, const std::vector<const char*>& device_extensions, VkPhysicalDeviceFeatures& device_features);
 
+			VkDeviceCreateInfo DeviceCreateInfo(std::vector<VkDeviceQueueCreateInfo>& queue_create_infos, const std::vector<const char*>& device_extensions, VkPhysicalDeviceFeatures2& device_features);
+
 			VkCommandPoolCreateInfo CommandPoolCreateInfo(uint32_t queue_family_index, VkCommandPoolCreateFlags flags = 0);
 
 			VkCommandBufferAllocateInfo CommandBufferAllocateInfo(VkCommandPool pool, uint32_t command_buffer_count);
@@ -126,6 +128,8 @@ namespace Renderer
 			VkRect2D Scissor(uint32_t width, uint32_t height);
 
 			VkSamplerCreateInfo SamplerCreateInfo();
+
+			VkRayTracingShaderGroupCreateInfoNV RayTracingShaderGroupCreateNV(VkRayTracingShaderGroupTypeNV type);
 
 		}
 	}

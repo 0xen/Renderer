@@ -21,11 +21,11 @@ Renderer::Vulkan::VulkanDevice::VulkanDevice(VulkanInstance * instance, VulkanPh
 	{
 		queue_create_infos.push_back(VulkanInitializers::DeviceQueueCreate(queue_family, 1.0f));
 	}
-	// Not used for now
+
 	VkDeviceCreateInfo create_info = VulkanInitializers::DeviceCreateInfo(
 		queue_create_infos,
 		*m_physical_device->GetExtenstions(),
-		*m_physical_device->GetDeviceFeatures()
+		*m_physical_device->GetDeviceFeatures2()
 	);
 	// Create the device
 	ErrorCheck(vkCreateDevice(

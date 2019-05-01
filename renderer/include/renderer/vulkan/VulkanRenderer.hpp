@@ -13,6 +13,7 @@ namespace Renderer
 	namespace Vulkan
 	{
 		class VulkanInstance;
+		enum VulkanFlags;
 		class VulkanPhysicalDevice;
 		class VulkanDevice;
 		class VulkanSwapchain;
@@ -21,12 +22,14 @@ namespace Renderer
 		class VulkanVertexBuffer;
 		class VulkanIndexBuffer;
 		class VulkanTextureBuffer;
+		class VulkanRaytracePipeline;
 
 		class VulkanRenderer : public IRenderer, public VulkanStatus
 		{
 		public:
 			VulkanRenderer();
 			~VulkanRenderer();
+			bool Start(Renderer::NativeWindowHandle* window_handle, VulkanFlags flags);
 			virtual bool Start(Renderer::NativeWindowHandle* window_handle);
 			virtual void Update();
 			virtual void Stop();
@@ -54,6 +57,8 @@ namespace Renderer
 			virtual IDescriptor* CreateDescriptor(DescriptorType descriptor_type, ShaderStage shader_stage, unsigned int binding);
 
 			virtual IDescriptorPool* CreateDescriptorPool(std::vector<IDescriptor*> descriptors);
+
+			VulkanRaytracePipeline* CreateRaytracePipeline(std::map<ShaderStage, const char*> paths, bool priority = false);
 
 			static VkDescriptorType ToDescriptorType(DescriptorType descriptor_type);
 
