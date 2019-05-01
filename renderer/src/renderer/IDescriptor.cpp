@@ -6,6 +6,11 @@ Renderer::IDescriptor::IDescriptor()
 {
 }
 
+Renderer::IDescriptor::IDescriptor(unsigned int binding)
+{
+	m_binding = binding;
+}
+
 Renderer::IDescriptor::IDescriptor(DescriptorType descriptor_type, ShaderStage shader_stage, unsigned int binding)
 {
 	m_descriptor_type = descriptor_type;

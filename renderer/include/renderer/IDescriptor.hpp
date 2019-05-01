@@ -9,6 +9,7 @@ namespace Renderer
 	{
 	public:
 		IDescriptor();
+		IDescriptor(unsigned int binding);
 		IDescriptor(DescriptorType descriptor_type, ShaderStage shader_stage, unsigned int binding);
 		ShaderStage GetShaderStage();
 		DescriptorType GetDescriptorType();

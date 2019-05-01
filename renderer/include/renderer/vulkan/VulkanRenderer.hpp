@@ -56,9 +56,11 @@ namespace Renderer
 
 			virtual IDescriptor* CreateDescriptor(DescriptorType descriptor_type, ShaderStage shader_stage, unsigned int binding);
 
+			virtual IDescriptor* CreateDescriptor(VkDescriptorType descriptor_type, VkShaderStageFlags shader_stage, unsigned int binding);
+
 			virtual IDescriptorPool* CreateDescriptorPool(std::vector<IDescriptor*> descriptors);
 
-			VulkanRaytracePipeline* CreateRaytracePipeline(std::map<ShaderStage, const char*> paths, bool priority = false);
+			VulkanRaytracePipeline* CreateRaytracePipeline(std::map<ShaderStage, const char*> paths, std::vector<std::map<ShaderStage, const char*>> hitgroups, bool priority = false);
 
 			static VkDescriptorType ToDescriptorType(DescriptorType descriptor_type);
 

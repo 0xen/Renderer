@@ -691,3 +691,20 @@ VkRayTracingShaderGroupCreateInfoNV Renderer::Vulkan::VulkanInitializers::RayTra
 	return groupInfo;
 }
 
+VkRayTracingPipelineCreateInfoNV Renderer::Vulkan::VulkanInitializers::RayTracePipelineCreateInfoNV(std::vector<VkPipelineShaderStageCreateInfo>& shader_stages, std::vector<VkRayTracingShaderGroupCreateInfoNV>& groups, VkPipelineLayout layout, uint32_t maxRecursion)
+{
+	VkRayTracingPipelineCreateInfoNV pipeline{};
+	pipeline.sType = VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_NV;
+	pipeline.pNext = nullptr;
+	pipeline.flags = 0;
+	pipeline.stageCount = static_cast<uint32_t>(shader_stages.size());
+	pipeline.pStages = shader_stages.data();
+	pipeline.groupCount = static_cast<uint32_t>(groups.size());
+	pipeline.pGroups = groups.data();
+	pipeline.maxRecursionDepth = maxRecursion;
+	pipeline.layout = layout;
+	pipeline.basePipelineHandle = VK_NULL_HANDLE;
+	pipeline.basePipelineIndex = 0;
+	return pipeline;
+}
+

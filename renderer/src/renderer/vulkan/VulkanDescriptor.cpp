@@ -11,12 +11,19 @@ Renderer::Vulkan::VulkanDescriptor::VulkanDescriptor(DescriptorType descriptor_t
 	m_vulkan_shader_stage = VulkanRenderer::ToVulkanShader(shader_stage);
 }
 
+Renderer::Vulkan::VulkanDescriptor::VulkanDescriptor(VkDescriptorType descriptor_type, VkShaderStageFlags shader_stage, unsigned int binding) :
+	IDescriptor(binding)
+{
+	m_vulkan_descriptor_type = descriptor_type;
+	m_vulkan_shader_stage = shader_stage;
+}
+
 VkDescriptorType Renderer::Vulkan::VulkanDescriptor::GetVulkanDescriptorType()
 {
 	return m_vulkan_descriptor_type;
 }
 
-VkShaderStageFlagBits Renderer::Vulkan::VulkanDescriptor::GetVulkanShaderStage()
+VkShaderStageFlags Renderer::Vulkan::VulkanDescriptor::GetVulkanShaderStage()
 {
 	return m_vulkan_shader_stage;
 }

@@ -13,7 +13,7 @@ namespace Renderer
 		class VulkanRaytracePipeline : public VulkanGraphicsPipeline
 		{
 		public:
-			VulkanRaytracePipeline(VulkanDevice * device, VulkanSwapchain* swapchain, std::map<ShaderStage, const char*> paths);
+			VulkanRaytracePipeline(VulkanDevice * device, VulkanSwapchain* swapchain, std::map<ShaderStage, const char*> paths, std::vector<std::map<ShaderStage, const char*>> hitgroups);
 			virtual ~VulkanRaytracePipeline();
 
 			virtual bool Build();
@@ -25,14 +25,17 @@ namespace Renderer
 			virtual void UseDepth(bool depth);
 			virtual void UseCulling(bool culling);
 			virtual void DefinePrimitiveTopology(PrimitiveTopology top);
+
+			void SetMaxRecursionDepth(uint32_t max_depth);
 		private:
 			VulkanDevice * m_device;
+			std::vector<std::map<ShaderStage, const char*>> m_hitgroups;
 			std::vector<VkRayTracingShaderGroupCreateInfoNV> m_shader_groups;
 			uint32_t m_shader_groupIndex = 0;
-			bool m_recording_hit_shaders = false;
 			std::vector<VkPipelineShaderStageCreateInfo> m_shader_stages;
 			std::vector<VertexBase> m_vertex_bases;
 			VulkanSwapchain * m_swapchain;
+			uint32_t m_max_depth = 1;
 		};
 
 	}

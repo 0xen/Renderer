@@ -102,7 +102,6 @@ void PollWindow()
 		}
 	}
 }
-
 void DestroyWindow()
 {
 	SDL_DestroyWindow(window);
@@ -112,6 +111,7 @@ void DestroyWindow()
 
 int main(int argc, char **argv)
 {
+
 	renderer = new VulkanRenderer();
 
 	WindowSetup("Renderer", 1080, 720);
@@ -163,8 +163,6 @@ int main(int argc, char **argv)
 	IDescriptorSet* camera_descriptor_set = camera_pool->CreateDescriptorSet();
 	camera_descriptor_set->AttachBuffer(0, cameraBuffer);
 	camera_descriptor_set->UpdateSet();
-
-
 
 
 
@@ -225,9 +223,16 @@ int main(int argc, char **argv)
 		VulkanRaytracePipeline* pipeline = renderer->CreateRaytracePipeline({
 			{ ShaderStage::RAY_GEN,		"../../renderer-demo/Shaders/Raytrace/raygen.spv" },
 			{ ShaderStage::MISS,		"../../renderer-demo/Shaders/Raytrace/miss.spv" },
-			{ ShaderStage::MISS,		"../../renderer-demo/Shaders/Raytrace/shadowMiss.spv" },
-			{ ShaderStage::CLOSEST_HIT, "../../renderer-demo/Shaders/Raytrace/closesthit.spv" }
+			{ ShaderStage::MISS,		"../../renderer-demo/Shaders/Raytrace/shadowMiss.spv" }
+		},
+		{
+			{ // Involved 
+				{ ShaderStage::CLOSEST_HIT, "../../renderer-demo/Shaders/Raytrace/closesthit.spv" }
+			},
+			{} // For simple shadows, we do not need a hitgroup
 		});
+
+		pipeline->SetMaxRecursionDepth(2);
 
 		pipeline->AttachVertexBinding({
 			VertexInputRate::INPUT_RATE_VERTEX,
@@ -240,6 +245,23 @@ int main(int argc, char **argv)
 			sizeof(MeshVertex),
 			0
 			});
+
+
+		pipeline->AttachDescriptorPool(renderer->CreateDescriptorPool({
+			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV, VK_SHADER_STAGE_RAYGEN_BIT_NV | VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 0),
+			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_RAYGEN_BIT_NV, 1),
+			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_NV, 2),
+			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 3),
+			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 4),
+			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 5),
+			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 6),
+
+
+		}));
+
+
+
+
 
 
 

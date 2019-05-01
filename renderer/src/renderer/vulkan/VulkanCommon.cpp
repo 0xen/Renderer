@@ -492,3 +492,16 @@ void Renderer::Vulkan::VulkanCommon::SetImageLayout(VkCommandBuffer cmdbuffer, V
 	subresourceRange.layerCount = 1;
 	SetImageLayout(cmdbuffer, image, oldImageLayout, newImageLayout, subresourceRange);
 }
+
+VKAPI_ATTR VkResult VKAPI_CALL
+vkCreateRayTracingPipelinesNV(VkDevice      device,
+	VkPipelineCache                         pipelineCache,
+	uint32_t                                createInfoCount,
+	const VkRayTracingPipelineCreateInfoNV* pCreateInfos,
+	const VkAllocationCallbacks*            pAllocator,
+	VkPipeline*                             pPipelines)
+{
+	static const auto call = reinterpret_cast<PFN_vkCreateRayTracingPipelinesNV>(
+		vkGetDeviceProcAddr(device, "vkCreateRayTracingPipelinesNV"));
+	return call(device, pipelineCache, createInfoCount, pCreateInfos, pAllocator, pPipelines);
+}

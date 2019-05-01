@@ -131,6 +131,8 @@ namespace Renderer
 
 			VkRayTracingShaderGroupCreateInfoNV RayTracingShaderGroupCreateNV(VkRayTracingShaderGroupTypeNV type);
 
+			VkRayTracingPipelineCreateInfoNV RayTracePipelineCreateInfoNV(std::vector<VkPipelineShaderStageCreateInfo>& shader_stages, std::vector<VkRayTracingShaderGroupCreateInfoNV>& groups, VkPipelineLayout layout ,uint32_t maxRecursion);
+
 		}
 	}
 }

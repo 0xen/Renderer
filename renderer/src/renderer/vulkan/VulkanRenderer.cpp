@@ -149,14 +149,19 @@ IDescriptor * Renderer::Vulkan::VulkanRenderer::CreateDescriptor(DescriptorType 
 	return new VulkanDescriptor(descriptor_type, shader_stage, binding);
 }
 
+IDescriptor * Renderer::Vulkan::VulkanRenderer::CreateDescriptor(VkDescriptorType descriptor_type, VkShaderStageFlags shader_stage, unsigned int binding)
+{
+	return new VulkanDescriptor(descriptor_type, shader_stage, binding);
+}
+
 IDescriptorPool * Renderer::Vulkan::VulkanRenderer::CreateDescriptorPool(std::vector<IDescriptor*> descriptors)
 {
 	return new VulkanDescriptorPool(m_device, descriptors);
 }
 
-VulkanRaytracePipeline * Renderer::Vulkan::VulkanRenderer::CreateRaytracePipeline(std::map<ShaderStage, const char*> paths, bool priority)
+VulkanRaytracePipeline * Renderer::Vulkan::VulkanRenderer::CreateRaytracePipeline(std::map<ShaderStage, const char*> paths, std::vector<std::map<ShaderStage, const char*>> hitgroups, bool priority)
 {
-	VulkanRaytracePipeline* graphics_pipeline = new VulkanRaytracePipeline(m_device, m_swapchain, paths);
+	VulkanRaytracePipeline* graphics_pipeline = new VulkanRaytracePipeline(m_device, m_swapchain, paths, hitgroups);
 	m_swapchain->AttachGraphicsPipeline(graphics_pipeline, priority);
 	return graphics_pipeline;
 }

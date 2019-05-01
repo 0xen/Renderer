@@ -62,6 +62,7 @@ find_package(Vulkan)
 if(Vulkan_FOUND)
     
     set(vulkan_src
+        src/renderer/vulkan/VulkanAcceleration.cpp
         src/renderer/vulkan/VulkanRaytracePipeline.cpp
         src/renderer/vulkan/VulkanCommon.cpp
         src/renderer/vulkan/VulkanInitializers.cpp
@@ -87,6 +88,7 @@ if(Vulkan_FOUND)
     )
 
     set(vulkan_headers
+    	include/renderer/vulkan/VulkanAcceleration.hpp
     	include/renderer/vulkan/VulkanFlags.hpp
     	include/renderer/vulkan/VulkanRaytracePipeline.hpp
         include/renderer/vulkan/VulkanSwapChainSupport.hpp
