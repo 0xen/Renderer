@@ -92,6 +92,8 @@ namespace Renderer
 
 			VkWriteDescriptorSet WriteDescriptorSet(VkDescriptorSet d_set, VkDescriptorBufferInfo & buffer_info, VkDescriptorType type, int binding);
 
+			VkWriteDescriptorSet WriteDescriptorSet(VkDescriptorSet d_set, std::vector<VkWriteDescriptorSetAccelerationStructureNV>& buffer,VkDescriptorType type, int binding);
+
 			VkFenceCreateInfo CreateFenceInfo();
 
 			VkVertexInputBindingDescription VertexInputBinding(uint32_t binding, uint32_t stride, VkVertexInputRate input_rate);
@@ -132,6 +134,22 @@ namespace Renderer
 			VkRayTracingShaderGroupCreateInfoNV RayTracingShaderGroupCreateNV(VkRayTracingShaderGroupTypeNV type);
 
 			VkRayTracingPipelineCreateInfoNV RayTracePipelineCreateInfoNV(std::vector<VkPipelineShaderStageCreateInfo>& shader_stages, std::vector<VkRayTracingShaderGroupCreateInfoNV>& groups, VkPipelineLayout layout ,uint32_t maxRecursion);
+
+			VkGeometryNV CreateRayTraceGeometry(VkBuffer vertexBuffer, VkDeviceSize vertexOffsetInBytes, uint32_t vertexCount, VkDeviceSize vertexSizeInBytes, VkBuffer indexBuffer,
+				VkDeviceSize indexOffsetInBytes, uint32_t indexCount, VkBuffer transformBuffer, VkDeviceSize transformOffsetInBytes, bool isOpaque);
+
+
+			VkAccelerationStructureInfoNV AccelerationStructureInfoNV(VkAccelerationStructureTypeNV type, VkBuildAccelerationStructureFlagsNV flags, const VkGeometryNV* prt, uint32_t count, uint32_t instance_count);
+
+			VkAccelerationStructureCreateInfoNV AccelerationStructureCreateInfoNV(VkAccelerationStructureInfoNV structure_info);
+
+			VkAccelerationStructureMemoryRequirementsInfoNV AccelerationStructureMemoryRequirmentsInfoNV(VkAccelerationStructureNV str);
+
+			VkBindAccelerationStructureMemoryInfoNV AccelerationStructureMemoryInfoNV(VkAccelerationStructureNV str, VkDeviceMemory memory);
+
+			VkAccelerationStructureInfoNV AccelerationStructureInfo(VkBuildAccelerationStructureFlagsNV flags, std::vector<VkGeometryNV>& buffer);
+
+			VkWriteDescriptorSetAccelerationStructureNV WriteDescriptorSetAccelerator(VkAccelerationStructureNV& acceleration);
 
 		}
 	}

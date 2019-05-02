@@ -3,9 +3,12 @@ project(${project_name})
 
 set(src
     src/main.cpp
+    src/obj_loader.cpp
 )
 
 set(headers
+    src/tiny_obj_loader.h
+    src/obj_loader.h
 )
 
 set(HAVE_LIBC TRUE)

@@ -14,14 +14,20 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/rotate_vector.hpp>
 #include <glm/gtx/matrix_decompose.hpp>
+#include <glm/gtc/matrix_inverse.hpp>
 
+#include <renderer\vulkan\VulkanDescriptorSet.hpp>
+#include <renderer\vulkan\VulkanModelPool.hpp>
+#include <renderer\vulkan\VulkanAcceleration.hpp>
 #include <renderer\vulkan\VulkanRaytracePipeline.hpp>
 #include <renderer/vulkan/VulkanRenderer.hpp>
 #include <renderer/vulkan/VulkanFlags.hpp>
 #include <renderer\VertexBase.hpp>
 
+#include "obj_loader.h"
 #include <lodepng.h>
 
+#include <vector>
 #include <iostream>
 
 using namespace Renderer;
@@ -35,10 +41,25 @@ struct Camera
 	glm::mat4 projection;
 };
 
+
+
+struct RayCamera
+{
+	glm::mat4 model;
+	glm::mat4 view;
+	glm::mat4 proj;
+	glm::mat4 modelIT;
+	// #VKRay
+	glm::mat4 viewInverse;
+	glm::mat4 projInverse;
+};
+
+
 SDL_Window* window;
 NativeWindowHandle* window_handle;
 VulkanRenderer* renderer;
 Camera camera;
+RayCamera rayCamera;
 
 class MeshVertex
 {
@@ -109,6 +130,21 @@ void DestroyWindow()
 	delete window_handle;
 }
 
+
+struct Vertex
+{
+	glm::vec3 pos;
+	glm::vec3 nrm;
+	glm::vec3 color;
+	glm::vec2 texCoord;
+	int       matID = 0;
+
+	static auto getBindingDescription();
+	static auto getAttributeDescriptions();
+};
+
+
+
 int main(int argc, char **argv)
 {
 
@@ -123,7 +159,8 @@ int main(int argc, char **argv)
 	renderer->Start(window_handle, VulkanFlags::Raytrace);
 
 
-	std::vector<MeshVertex> vertexData = {
+
+	/*std::vector<MeshVertex> vertexData = {
 		MeshVertex(glm::vec3(1.0f,1.0f,0.0f), glm::vec2(0.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(1.0f,1.0f,0.0f)),
 		MeshVertex(glm::vec3(1.0f,-1.0f,0.0f), glm::vec2(0.0f,1.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(0.0f,1.0f,0.0f)),
 		MeshVertex(glm::vec3(-1.0f,-1.0f,0.0f), glm::vec2(1.0f,1.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(.0f,1.0f,1.0f)),
@@ -133,7 +170,7 @@ int main(int argc, char **argv)
 	std::vector<uint16_t> indexData{
 		0,1,2,
 		0,2,3
-	};
+	};*/
 
 
 	// Camera setup
@@ -152,6 +189,32 @@ int main(int argc, char **argv)
 	camera.projection[1][1] *= -1;
 
 
+	// Ray camera
+	rayCamera.model = glm::mat4(1);
+	rayCamera.modelIT = glm::inverseTranspose(rayCamera.model);
+
+	rayCamera.view = glm::mat4(1.0f);
+	rayCamera.view = glm::scale(camera.view, glm::vec3(1.0f, 1.0f, 1.0f));
+	rayCamera.view = glm::translate(camera.view, glm::vec3(0.0f, 0.0f, 15.0f));
+
+
+	rayCamera.proj = glm::perspective(
+		glm::radians(45.0f),
+		aspectRatio,
+		0.1f,
+		200.0f
+	);
+	// Need to flip the projection as GLM was made for OpenGL
+	rayCamera.proj[1][1] *= -1;
+
+						   // #VKRay
+	rayCamera.viewInverse = glm::inverse(rayCamera.view);
+	rayCamera.projInverse = glm::inverse(rayCamera.proj);
+	
+
+
+
+
 	// Setup cameras descriptors and buffers
 	IUniformBuffer* cameraBuffer = renderer->CreateUniformBuffer(&camera, BufferChain::Single, sizeof(Camera), 1, true);
 	cameraBuffer->SetData(BufferSlot::Primary);
@@ -166,8 +229,27 @@ int main(int argc, char **argv)
 
 
 
-	IVertexBuffer* vertexBuffer = renderer->CreateVertexBuffer(vertexData.data(), sizeof(MeshVertex), vertexData.size());
-	IIndexBuffer* indexBuffer = renderer->CreateIndexBuffer(indexData.data(), sizeof(uint16_t), indexData.size());
+
+
+	ObjLoader<Vertex> loader;
+	loader.loadModel("../../renderer-demo/media/scenes/Medieval_building.obj");
+
+
+	uint32_t m_nbIndices = static_cast<uint32_t>(loader.m_indices.size());
+	uint32_t m_nbVertices = static_cast<uint32_t>(loader.m_vertices.size());
+
+
+
+
+
+
+
+
+
+
+
+	IVertexBuffer* vertexBuffer = renderer->CreateVertexBuffer(loader.m_vertices.data(), sizeof(Vertex), loader.m_vertices.size());
+	IIndexBuffer* indexBuffer = renderer->CreateIndexBuffer(loader.m_indices.data(), sizeof(uint16_t), loader.m_indices.size());
 
 	vertexBuffer->SetData(BufferSlot::Primary);
 	indexBuffer->SetData(BufferSlot::Primary);
@@ -232,6 +314,13 @@ int main(int argc, char **argv)
 			{} // For simple shadows, we do not need a hitgroup
 		});
 
+		pipeline->AddRayGenerationProgram(0, {});
+		pipeline->AddMissProgram(1, {});
+		pipeline->AddMissProgram(2, {});
+		pipeline->AddHitGroup(3, {});
+		pipeline->AddHitGroup(4, {});
+
+
 		pipeline->SetMaxRecursionDepth(2);
 
 		pipeline->AttachVertexBinding({
@@ -247,7 +336,7 @@ int main(int argc, char **argv)
 			});
 
 
-		pipeline->AttachDescriptorPool(renderer->CreateDescriptorPool({
+		IDescriptorPool* raytracePool = renderer->CreateDescriptorPool({
 			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV, VK_SHADER_STAGE_RAYGEN_BIT_NV | VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 0),
 			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_RAYGEN_BIT_NV, 1),
 			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_NV, 2),
@@ -257,8 +346,50 @@ int main(int argc, char **argv)
 			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 6),
 
 
-		}));
+		});
 
+
+
+
+		pipeline->AttachDescriptorPool(raytracePool);
+
+
+		VulkanAcceleration* acceleration = renderer->CreateAcceleration();
+
+		acceleration->AttachModelPool(static_cast<VulkanModelPool*>(model_pool1));
+
+		acceleration->Build();
+
+
+		VulkanDescriptorSet* raytracingSet = static_cast<VulkanDescriptorSet*>(raytracePool->CreateDescriptorSet());
+
+
+
+
+		//RayCamera
+		IUniformBuffer* cameraInfo = renderer->CreateUniformBuffer(&rayCamera, BufferChain::Single, sizeof(RayCamera), 1, true);
+		cameraInfo->SetData(BufferSlot::Primary);
+
+		MatrialObj* material = new MatrialObj;
+		IUniformBuffer* materialbuffer = renderer->CreateUniformBuffer(material, BufferChain::Single, sizeof(MatrialObj), 1, true);
+		materialbuffer->SetData(BufferSlot::Primary);
+
+
+		raytracingSet->AttachBuffer(0, { acceleration->GetDescriptorAcceleration() });
+
+		raytracingSet->AttachBuffer(2, cameraInfo);
+		raytracingSet->AttachBuffer(3, model_pool1->GetVertexBuffer());
+		raytracingSet->AttachBuffer(4, model_pool1->GetIndexBuffer());
+		raytracingSet->AttachBuffer(5, materialbuffer);
+
+
+
+
+		raytracingSet->UpdateSet();
+
+
+
+		pipeline->AttachDescriptorSet(0, raytracingSet);
 
 
 
@@ -288,11 +419,11 @@ int main(int argc, char **argv)
 			VertexInputRate::INPUT_RATE_VERTEX,
 			{
 				{ 0, DataFormat::R32G32B32_FLOAT,offsetof(MeshVertex,position) },
-				{ 1, DataFormat::R32G32_FLOAT,offsetof(MeshVertex,uv) },
-				{ 2, DataFormat::R32G32B32_FLOAT,offsetof(MeshVertex,normal) },
-				{ 3, DataFormat::R32G32B32_FLOAT,offsetof(MeshVertex,color) },
+				{ 1, DataFormat::R32G32B32_FLOAT,offsetof(MeshVertex,normal) },
+				{ 2, DataFormat::R32G32B32_FLOAT,offsetof(MeshVertex,color) },
+				{ 3, DataFormat::R32G32_FLOAT,offsetof(MeshVertex,uv) },
 			},
-			sizeof(MeshVertex),
+			sizeof(Vertex),
 			0
 			});
 	
@@ -329,6 +460,11 @@ int main(int argc, char **argv)
 		renderer->Update();
 
 
+		modelPos = glm::rotate(modelPos, 0.001f, glm::vec3(0,1,0));
+
+		model1->SetData(POSITION_BUFFER, modelPos);
+
+		model_position_buffer1->SetData(BufferSlot::Primary);
 
 		PollWindow();
 	}

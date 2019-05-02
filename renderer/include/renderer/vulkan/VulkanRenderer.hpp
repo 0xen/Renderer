@@ -23,6 +23,7 @@ namespace Renderer
 		class VulkanIndexBuffer;
 		class VulkanTextureBuffer;
 		class VulkanRaytracePipeline;
+		class VulkanAcceleration;
 
 		class VulkanRenderer : public IRenderer, public VulkanStatus
 		{
@@ -61,6 +62,8 @@ namespace Renderer
 			virtual IDescriptorPool* CreateDescriptorPool(std::vector<IDescriptor*> descriptors);
 
 			VulkanRaytracePipeline* CreateRaytracePipeline(std::map<ShaderStage, const char*> paths, std::vector<std::map<ShaderStage, const char*>> hitgroups, bool priority = false);
+
+			VulkanAcceleration* CreateAcceleration();
 
 			static VkDescriptorType ToDescriptorType(DescriptorType descriptor_type);
 

@@ -479,6 +479,29 @@ VkWriteDescriptorSet Renderer::Vulkan::VulkanInitializers::WriteDescriptorSet(Vk
 	return descriptor_write;
 }
 
+VkWriteDescriptorSet Renderer::Vulkan::VulkanInitializers::WriteDescriptorSet(VkDescriptorSet d_set, std::vector<VkWriteDescriptorSetAccelerationStructureNV>& buffer, VkDescriptorType type, int binding)
+{
+	VkWriteDescriptorSet descriptorWrite = {};
+	descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	descriptorWrite.dstSet = d_set;
+	descriptorWrite.dstBinding = binding;
+	descriptorWrite.dstArrayElement = 0;
+	descriptorWrite.descriptorType = type;
+	descriptorWrite.descriptorCount = static_cast<uint32_t>(buffer.size());
+	descriptorWrite.pBufferInfo = VK_NULL_HANDLE;
+	descriptorWrite.pImageInfo = VK_NULL_HANDLE;
+	descriptorWrite.pTexelBufferView = VK_NULL_HANDLE;
+	descriptorWrite.pNext = VK_NULL_HANDLE;
+
+	static const int offset = offsetof(VkWriteDescriptorSet, pNext);
+
+	VkWriteDescriptorSetAccelerationStructureNV** data = reinterpret_cast<VkWriteDescriptorSetAccelerationStructureNV**>(reinterpret_cast<uint8_t*>(&descriptorWrite) + offset);
+
+	*data = buffer.data();
+	
+	return descriptorWrite;
+}
+
 VkFenceCreateInfo Renderer::Vulkan::VulkanInitializers::CreateFenceInfo()
 {
 	VkFenceCreateInfo fenceCreateInfo = {};
@@ -706,5 +729,103 @@ VkRayTracingPipelineCreateInfoNV Renderer::Vulkan::VulkanInitializers::RayTraceP
 	pipeline.basePipelineHandle = VK_NULL_HANDLE;
 	pipeline.basePipelineIndex = 0;
 	return pipeline;
+}
+
+VkGeometryNV Renderer::Vulkan::VulkanInitializers::CreateRayTraceGeometry(VkBuffer vertexBuffer, VkDeviceSize vertexOffsetInBytes, uint32_t vertexCount, VkDeviceSize vertexSizeInBytes, VkBuffer indexBuffer, VkDeviceSize indexOffsetInBytes, uint32_t indexCount, VkBuffer transformBuffer, VkDeviceSize transformOffsetInBytes, bool isOpaque)
+{
+	VkGeometryNV geometry;
+	geometry.sType = VK_STRUCTURE_TYPE_GEOMETRY_NV;
+	geometry.pNext = nullptr;
+	geometry.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_NV;
+	geometry.geometry.triangles.sType = VK_STRUCTURE_TYPE_GEOMETRY_TRIANGLES_NV;
+	geometry.geometry.triangles.pNext = nullptr;
+	geometry.geometry.triangles.vertexData = vertexBuffer;
+	geometry.geometry.triangles.vertexOffset = vertexOffsetInBytes;
+	geometry.geometry.triangles.vertexCount = vertexCount;
+	geometry.geometry.triangles.vertexStride = vertexSizeInBytes;
+	// Limitation to 3xfloat32 for vertices
+	geometry.geometry.triangles.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
+	geometry.geometry.triangles.indexData = indexBuffer;
+	geometry.geometry.triangles.indexOffset = indexOffsetInBytes;
+	geometry.geometry.triangles.indexCount = indexCount;
+	// Limitation to 32-bit indices
+	geometry.geometry.triangles.indexType = VK_INDEX_TYPE_UINT32;
+	geometry.geometry.triangles.transformData = transformBuffer;
+	geometry.geometry.triangles.transformOffset = transformOffsetInBytes;
+	geometry.geometry.aabbs = { VK_STRUCTURE_TYPE_GEOMETRY_AABB_NV };
+	geometry.flags = isOpaque ? VK_GEOMETRY_OPAQUE_BIT_NV : 0;
+
+	return geometry;
+}
+
+VkAccelerationStructureInfoNV Renderer::Vulkan::VulkanInitializers::AccelerationStructureInfoNV(VkAccelerationStructureTypeNV type, VkBuildAccelerationStructureFlagsNV flags, const VkGeometryNV* prt, uint32_t count,uint32_t instance_count)
+{
+	VkAccelerationStructureInfoNV accelerationStructureInfo{};
+	accelerationStructureInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_INFO_NV;
+	accelerationStructureInfo.type = type;
+	accelerationStructureInfo.flags = flags;
+	accelerationStructureInfo.instanceCount = instance_count;  // The bottom-level AS can only contain explicit geometry, and no instances
+	accelerationStructureInfo.geometryCount = count;
+	accelerationStructureInfo.pGeometries = prt;
+
+	return accelerationStructureInfo;
+}
+
+VkAccelerationStructureCreateInfoNV Renderer::Vulkan::VulkanInitializers::AccelerationStructureCreateInfoNV(VkAccelerationStructureInfoNV structure_info)
+{
+	VkAccelerationStructureCreateInfoNV info{};
+	info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_NV;
+	info.pNext = nullptr;
+	info.info = structure_info;
+	info.compactedSize = 0;
+	return info;
+}
+
+VkAccelerationStructureMemoryRequirementsInfoNV Renderer::Vulkan::VulkanInitializers::AccelerationStructureMemoryRequirmentsInfoNV(VkAccelerationStructureNV str)
+{
+	VkAccelerationStructureMemoryRequirementsInfoNV memoryRequirementsInfo;
+	memoryRequirementsInfo.sType =
+		VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_INFO_NV;
+	memoryRequirementsInfo.pNext = nullptr;
+	memoryRequirementsInfo.accelerationStructure = str;
+	memoryRequirementsInfo.type = VK_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_TYPE_OBJECT_NV;
+	return memoryRequirementsInfo;
+}
+
+VkBindAccelerationStructureMemoryInfoNV Renderer::Vulkan::VulkanInitializers::AccelerationStructureMemoryInfoNV(VkAccelerationStructureNV str, VkDeviceMemory memory)
+{
+	VkBindAccelerationStructureMemoryInfoNV info;
+	info.sType = VK_STRUCTURE_TYPE_BIND_ACCELERATION_STRUCTURE_MEMORY_INFO_NV;
+	info.pNext = nullptr;
+	info.accelerationStructure = str;
+	info.memory = memory;
+	info.memoryOffset = 0;
+	info.deviceIndexCount = 0;
+	info.pDeviceIndices = nullptr;
+	return info;
+}
+
+VkAccelerationStructureInfoNV Renderer::Vulkan::VulkanInitializers::AccelerationStructureInfo(VkBuildAccelerationStructureFlagsNV flags, std::vector<VkGeometryNV>& buffer)
+{
+	VkAccelerationStructureInfoNV info;
+	info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_INFO_NV;
+	info.pNext = nullptr;
+	info.flags = flags;
+	info.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_NV;
+	info.geometryCount = static_cast<uint32_t>(buffer.size());
+	info.pGeometries = buffer.data();
+	info.instanceCount = 0;
+	return info;
+}
+
+VkWriteDescriptorSetAccelerationStructureNV Renderer::Vulkan::VulkanInitializers::WriteDescriptorSetAccelerator(VkAccelerationStructureNV& acceleration)
+{
+	VkWriteDescriptorSetAccelerationStructureNV descriptorAccelerationStructureInfo;
+	descriptorAccelerationStructureInfo.sType =
+		VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_NV;
+	descriptorAccelerationStructureInfo.pNext = nullptr;
+	descriptorAccelerationStructureInfo.accelerationStructureCount = 1;
+	descriptorAccelerationStructureInfo.pAccelerationStructures = &acceleration;
+	return descriptorAccelerationStructureInfo;
 }
 

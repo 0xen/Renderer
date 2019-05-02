@@ -17,6 +17,7 @@
 #include <renderer\vulkan\VulkanDescriptorSet.hpp>
 #include <renderer\vulkan\VulkanCommon.hpp>
 #include <renderer\vulkan\VulkanRaytracePipeline.hpp>
+#include <renderer\vulkan\VulkanAcceleration.hpp>
 
 #include <assert.h>
 
@@ -164,6 +165,11 @@ VulkanRaytracePipeline * Renderer::Vulkan::VulkanRenderer::CreateRaytracePipelin
 	VulkanRaytracePipeline* graphics_pipeline = new VulkanRaytracePipeline(m_device, m_swapchain, paths, hitgroups);
 	m_swapchain->AttachGraphicsPipeline(graphics_pipeline, priority);
 	return graphics_pipeline;
+}
+
+VulkanAcceleration * Renderer::Vulkan::VulkanRenderer::CreateAcceleration()
+{
+	return new VulkanAcceleration(m_device);
 }
 
 VkDescriptorType Renderer::Vulkan::VulkanRenderer::ToDescriptorType(DescriptorType descriptor_type)

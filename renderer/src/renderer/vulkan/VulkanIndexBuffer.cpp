@@ -5,7 +5,7 @@ const Renderer::BufferChain Renderer::Vulkan::VulkanIndexBuffer::m_level = Buffe
 
 Renderer::Vulkan::VulkanIndexBuffer::VulkanIndexBuffer(VulkanDevice * device, void * dataPtr, unsigned int indexSize, unsigned int elementCount) :
 	VulkanBuffer(device, m_level, dataPtr, indexSize, elementCount,
-		VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+		VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT),
 	IIndexBuffer(m_level),
 	IBuffer(m_level)

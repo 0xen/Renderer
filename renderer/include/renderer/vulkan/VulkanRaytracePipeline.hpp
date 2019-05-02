@@ -2,6 +2,7 @@
 
 #include <renderer\vulkan\VulkanGraphicsPipeline.hpp>
 #include <renderer\vulkan\VulkanPipeline.hpp>
+#include <renderer/vulkan/VulkanBufferData.hpp>
 
 
 namespace Renderer
@@ -10,6 +11,15 @@ namespace Renderer
 	{
 
 		class VulkanSwapchain;
+
+		struct SBTEntry
+		{
+			SBTEntry(uint32_t groupIndex, std::vector<unsigned char> inlineData) : m_groupIndex(groupIndex), m_inlineData(inlineData){}
+
+			uint32_t                         m_groupIndex;
+			const std::vector<unsigned char> m_inlineData;
+		};
+
 		class VulkanRaytracePipeline : public VulkanGraphicsPipeline
 		{
 		public:
@@ -27,7 +37,18 @@ namespace Renderer
 			virtual void DefinePrimitiveTopology(PrimitiveTopology top);
 
 			void SetMaxRecursionDepth(uint32_t max_depth);
+
+			void AddRayGenerationProgram(uint32_t group, const std::vector<unsigned char>& inlineData);
+			void AddMissProgram(uint32_t group, const std::vector<unsigned char>& inlineData);
+			void AddHitGroup(uint32_t group, const std::vector<unsigned char>& inlineData);
+
+
 		private:
+
+			VkDeviceSize GetEntrySize(std::vector<SBTEntry>);
+			VkDeviceSize CopyShaderData(uint8_t* outputData, const std::vector<SBTEntry>& shaders, VkDeviceSize entrySize, const uint8_t* shaderHandleStorage);
+
+
 			VulkanDevice * m_device;
 			std::vector<std::map<ShaderStage, const char*>> m_hitgroups;
 			std::vector<VkRayTracingShaderGroupCreateInfoNV> m_shader_groups;
@@ -36,6 +57,19 @@ namespace Renderer
 			std::vector<VertexBase> m_vertex_bases;
 			VulkanSwapchain * m_swapchain;
 			uint32_t m_max_depth = 1;
+
+			VulkanBufferData m_shaderBindingTable;
+
+			VkDeviceSize m_rayGenEntrySize;
+			VkDeviceSize m_missEntrySize;
+			VkDeviceSize m_hitGroupEntrySize;
+
+			// Ray generation shader entries
+			std::vector<SBTEntry> m_rayGen;
+			// Miss shader entries
+			std::vector<SBTEntry> m_miss;
+			// Hit group entries
+			std::vector<SBTEntry> m_hitGroup;
 		};
 
 	}
