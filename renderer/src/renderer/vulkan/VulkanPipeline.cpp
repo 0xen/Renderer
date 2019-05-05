@@ -6,7 +6,7 @@
 
 
 
-Renderer::Vulkan::VulkanPipeline::VulkanPipeline(VulkanDevice * device, std::map<ShaderStage, const char*> paths) :
+Renderer::Vulkan::VulkanPipeline::VulkanPipeline(VulkanDevice * device, std::vector<std::pair<Renderer::ShaderStage, const char*>> paths) :
 	IPipeline(paths)
 {
 	m_device = device;

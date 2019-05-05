@@ -19,7 +19,7 @@ namespace Renderer
 		class VulkanPipeline : public virtual IPipeline
 		{
 		public:
-			VulkanPipeline(VulkanDevice * device, std::map<ShaderStage, const char*> paths);
+			VulkanPipeline(VulkanDevice * device, std::vector<std::pair<Renderer::ShaderStage, const char*>> paths);
 			~VulkanPipeline();
 			virtual void AttachDescriptorPool(IDescriptorPool* buffer);
 			virtual void AttachDescriptorSet(unsigned int setID, IDescriptorSet* descriptor_set);

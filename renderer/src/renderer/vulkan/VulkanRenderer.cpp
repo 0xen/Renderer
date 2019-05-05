@@ -66,8 +66,22 @@ bool VulkanRenderer::Start(Renderer::NativeWindowHandle* window_handle)
 
 void VulkanRenderer::Update()
 {
+	BeginFrame();
+
+	EndFrame();
+	
+}
+
+void Renderer::Vulkan::VulkanRenderer::BeginFrame()
+{
 	if (!m_running)return;
-	unsigned int currentBuffer = m_swapchain->GetCurrentBuffer();
+
+	m_swapchain->FindNextImageIndex();
+}
+
+void Renderer::Vulkan::VulkanRenderer::EndFrame()
+{
+	unsigned int currentBuffer = m_swapchain->GetCurrentBufferIndex();
 
 	m_swapchain->SubmitQueue(currentBuffer);
 
@@ -108,7 +122,7 @@ IIndexBuffer * Renderer::Vulkan::VulkanRenderer::CreateIndexBuffer(void * dataPt
 	return new VulkanIndexBuffer(m_device, dataPtr, indexSize, elementCount);
 }
 
-IGraphicsPipeline * Renderer::Vulkan::VulkanRenderer::CreateGraphicsPipeline(std::map<ShaderStage, const char*> paths, bool priority)
+IGraphicsPipeline * Renderer::Vulkan::VulkanRenderer::CreateGraphicsPipeline(std::vector<std::pair<Renderer::ShaderStage, const char*>> paths, bool priority)
 {
 	VulkanGraphicsPipeline* graphics_pipeline = new VulkanGraphicsPipeline(m_device, m_swapchain, paths);
 	m_swapchain->AttachGraphicsPipeline(graphics_pipeline, priority);
@@ -160,7 +174,7 @@ IDescriptorPool * Renderer::Vulkan::VulkanRenderer::CreateDescriptorPool(std::ve
 	return new VulkanDescriptorPool(m_device, descriptors);
 }
 
-VulkanRaytracePipeline * Renderer::Vulkan::VulkanRenderer::CreateRaytracePipeline(std::map<ShaderStage, const char*> paths, std::vector<std::map<ShaderStage, const char*>> hitgroups, bool priority)
+VulkanRaytracePipeline * Renderer::Vulkan::VulkanRenderer::CreateRaytracePipeline(std::vector<std::pair<Renderer::ShaderStage, const char*>> paths, std::vector<std::map<ShaderStage, const char*>> hitgroups, bool priority)
 {
 	VulkanRaytracePipeline* graphics_pipeline = new VulkanRaytracePipeline(m_device, m_swapchain, paths, hitgroups);
 	m_swapchain->AttachGraphicsPipeline(graphics_pipeline, priority);
@@ -170,6 +184,11 @@ VulkanRaytracePipeline * Renderer::Vulkan::VulkanRenderer::CreateRaytracePipelin
 VulkanAcceleration * Renderer::Vulkan::VulkanRenderer::CreateAcceleration()
 {
 	return new VulkanAcceleration(m_device);
+}
+
+VulkanSwapchain * Renderer::Vulkan::VulkanRenderer::GetSwapchain()
+{
+	return m_swapchain;
 }
 
 VkDescriptorType Renderer::Vulkan::VulkanRenderer::ToDescriptorType(DescriptorType descriptor_type)

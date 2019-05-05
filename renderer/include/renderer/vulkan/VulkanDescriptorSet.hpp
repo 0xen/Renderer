@@ -21,6 +21,7 @@ namespace Renderer
 			virtual void UpdateSet();
 			virtual void AttachBuffer(unsigned int location, IBuffer* buffer);
 			void AttachBuffer(unsigned int location, std::vector<VkWriteDescriptorSetAccelerationStructureNV> descriptorSet);
+			void AttachBuffer(unsigned int location, std::vector<VkDescriptorImageInfo> descriptorSet);
 			virtual std::vector<IBuffer*> GetBuffers();
 			bool HasBufferAtLocation(unsigned int location);
 		private:
@@ -29,6 +30,7 @@ namespace Renderer
 			VkDescriptorSet m_descriptor_set;
 			std::map<unsigned int, VulkanBuffer*> m_bufers;
 			std::map<unsigned int, std::vector<VkWriteDescriptorSetAccelerationStructureNV>> m_as_structs;
+			std::map<unsigned int, std::vector<VkDescriptorImageInfo>> m_images;
 			std::vector<VkWriteDescriptorSet> m_write_descriptor_sets;
 		};
 

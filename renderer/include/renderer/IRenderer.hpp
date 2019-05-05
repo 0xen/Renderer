@@ -50,7 +50,7 @@ namespace Renderer
 
 		virtual IIndexBuffer* CreateIndexBuffer(void* dataPtr, unsigned int indexSize, unsigned int elementCount) = 0;
 
-		virtual IGraphicsPipeline* CreateGraphicsPipeline(std::map<ShaderStage, const char*> paths, bool priority = false) = 0;
+		virtual IGraphicsPipeline* CreateGraphicsPipeline(std::vector<std::pair<Renderer::ShaderStage, const char*>> paths, bool priority = false) = 0;
 
 		virtual void RemoveGraphicsPipeline(IGraphicsPipeline* pipeline) = 0;
 

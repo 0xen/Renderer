@@ -18,7 +18,7 @@ namespace Renderer
 		class VulkanGraphicsPipeline : public virtual IPipeline, public IGraphicsPipeline, public VulkanPipeline, public VulkanStatus
 		{
 		public:
-			VulkanGraphicsPipeline(VulkanDevice * device, VulkanSwapchain* swapchain, std::map<ShaderStage, const char*> paths);
+			VulkanGraphicsPipeline(VulkanDevice * device, VulkanSwapchain* swapchain, std::vector<std::pair<Renderer::ShaderStage, const char*>> paths);
 			virtual ~VulkanGraphicsPipeline();
 			virtual bool Build();
 			virtual bool CreatePipeline();

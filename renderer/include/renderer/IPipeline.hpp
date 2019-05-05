@@ -3,6 +3,7 @@
 #include <renderer\ShaderStage.hpp>
 
 #include <map>
+#include <vector>
 
 namespace Renderer
 {
@@ -12,12 +13,12 @@ namespace Renderer
 	{
 	public:
 		IPipeline();
-		IPipeline(std::map<ShaderStage, const char*> paths);
+		IPipeline(std::vector<std::pair<Renderer::ShaderStage, const char*>> paths);
 		virtual void AttachDescriptorPool(IDescriptorPool* buffer) = 0;
 		virtual void AttachDescriptorSet(unsigned int setID, IDescriptorSet* descriptor_set) = 0;
 		virtual bool Build() = 0;
-		std::map<ShaderStage, const char*> GetPaths();
+		std::vector<std::pair<Renderer::ShaderStage, const char*>> GetPaths();
 	private:
-		std::map<ShaderStage, const char*> m_paths;
+		std::vector<std::pair<Renderer::ShaderStage, const char*>> m_paths;
 	};
 }

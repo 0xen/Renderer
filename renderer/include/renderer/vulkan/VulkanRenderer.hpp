@@ -33,6 +33,9 @@ namespace Renderer
 			bool Start(Renderer::NativeWindowHandle* window_handle, VulkanFlags flags);
 			virtual bool Start(Renderer::NativeWindowHandle* window_handle);
 			virtual void Update();
+			void BeginFrame();
+			void EndFrame();
+
 			virtual void Stop();
 			virtual void Rebuild();
 			virtual IUniformBuffer* CreateUniformBuffer(void* dataPtr, BufferChain level, unsigned int indexSize, unsigned int elementCount, bool modifiable);
@@ -41,7 +44,7 @@ namespace Renderer
 
 			virtual IIndexBuffer* CreateIndexBuffer(void* dataPtr, unsigned int indexSize, unsigned int elementCount);
 
-			virtual IGraphicsPipeline* CreateGraphicsPipeline(std::map<ShaderStage, const char*> paths, bool priority = false);
+			virtual IGraphicsPipeline* CreateGraphicsPipeline(std::vector<std::pair<Renderer::ShaderStage, const char*>> paths, bool priority = false);
 
 			virtual void RemoveGraphicsPipeline(IGraphicsPipeline* pipeline);
 
@@ -61,9 +64,11 @@ namespace Renderer
 
 			virtual IDescriptorPool* CreateDescriptorPool(std::vector<IDescriptor*> descriptors);
 
-			VulkanRaytracePipeline* CreateRaytracePipeline(std::map<ShaderStage, const char*> paths, std::vector<std::map<ShaderStage, const char*>> hitgroups, bool priority = false);
+			VulkanRaytracePipeline* CreateRaytracePipeline(std::vector<std::pair<Renderer::ShaderStage, const char*>> paths, std::vector<std::map<ShaderStage, const char*>> hitgroups, bool priority = false);
 
 			VulkanAcceleration* CreateAcceleration();
+
+			VulkanSwapchain* GetSwapchain();
 
 			static VkDescriptorType ToDescriptorType(DescriptorType descriptor_type);
 

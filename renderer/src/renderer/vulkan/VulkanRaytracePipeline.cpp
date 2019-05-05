@@ -13,7 +13,7 @@
 #define ROUND_UP(v, powerOf2Alignment) (((v) + (powerOf2Alignment)-1) & ~((powerOf2Alignment)-1))
 #endif
 
-Renderer::Vulkan::VulkanRaytracePipeline::VulkanRaytracePipeline(VulkanDevice * device, VulkanSwapchain * swapchain, std::map<ShaderStage, const char*> paths, std::vector<std::map<ShaderStage, const char*>> hitgroups) :
+Renderer::Vulkan::VulkanRaytracePipeline::VulkanRaytracePipeline(VulkanDevice * device, VulkanSwapchain * swapchain, std::vector<std::pair<Renderer::ShaderStage, const char*>> paths, std::vector<std::map<ShaderStage, const char*>> hitgroups) :
 	IPipeline(paths),
 	VulkanGraphicsPipeline(device, swapchain, paths)
 {
@@ -161,7 +161,7 @@ bool Renderer::Vulkan::VulkanRaytracePipeline::CreatePipeline()
 			+ static_cast<uint32_t>(m_miss.size())
 			+ static_cast<uint32_t>(m_hitGroup.size());
 
-		auto shaderHandleStorage = new uint8_t[groupCount * progIdSize];
+		uint8_t* shaderHandleStorage = new uint8_t[groupCount * progIdSize];
 		VkResult code = vkGetRayTracingShaderGroupHandlesNV(*m_device->GetVulkanDevice(), m_pipeline, 0, groupCount,
 				progIdSize * groupCount, shaderHandleStorage);
 
@@ -186,7 +186,7 @@ bool Renderer::Vulkan::VulkanRaytracePipeline::CreatePipeline()
 
 		VulkanCommon::UnMapBufferMemory(m_device, m_shaderBindingTable);
 
-
+		delete shaderHandleStorage;
 	}
 
 
@@ -228,8 +228,8 @@ void Renderer::Vulkan::VulkanRaytracePipeline::AttachToCommandBuffer(VkCommandBu
 	vkCmdTraceRaysNV(command_buffer, m_shaderBindingTable.buffer, rayGenOffset,
 		m_shaderBindingTable.buffer, missOffset, missStride,
 		m_shaderBindingTable.buffer, hitGroupOffset, hitGroupStride,
-		VK_NULL_HANDLE, 0, 0, 1080,
-		720, 1);
+		VK_NULL_HANDLE, 0, 0, m_swapchain->GetNativeWindowHandle()->width,
+		m_swapchain->GetNativeWindowHandle()->height, 1);
 }
 
 void Renderer::Vulkan::VulkanRaytracePipeline::AttachModelPool(IModelPool * model_pool)

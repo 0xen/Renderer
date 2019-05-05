@@ -42,7 +42,9 @@ namespace Renderer
 
 			VkSubpassDependency SubpassDependency();
 
-			VkRenderPassCreateInfo RenderPassCreateInfo(std::vector<VkAttachmentDescription>& color_attachment, VkSubpassDescription & subpass, VkSubpassDependency & subpass_dependency);
+			VkSubpassDependency SubpassDependency(uint32_t srcSubpass, uint32_t dstSubpass, VkPipelineStageFlags dstStageMask, VkAccessFlags dstAccessMask, VkPipelineStageFlags srcStageMask, VkAccessFlags srcAccessMask);
+
+			VkRenderPassCreateInfo RenderPassCreateInfo(std::vector<VkAttachmentDescription>& color_attachment, VkSubpassDescription* subpass, uint32_t subpass_count, VkSubpassDependency* subpass_dependency, uint32_t subpass_dependency_count);
 
 			VkAttachmentDescription AttachmentDescription(VkFormat format, VkAttachmentStoreOp store_op, VkImageLayout final_layout);
 
@@ -92,7 +94,9 @@ namespace Renderer
 
 			VkWriteDescriptorSet WriteDescriptorSet(VkDescriptorSet d_set, VkDescriptorBufferInfo & buffer_info, VkDescriptorType type, int binding);
 
-			VkWriteDescriptorSet WriteDescriptorSet(VkDescriptorSet d_set, std::vector<VkWriteDescriptorSetAccelerationStructureNV>& buffer,VkDescriptorType type, int binding);
+			VkWriteDescriptorSet WriteDescriptorSet(VkDescriptorSet d_set, std::vector<VkWriteDescriptorSetAccelerationStructureNV>& buffer, VkDescriptorType type, int binding);
+
+			VkWriteDescriptorSet WriteDescriptorSet(VkDescriptorSet d_set, std::vector<VkDescriptorImageInfo>& buffer, VkDescriptorType type, int binding);
 
 			VkFenceCreateInfo CreateFenceInfo();
 
@@ -148,6 +152,8 @@ namespace Renderer
 			VkBindAccelerationStructureMemoryInfoNV AccelerationStructureMemoryInfoNV(VkAccelerationStructureNV str, VkDeviceMemory memory);
 
 			VkAccelerationStructureInfoNV AccelerationStructureInfo(VkBuildAccelerationStructureFlagsNV flags, std::vector<VkGeometryNV>& buffer);
+
+			VkAccelerationStructureInfoNV AccelerationStructureInfo(VkBuildAccelerationStructureFlagsNV flags, unsigned int instanceCount);
 
 			VkWriteDescriptorSetAccelerationStructureNV WriteDescriptorSetAccelerator(VkAccelerationStructureNV& acceleration);
 

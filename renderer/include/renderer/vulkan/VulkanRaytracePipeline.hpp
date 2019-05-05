@@ -23,7 +23,7 @@ namespace Renderer
 		class VulkanRaytracePipeline : public VulkanGraphicsPipeline
 		{
 		public:
-			VulkanRaytracePipeline(VulkanDevice * device, VulkanSwapchain* swapchain, std::map<ShaderStage, const char*> paths, std::vector<std::map<ShaderStage, const char*>> hitgroups);
+			VulkanRaytracePipeline(VulkanDevice * device, VulkanSwapchain* swapchain, std::vector<std::pair<Renderer::ShaderStage, const char*>> paths, std::vector<std::map<ShaderStage, const char*>> hitgroups);
 			virtual ~VulkanRaytracePipeline();
 
 			virtual bool Build();

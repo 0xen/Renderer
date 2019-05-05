@@ -20,7 +20,7 @@ namespace Renderer
 	class IGraphicsPipeline : public virtual IPipeline
 	{
 	public:
-		IGraphicsPipeline(std::map<ShaderStage,const char*> paths);
+		IGraphicsPipeline(std::vector<std::pair<Renderer::ShaderStage, const char*>> paths);
 		virtual ~IGraphicsPipeline() {};
 		virtual void AttachModelPool(IModelPool* model_pool) = 0;
 		virtual void AttachVertexBinding(VertexBase vertex_binding) = 0;

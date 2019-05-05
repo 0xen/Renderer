@@ -21,7 +21,11 @@ namespace Renderer
 			~VulkanSwapchain();
 			void RequestRebuildCommandBuffers();
 			void RebuildSwapchain();
-			unsigned int GetCurrentBuffer();
+			unsigned int GetCurrentBufferIndex();
+			VkImageView GetBackBufferImage(unsigned int index);
+			VkImageView GetCurrentBackBufferImage();
+			VkDescriptorImageInfo GetBackBufferImageInfo(unsigned int index);
+			VkDescriptorImageInfo GetCurrentBackBufferImageInfo();
 			VkSubmitInfo GetSubmitInfo();
 			void SubmitQueue(unsigned int currentBuffer);
 			void Present(std::vector<VkSemaphore> signal_semaphores);
@@ -33,6 +37,7 @@ namespace Renderer
 			void AttachGraphicsPipeline(VulkanGraphicsPipeline* pipeline, bool priority = false);
 			void RemoveGraphicsPipeline(VulkanGraphicsPipeline* pipeline);
 
+			Renderer::NativeWindowHandle* GetNativeWindowHandle();
 			uint32_t GetImageCount();
 			std::vector<VkImage> GetSwapchainImages();
 			std::vector<VkImageView> GetSwpachainImageViews();
@@ -43,6 +48,8 @@ namespace Renderer
 			VkFormat GetSwapChainImageFormat();
 			VkImage GetDepthImage();
 			VkExtent2D GetSwapchainExtent();
+
+			void FindNextImageIndex();
 		private:
 
 			void RebuildCommandBuffers();
@@ -88,13 +95,16 @@ namespace Renderer
 			Renderer::NativeWindowHandle* m_window_handle;
 
 			VkSwapchainKHR m_swap_chain;
+			         
+			std::vector<VkFence> m_fence;
 			std::vector<VkImage> m_swap_chain_images;
 			std::vector<VkImageView> m_swap_chain_image_views;
 			std::vector<VkFramebuffer> m_swap_chain_framebuffers;
 			VkExtent2D m_swap_chain_extent;
 			VkFormat m_swap_chain_image_format;
 			VkFormat m_depth_image_format;
-			uint32_t m_active_swapchain_image;
+			uint32_t m_frame_index = 0;
+			uint32_t m_back_buffer_indices[2];
 			uint32_t image_count;
 
 			// Render pass

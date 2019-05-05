@@ -47,7 +47,7 @@ std::map<Renderer::VertexInputRate, VkVertexInputRate> Renderer::Vulkan::VulkanG
 	{ Renderer::VertexInputRate::INPUT_RATE_VERTEX,VkVertexInputRate::VK_VERTEX_INPUT_RATE_VERTEX },
 };
 
-Renderer::Vulkan::VulkanGraphicsPipeline::VulkanGraphicsPipeline(VulkanDevice * device, VulkanSwapchain* swapchain, std::map<ShaderStage, const char*> paths) :
+Renderer::Vulkan::VulkanGraphicsPipeline::VulkanGraphicsPipeline(VulkanDevice * device, VulkanSwapchain* swapchain, std::vector<std::pair<Renderer::ShaderStage, const char*>> paths) :
 	IPipeline(paths),
 	IGraphicsPipeline(paths),
 	VulkanPipeline(device, paths)

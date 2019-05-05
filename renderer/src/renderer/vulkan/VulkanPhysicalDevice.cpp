@@ -135,7 +135,6 @@ Renderer::Vulkan::VulkanPhysicalDevice * Renderer::Vulkan::VulkanPhysicalDevice:
 			}
 		}
 	}
-
 	assert(chosen_device != VK_NULL_HANDLE && "No suitable device");
 	device_instance = new VulkanPhysicalDevice(chosen_device, chosen_queue_family, instance->GetFlags());
 	return device_instance;

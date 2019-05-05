@@ -138,7 +138,7 @@ VkSwapchainCreateInfoKHR Renderer::Vulkan::VulkanInitializers::SwapchainCreateIn
 	create_info.imageColorSpace = surface_format.colorSpace; // What colors will the images use
 	create_info.imageExtent = extent; // Image width and height
 	create_info.imageArrayLayers = 1; // Keep at 1
-	create_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+	create_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT; // VK_IMAGE_USAGE_STORAGE_BIT used for raytracing
 	create_info.presentMode = present_mode;
 	create_info.clipped = VK_TRUE; // If we can't see a pixel, get rid of it
 	create_info.oldSwapchain = VK_NULL_HANDLE; // We are not remaking the swapchain
@@ -169,19 +169,33 @@ VkSubpassDependency Renderer::Vulkan::VulkanInitializers::SubpassDependency()
 	subpass_dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 	subpass_dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 	subpass_dependency.srcAccessMask = 0;
+	subpass_dependency.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 	return subpass_dependency;
 }
 
-VkRenderPassCreateInfo Renderer::Vulkan::VulkanInitializers::RenderPassCreateInfo(std::vector<VkAttachmentDescription>& color_attachment, VkSubpassDescription & subpass, VkSubpassDependency & subpass_dependency)
+VkSubpassDependency Renderer::Vulkan::VulkanInitializers::SubpassDependency(uint32_t srcSubpass, uint32_t dstSubpass, VkPipelineStageFlags dstStageMask, VkAccessFlags dstAccessMask, VkPipelineStageFlags srcStageMask, VkAccessFlags srcAccessMask)
+{
+	VkSubpassDependency subpass_dependency = {};
+	subpass_dependency.srcSubpass = srcSubpass;
+	subpass_dependency.dstSubpass = dstSubpass;
+	subpass_dependency.dstStageMask = dstStageMask;
+	subpass_dependency.dstAccessMask = dstAccessMask;
+	subpass_dependency.srcStageMask = srcStageMask;
+	subpass_dependency.srcAccessMask = srcAccessMask;
+	subpass_dependency.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+	return subpass_dependency;
+}
+
+VkRenderPassCreateInfo Renderer::Vulkan::VulkanInitializers::RenderPassCreateInfo(std::vector<VkAttachmentDescription>& color_attachment, VkSubpassDescription* subpass, uint32_t subpass_count, VkSubpassDependency* subpass_dependency, uint32_t subpass_dependency_count)
 {
 	VkRenderPassCreateInfo render_pass_info = {};
 	render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
 	render_pass_info.attachmentCount = static_cast<uint32_t>(color_attachment.size());
 	render_pass_info.pAttachments = color_attachment.data();
-	render_pass_info.subpassCount = 1;
-	render_pass_info.pSubpasses = &subpass;
-	render_pass_info.dependencyCount = 1;
-	render_pass_info.pDependencies = &subpass_dependency;
+	render_pass_info.subpassCount = subpass_count;
+	render_pass_info.pSubpasses = subpass;
+	render_pass_info.dependencyCount = subpass_dependency_count;
+	render_pass_info.pDependencies = subpass_dependency;
 	return render_pass_info;
 }
 
@@ -244,10 +258,10 @@ VkImageViewCreateInfo Renderer::Vulkan::VulkanInitializers::ImageViewCreate(VkIm
 	create_info.image = image;
 	create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
 	create_info.format = format;
-	create_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
-	create_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-	create_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-	create_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+	create_info.components.r = VK_COMPONENT_SWIZZLE_R;
+	create_info.components.g = VK_COMPONENT_SWIZZLE_G;
+	create_info.components.b = VK_COMPONENT_SWIZZLE_B;
+	create_info.components.a = VK_COMPONENT_SWIZZLE_A;
 	create_info.subresourceRange.aspectMask = aspect_flags;// VK_IMAGE_ASPECT_COLOR_BIT;
 	create_info.subresourceRange.baseMipLevel = 0;
 	create_info.subresourceRange.levelCount = 1;
@@ -502,6 +516,28 @@ VkWriteDescriptorSet Renderer::Vulkan::VulkanInitializers::WriteDescriptorSet(Vk
 	return descriptorWrite;
 }
 
+VkWriteDescriptorSet Renderer::Vulkan::VulkanInitializers::WriteDescriptorSet(VkDescriptorSet d_set, std::vector<VkDescriptorImageInfo>& buffer, VkDescriptorType type, int binding)
+{
+	VkWriteDescriptorSet descriptorWrite = {};
+	descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	descriptorWrite.dstSet = d_set;
+	descriptorWrite.dstBinding = binding;
+	descriptorWrite.dstArrayElement = 0;
+	descriptorWrite.descriptorType = type;
+	descriptorWrite.descriptorCount = static_cast<uint32_t>(buffer.size());
+	descriptorWrite.pBufferInfo = VK_NULL_HANDLE;
+	descriptorWrite.pImageInfo = VK_NULL_HANDLE;
+	descriptorWrite.pTexelBufferView = VK_NULL_HANDLE;
+	descriptorWrite.pNext = VK_NULL_HANDLE;
+
+	static const int offset = offsetof(VkWriteDescriptorSet, pImageInfo);
+
+	VkDescriptorImageInfo** data = reinterpret_cast<VkDescriptorImageInfo**>(reinterpret_cast<uint8_t*>(&descriptorWrite) + offset);
+	*data = buffer.data();
+
+	return descriptorWrite;
+}
+
 VkFenceCreateInfo Renderer::Vulkan::VulkanInitializers::CreateFenceInfo()
 {
 	VkFenceCreateInfo fenceCreateInfo = {};
@@ -749,7 +785,7 @@ VkGeometryNV Renderer::Vulkan::VulkanInitializers::CreateRayTraceGeometry(VkBuff
 	geometry.geometry.triangles.indexOffset = indexOffsetInBytes;
 	geometry.geometry.triangles.indexCount = indexCount;
 	// Limitation to 32-bit indices
-	geometry.geometry.triangles.indexType = VK_INDEX_TYPE_UINT32;
+	geometry.geometry.triangles.indexType = VK_INDEX_TYPE_UINT16;
 	geometry.geometry.triangles.transformData = transformBuffer;
 	geometry.geometry.triangles.transformOffset = transformOffsetInBytes;
 	geometry.geometry.aabbs = { VK_STRUCTURE_TYPE_GEOMETRY_AABB_NV };
@@ -815,6 +851,19 @@ VkAccelerationStructureInfoNV Renderer::Vulkan::VulkanInitializers::Acceleration
 	info.geometryCount = static_cast<uint32_t>(buffer.size());
 	info.pGeometries = buffer.data();
 	info.instanceCount = 0;
+	return info;
+}
+
+VkAccelerationStructureInfoNV Renderer::Vulkan::VulkanInitializers::AccelerationStructureInfo(VkBuildAccelerationStructureFlagsNV flags, unsigned int instanceCount)
+{
+	VkAccelerationStructureInfoNV info;
+	info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_INFO_NV;
+	info.pNext = nullptr;
+	info.flags = flags;
+	info.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_NV;
+	info.geometryCount = 0;
+	info.pGeometries = nullptr;
+	info.instanceCount = instanceCount;
 	return info;
 }
 

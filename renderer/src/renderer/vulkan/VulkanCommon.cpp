@@ -225,6 +225,8 @@ void Renderer::Vulkan::VulkanCommon::CreateBuffer(VulkanDevice * device, VkDevic
 		buffer.buffer_memory,
 		0
 	);
+
+
 }
 
 void Renderer::Vulkan::VulkanCommon::MapBufferMemory(VulkanDevice* device, VulkanBufferData & buffer, VkDeviceSize size)

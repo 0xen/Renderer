@@ -65,16 +65,16 @@ Renderer::Vulkan::AccelerationStructure Renderer::Vulkan::VulkanAcceleration::Cr
 	if (pool->Indexed())
 	{
 		VulkanVertexBuffer* vertexBuffer = static_cast<VulkanVertexBuffer*>(pool->GetVertexBuffer());
-		VkGeometryNV geom = VulkanInitializers::CreateRayTraceGeometry(vertexBuffer->GetBufferData(BufferSlot::Primary)->buffer, 0, vertexBuffer->GetElementCount(BufferSlot::Primary), 
-			vertexBuffer->GetIndexSize(BufferSlot::Primary), nullptr, 0, 0, VK_NULL_HANDLE, 0, true);
+		VulkanIndexBuffer* indexBuffer = static_cast<VulkanIndexBuffer*>(pool->GetIndexBuffer());
+		VkGeometryNV geom = VulkanInitializers::CreateRayTraceGeometry(vertexBuffer->GetBufferData(BufferSlot::Primary)->buffer, 0, vertexBuffer->GetElementCount(BufferSlot::Primary),
+			vertexBuffer->GetIndexSize(BufferSlot::Primary), indexBuffer->GetBufferData(BufferSlot::Primary)->buffer, 0, indexBuffer->GetElementCount(BufferSlot::Primary), VK_NULL_HANDLE, 0, true);
 		vertex_buffers.push_back(geom);
 	}
 	else
 	{
 		VulkanVertexBuffer* vertexBuffer = static_cast<VulkanVertexBuffer*>(pool->GetVertexBuffer());
-		VulkanIndexBuffer* indexBuffer = static_cast<VulkanIndexBuffer*>(pool->GetIndexBuffer());
-		VkGeometryNV geom = VulkanInitializers::CreateRayTraceGeometry(vertexBuffer->GetBufferData(BufferSlot::Primary)->buffer, 0, vertexBuffer->GetElementCount(BufferSlot::Primary), 
-			vertexBuffer->GetIndexSize(BufferSlot::Primary), indexBuffer->GetBufferData(BufferSlot::Primary)->buffer, 0, indexBuffer->GetElementCount(BufferSlot::Primary), VK_NULL_HANDLE, 0, true);
+		VkGeometryNV geom = VulkanInitializers::CreateRayTraceGeometry(vertexBuffer->GetBufferData(BufferSlot::Primary)->buffer, 0, vertexBuffer->GetElementCount(BufferSlot::Primary),
+			vertexBuffer->GetIndexSize(BufferSlot::Primary), nullptr, 0, 0, VK_NULL_HANDLE, 0, true);
 		vertex_buffers.push_back(geom);
 	}
 
@@ -164,7 +164,7 @@ Renderer::Vulkan::AccelerationStructure Renderer::Vulkan::VulkanAcceleration::Cr
 		VkResult code = vkBindAccelerationStructureMemoryNV(*m_device->GetVulkanDevice(), 1, &acceleration_memory_info);
 
 
-		VkAccelerationStructureInfoNV acceleration_structure_info = VulkanInitializers::AccelerationStructureInfo(flags, vertex_buffers);
+		VkAccelerationStructureInfoNV acceleration_structure_info = VulkanInitializers::AccelerationStructureInfo(0, vertex_buffers);
 
 
 		vkCmdBuildAccelerationStructureNV(commandBuffer, &acceleration_structure_info, VK_NULL_HANDLE, 0, VK_FALSE,
@@ -336,16 +336,38 @@ void Renderer::Vulkan::VulkanAcceleration::CreateTopLevelAS(VkCommandBuffer comm
 
 
 
-	VulkanCommon::MapBufferMemory(m_device, m_top_level_as.instances, m_top_level_as.instances.size);
+	VkDeviceSize instancesBufferSize = geometryInstances.size() * sizeof(VkGeometryInstance);
+	VulkanCommon::MapBufferMemory(m_device, m_top_level_as.instances, instancesBufferSize);
 
 
-	memcpy(m_top_level_as.instances.mapped_memory, geometryInstances.data(), m_top_level_as.instances.size);
+	memcpy(m_top_level_as.instances.mapped_memory, geometryInstances.data(), instancesBufferSize);
 
 	VulkanCommon::UnMapBufferMemory(m_device, m_top_level_as.instances);
 
 
+	VkBindAccelerationStructureMemoryInfoNV bindInfo = VulkanInitializers::AccelerationStructureMemoryInfoNV(m_top_level_as.structure, m_top_level_as.result.buffer_memory);
 
 
+	VkResult code = vkBindAccelerationStructureMemoryNV(*m_device->GetVulkanDevice(), 1, &bindInfo);
 
+
+	VkAccelerationStructureInfoNV acceleration_structure_info = VulkanInitializers::AccelerationStructureInfo(0, geometryInstances.size());
+
+
+	vkCmdBuildAccelerationStructureNV(commandBuffer, &acceleration_structure_info, m_top_level_as.instances.buffer, 0, VK_FALSE,
+		acceleration_structure, VK_NULL_HANDLE, m_top_level_as.scratch.buffer, 0);
+
+	// Ensure that the build will be finished before using the AS using a barrier
+	VkMemoryBarrier memoryBarrier;
+	memoryBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+	memoryBarrier.pNext = nullptr;
+	memoryBarrier.srcAccessMask =
+		VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_NV | VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_NV;
+	memoryBarrier.dstAccessMask =
+		VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_NV | VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_NV;
+
+	vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_NV,
+		VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_NV, 0, 1, &memoryBarrier,
+		0, nullptr, 0, nullptr);
 
 }
