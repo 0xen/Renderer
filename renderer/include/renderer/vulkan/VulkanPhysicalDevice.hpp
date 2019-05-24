@@ -15,7 +15,7 @@ namespace Renderer
 		class VulkanPhysicalDevice : public VulkanStatus
 		{
 		public:
-			VulkanPhysicalDevice(VkPhysicalDevice device, VulkanQueueFamilyIndices queue_family, VulkanFlags flags);
+			VulkanPhysicalDevice(VkPhysicalDevice device, VulkanQueueFamilyIndices queue_family, unsigned int flags);
 
 			VkPhysicalDevice* GetPhysicalDevice();
 			VulkanQueueFamilyIndices* GetQueueFamilies();
@@ -30,7 +30,7 @@ namespace Renderer
 
 			static VulkanPhysicalDevice* GetPhysicalDevice(VulkanInstance* instance, VkSurfaceKHR surface);
 			static std::vector<VkPhysicalDevice> GetPhysicalDevices(VulkanInstance* instance);
-			static std::vector<const char*> GetDeviceExtenstions(VulkanFlags flags);
+			static std::vector<const char*> GetDeviceExtenstions(unsigned int flags);
 		private:
 			static bool CheckPhysicalDevice(VulkanInstance* instance, VkPhysicalDevice& device);
 			static bool CheckDeviceExtensionSupport(VulkanInstance* instance, VkPhysicalDevice& device);

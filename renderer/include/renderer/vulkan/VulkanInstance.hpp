@@ -12,10 +12,10 @@ namespace Renderer
 		class VulkanInstance : public VulkanStatus
 		{
 		public:
-			VulkanInstance(VulkanFlags flags = None);
+			VulkanInstance(unsigned int flags = VulkanFlags::None);
 			~VulkanInstance();
 			VkInstance * GetInstance();
-			VulkanFlags& GetFlags();
+			unsigned int& GetFlags();
 		private:
 			void SetupLayersAndExtensions();
 			void InitVulkanInstance();
@@ -27,7 +27,7 @@ namespace Renderer
 			const char* m_engine_name = "Renderer";								// Engine name
 			const uint32_t m_api_version = VK_MAKE_VERSION(1, 0, 68);				// Required API version number
 			// Used to define runtime configuration settings
-			VulkanFlags m_flags;
+			unsigned int m_flags;
 			VkInstance m_instance;
 		};
 	}

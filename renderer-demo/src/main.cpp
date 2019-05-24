@@ -156,8 +156,7 @@ int main(int argc, char **argv)
 	// If the rendering was not fully created, error out
 	assert(renderer != nullptr && "Error, renderer instance could not be created");
 	
-
-	renderer->Start(window_handle, VulkanFlags::Raytrace);
+	renderer->Start(window_handle, VulkanFlags::Raytrace | VulkanFlags::ActiveCMDRebuild);
 
 
 

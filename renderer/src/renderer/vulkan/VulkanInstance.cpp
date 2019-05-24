@@ -6,7 +6,7 @@
 
 using namespace Renderer::Vulkan;
 
-VulkanInstance::VulkanInstance(VulkanFlags flags) : m_flags(flags)
+VulkanInstance::VulkanInstance(unsigned int flags) : m_flags(flags)
 {
 	SetupLayersAndExtensions();
 	assert(CheckLayersSupport() && "Unsupported Layers");
@@ -23,7 +23,7 @@ VkInstance * VulkanInstance::GetInstance()
 	return &m_instance;
 }
 
-VulkanFlags & Renderer::Vulkan::VulkanInstance::GetFlags()
+unsigned int & Renderer::Vulkan::VulkanInstance::GetFlags()
 {
 	return m_flags;
 }
@@ -36,7 +36,7 @@ void VulkanInstance::SetupLayersAndExtensions()
 	m_instance_extensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
 
 	// If the user has opted to enable raytracing
-	if (Raytrace& m_flags == Raytrace)
+	if ((m_flags & VulkanFlags::Raytrace) == VulkanFlags::Raytrace)
 	{
 		m_instance_extensions.push_back(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
 	}

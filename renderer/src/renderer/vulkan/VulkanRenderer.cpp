@@ -32,7 +32,7 @@ VulkanRenderer::~VulkanRenderer()
 	Stop();
 }
 
-bool Renderer::Vulkan::VulkanRenderer::Start(Renderer::NativeWindowHandle* window_handle, VulkanFlags flags)
+bool Renderer::Vulkan::VulkanRenderer::Start(Renderer::NativeWindowHandle* window_handle, unsigned int flags)
 {
 	m_window_handle = window_handle;
 

@@ -4,7 +4,7 @@
 #include <set>
 #include <assert.h>
 
-Renderer::Vulkan::VulkanPhysicalDevice::VulkanPhysicalDevice(VkPhysicalDevice device, VulkanQueueFamilyIndices queue_family, VulkanFlags flags)
+Renderer::Vulkan::VulkanPhysicalDevice::VulkanPhysicalDevice(VkPhysicalDevice device, VulkanQueueFamilyIndices queue_family, unsigned int flags)
 {
 	m_device = device;
 	m_queue_family = queue_family;
@@ -163,12 +163,12 @@ std::vector<VkPhysicalDevice> Renderer::Vulkan::VulkanPhysicalDevice::GetPhysica
 	return devices;
 }
 
-std::vector<const char*> Renderer::Vulkan::VulkanPhysicalDevice::GetDeviceExtenstions(VulkanFlags flags)
+std::vector<const char*> Renderer::Vulkan::VulkanPhysicalDevice::GetDeviceExtenstions(unsigned int flags)
 {
 	std::vector<const char*> extentions = {
 		VK_KHR_SWAPCHAIN_EXTENSION_NAME
 	};
-	if (Raytrace & flags == Raytrace)
+	if ((flags & VulkanFlags::Raytrace) == VulkanFlags::Raytrace)
 	{
 		extentions.push_back(VK_NV_RAY_TRACING_EXTENSION_NAME);
 		extentions.push_back(VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME);

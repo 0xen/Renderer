@@ -30,7 +30,7 @@ namespace Renderer
 		public:
 			VulkanRenderer();
 			~VulkanRenderer();
-			bool Start(Renderer::NativeWindowHandle* window_handle, VulkanFlags flags);
+			bool Start(Renderer::NativeWindowHandle* window_handle, unsigned int flags);
 			virtual bool Start(Renderer::NativeWindowHandle* window_handle);
 			virtual void Update();
 			void BeginFrame();
