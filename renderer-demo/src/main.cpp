@@ -179,7 +179,7 @@ int main(int argc, char **argv)
 	camera.view = glm::translate(camera.view, glm::vec3(0.0f, 0.0f, -15.0f));
 
 
-	camera.view = glm::lookAt(glm::vec3(4.0f, 4.0f, 4.0f), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
+	//camera.view = glm::lookAt(glm::vec3(4.0f, 4.0f, 4.0f), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
 
 	float aspectRatio = ((float)1080) / ((float)720);
 	camera.projection = glm::perspective(glm::radians(65.0f), aspectRatio, 0.1f, 1000.0f);
@@ -254,10 +254,22 @@ int main(int argc, char **argv)
 	IModel* model1 = model_pool1->CreateModel();
 
 	glm::mat4 modelPos = glm::mat4(1.0f);
-	modelPos = glm::translate(modelPos, glm::vec3(0, 0, 0));
+	modelPos = glm::translate(modelPos, glm::vec3(2, 0, 0));
 	//modelPos = glm::scale(modelPos, glm::vec3(1.0f, 1.0f, 1.0f));
 
 	model1->SetData(POSITION_BUFFER, modelPos);
+
+	{
+
+
+		IModel* model2 = model_pool1->CreateModel();
+
+		modelPos = glm::mat4(1.0f);
+		modelPos = glm::translate(modelPos, glm::vec3(-2, 0, 0));
+		//modelPos = glm::scale(modelPos, glm::vec3(1.0f, 1.0f, 1.0f));
+
+		model2->SetData(POSITION_BUFFER, modelPos);
+	}
 	
 
 	model_position_buffer1->SetData(BufferSlot::Secondery);

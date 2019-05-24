@@ -38,8 +38,11 @@ void Renderer::Vulkan::VulkanAcceleration::Build()
 	{
 		m_bottom_level_as[i] = CreateBottomLevelAS(commandBuffer, m_model_pools[i]);
 
-		glm::mat4x4 mat = glm::mat4x4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1);
-		instances.push_back({ m_bottom_level_as[i].structure, mat });
+		for (auto& it : m_model_pools[i]->GetModels())
+		{
+			//glm::mat4x4 mat = glm::mat4x4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1);
+			instances.push_back({ m_bottom_level_as[i].structure, it.second->GetData<glm::mat4>(0) });
+		}
 	}
 
 

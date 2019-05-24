@@ -172,6 +172,16 @@ unsigned int Renderer::Vulkan::VulkanModelPool::GetLargestIndex()
 	return m_largest_index;
 }
 
+std::map<unsigned int, Renderer::Vulkan::VulkanModel*>& Renderer::Vulkan::VulkanModelPool::GetModels()
+{
+	return m_models;
+}
+
+std::map<unsigned int, Renderer::Vulkan::VulkanUniformBuffer*>& Renderer::Vulkan::VulkanModelPool::GetBuffers()
+{
+	return m_buffers;
+}
+
 void Renderer::Vulkan::VulkanModelPool::AttachToCommandBuffer(VkCommandBuffer & command_buffer, VulkanPipeline* pipeline)
 {
 	VkDeviceSize offsets[] = { 0 };
