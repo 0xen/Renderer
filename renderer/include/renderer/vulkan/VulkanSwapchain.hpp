@@ -21,10 +21,10 @@ namespace Renderer
 			~VulkanSwapchain();
 			void RequestRebuildCommandBuffers();
 			void RebuildSwapchain();
-			unsigned int GetCurrentBufferIndex();
+			unsigned int GetCurrentFrameIndex();
 			VkImageView GetBackBufferImage(unsigned int index);
 			VkImageView GetCurrentBackBufferImage();
-			VkDescriptorImageInfo GetBackBufferImageInfo(unsigned int index);
+			VkDescriptorImageInfo GetRayTraceStagingBuffer();
 			VkDescriptorImageInfo GetCurrentBackBufferImageInfo();
 			VkSubmitInfo GetSubmitInfo();
 			void SubmitQueue(unsigned int currentBuffer);
@@ -78,6 +78,10 @@ namespace Renderer
 			void InitDepthImage();
 			void DeInitDepthImage();
 
+			// Raytrace temp image image
+			void InitRaytracingTempImage();
+			void DeInitRaytracingTempImage();
+
 			// Frame buffer
 			void InitFrameBuffer();
 			void DeInitFrameBuffer();
@@ -117,6 +121,11 @@ namespace Renderer
 			VkImage m_depth_image;
 			VkDeviceMemory m_depth_image_memory;
 			VkImageView m_depth_image_view;
+
+			// Raytrace Storage image
+			VkImage m_raytrace_storage_image;
+			VkDeviceMemory m_raytrace_storage_image_memory;
+			VkImageView  m_raytrace_storage_image_view;
 
 			// Semaphores
 			VkSemaphore m_image_available_semaphore;

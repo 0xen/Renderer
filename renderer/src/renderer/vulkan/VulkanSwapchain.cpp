@@ -57,7 +57,7 @@ void Renderer::Vulkan::VulkanSwapchain::RebuildSwapchain()
 	RebuildCommandBuffers();
 }
 
-unsigned int Renderer::Vulkan::VulkanSwapchain::GetCurrentBufferIndex()
+unsigned int Renderer::Vulkan::VulkanSwapchain::GetCurrentFrameIndex()
 {
 	return m_frame_index;
 }
@@ -69,12 +69,12 @@ VkImageView Renderer::Vulkan::VulkanSwapchain::GetBackBufferImage(unsigned int i
 
 VkImageView Renderer::Vulkan::VulkanSwapchain::GetCurrentBackBufferImage()
 {
-	return m_swap_chain_image_views[GetCurrentBufferIndex()];
+	return m_swap_chain_image_views[GetCurrentFrameIndex()];
 }
 
-VkDescriptorImageInfo Renderer::Vulkan::VulkanSwapchain::GetBackBufferImageInfo(unsigned int index)
+VkDescriptorImageInfo Renderer::Vulkan::VulkanSwapchain::GetRayTraceStagingBuffer()
 {
-	return VulkanInitializers::DescriptorImageInfo(nullptr, GetBackBufferImage(index), VK_IMAGE_LAYOUT_GENERAL);
+	return VulkanInitializers::DescriptorImageInfo(nullptr, m_raytrace_storage_image_view, VK_IMAGE_LAYOUT_GENERAL);
 }
 
 VkDescriptorImageInfo Renderer::Vulkan::VulkanSwapchain::GetCurrentBackBufferImageInfo()
@@ -97,6 +97,9 @@ VkSubmitInfo Renderer::Vulkan::VulkanSwapchain::GetSubmitInfo()
 
 void Renderer::Vulkan::VulkanSwapchain::SubmitQueue(unsigned int currentBuffer)
 {
+	// Since we are only dealing with one buffer, select it
+	if ((m_instance->GetFlags() & VulkanFlags::ActiveCMDRebuild) == VulkanFlags::ActiveCMDRebuild) currentBuffer = 0;
+
 	VkSubmitInfo info = GetSubmitInfo();
 	info.pCommandBuffers = &m_command_buffers[currentBuffer];
 
@@ -130,7 +133,7 @@ void Renderer::Vulkan::VulkanSwapchain::Present(std::vector<VkSemaphore> signal_
 		&present_info
 	);
 	vkDeviceWaitIdle(*m_device->GetVulkanDevice());
-	m_frame_index = (m_frame_index + 1) % 3;
+	m_frame_index = (m_frame_index + 1) % m_swap_chain_images.size();
 }
 
 VkRenderPass * Renderer::Vulkan::VulkanSwapchain::GetRenderPass()
@@ -263,7 +266,7 @@ void Renderer::Vulkan::VulkanSwapchain::FindNextImageIndex()
 	if (check == VK_ERROR_OUT_OF_DATE_KHR)
 	{
 		RebuildSwapchain();
-		GetCurrentBufferIndex();
+		GetCurrentFrameIndex();
 		return;
 	}
 	ErrorCheck(check);
@@ -282,6 +285,8 @@ void Renderer::Vulkan::VulkanSwapchain::RebuildCommandBuffers()
 	clear_values[1].depthStencil = { 1.0f, 0 };
 
 	VkRenderPassBeginInfo render_pass_info = VulkanInitializers::RenderPassBeginInfo(m_render_pass, m_swap_chain_extent, clear_values);
+
+	VkImageSubresourceRange subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
 
 	for (uint32_t i = 0; i < m_command_buffers.size(); i++)
 	{
@@ -303,7 +308,11 @@ void Renderer::Vulkan::VulkanSwapchain::RebuildCommandBuffers()
 		assert(!HasError() && "Unable to create command buffer");
 
 
-		VkImageSubresourceRange subresourceRange;
+
+
+
+
+		/*VkImageSubresourceRange subresourceRange;
 		subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		subresourceRange.baseMipLevel = 0;
 		subresourceRange.levelCount = 1;
@@ -324,16 +333,16 @@ void Renderer::Vulkan::VulkanSwapchain::RebuildCommandBuffers()
 
 		vkCmdPipelineBarrier(m_command_buffers[i], VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
 			VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1,
-			&imageMemoryBarrier);
+			&imageMemoryBarrier);*/
 
 
 
 
-		vkCmdBeginRenderPass(
+		/*vkCmdBeginRenderPass(
 			m_command_buffers[i],
 			&render_pass_info,
 			VK_SUBPASS_CONTENTS_INLINE
-		);
+		);*/
 
 
 		vkCmdSetLineWidth(m_command_buffers[i], 1.0f);
@@ -347,9 +356,38 @@ void Renderer::Vulkan::VulkanSwapchain::RebuildCommandBuffers()
 			pipeline->AttachToCommandBuffer(m_command_buffers[i]);
 		}
 
-		vkCmdEndRenderPass(
+
+
+
+
+		VulkanCommon::TransitionImageLayout(m_command_buffers[i], m_swap_chain_images[i], VK_FORMAT_UNDEFINED, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, subresourceRange);
+
+
+		VulkanCommon::TransitionImageLayout(m_command_buffers[i], m_raytrace_storage_image, VK_FORMAT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+			VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, subresourceRange);
+
+
+		VkImageCopy copyRegion{};
+		copyRegion.srcSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+		copyRegion.srcOffset = { 0, 0, 0 };
+		copyRegion.dstSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+		copyRegion.dstOffset = { 0, 0, 0 };
+		copyRegion.extent = { (unsigned int)m_window_handle->width, (unsigned int)m_window_handle->height, 1 };
+		vkCmdCopyImage(m_command_buffers[i], m_raytrace_storage_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, m_swap_chain_images[i], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
+
+
+		VulkanCommon::TransitionImageLayout(m_command_buffers[i], m_swap_chain_images[i], VK_FORMAT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+			VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, subresourceRange);
+
+
+		VulkanCommon::TransitionImageLayout(m_command_buffers[i], m_raytrace_storage_image, VK_FORMAT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL,
+			VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, subresourceRange);
+
+
+		/*vkCmdEndRenderPass(
 			m_command_buffers[i]
-		);
+		);*/
 
 		ErrorCheck(vkEndCommandBuffer(
 			m_command_buffers[i]
@@ -366,12 +404,20 @@ void Renderer::Vulkan::VulkanSwapchain::CreateSwapchain()
 	InitSwapchainImages();
 	InitRenderPass();
 	InitDepthImage();
+	if (m_instance->GetFlags()&VulkanFlags::Raytrace == VulkanFlags::Raytrace)
+	{
+		InitRaytracingTempImage();
+	}
 	InitFrameBuffer();
 }
 
 void Renderer::Vulkan::VulkanSwapchain::DestroySwapchain()
 {
 	DeInitFrameBuffer();
+	if (m_instance->GetFlags()&VulkanFlags::Raytrace == VulkanFlags::Raytrace)
+	{
+		DeInitRaytracingTempImage();
+	}
 	DeInitDepthImage();
 	DeInitRenderPass();
 	DeInitSwapchainImages();
@@ -401,6 +447,22 @@ void Renderer::Vulkan::VulkanSwapchain::InitSwapchain()
 
 	VulkanQueueFamilyIndices indices = *m_device->GetVulkanPhysicalDevice()->GetQueueFamilies();
 	VkSwapchainCreateInfoKHR create_info = VulkanInitializers::SwapchainCreateInfoKHR(surface_format, extent, present_mode, image_count, *m_surface, indices, swap_chain_support);
+
+	if (swap_chain_support.capabilities.supportedUsageFlags & VK_IMAGE_USAGE_STORAGE_BIT) {
+		create_info.imageUsage |= VK_IMAGE_USAGE_STORAGE_BIT;
+	}
+
+	if (swap_chain_support.capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT) {
+		create_info.imageUsage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+	}
+
+	if (swap_chain_support.capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) {
+		create_info.imageUsage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+	}
+
+
+
+
 	ErrorCheck(vkCreateSwapchainKHR(
 		*m_device->GetVulkanDevice(),
 		&create_info,
@@ -427,6 +489,10 @@ void Renderer::Vulkan::VulkanSwapchain::InitSwapchain()
 		&image_count,
 		m_swap_chain_images.data()
 	));
+
+
+
+
 	assert(!HasError() && "Unable to get swapchain images");
 }
 
@@ -592,8 +658,19 @@ void Renderer::Vulkan::VulkanSwapchain::DeInitRenderPass()
 
 void Renderer::Vulkan::VulkanSwapchain::InitCommandBuffers()
 {
-	// Resize the command buffers so that there is one for each frame buffer
-	m_command_buffers.resize(m_swap_chain_framebuffers.size());
+	if ((m_instance->GetFlags() & VulkanFlags::ActiveCMDRebuild) == VulkanFlags::ActiveCMDRebuild)
+	{
+		// We will only be using one command buffer as we will rebuild it every frame
+		m_command_buffers.resize(1);
+	}
+	else
+	{
+		// Resize the command buffers so that there is one for each frame buffer
+		m_command_buffers.resize(m_swap_chain_framebuffers.size());
+	}
+
+
+
 	// Setup the allocation info
 	VkCommandBufferAllocateInfo alloc_info = VulkanInitializers::CommandBufferAllocateInfo(
 		*m_device->GetGraphicsCommandPool(),
@@ -632,6 +709,33 @@ void Renderer::Vulkan::VulkanSwapchain::DeInitDepthImage()
 	vkDestroyImage(
 		*m_device->GetVulkanDevice(),
 		m_depth_image,
+		nullptr
+	);
+}
+
+void Renderer::Vulkan::VulkanSwapchain::InitRaytracingTempImage()
+{
+	VulkanCommon::CreateImage(m_device, m_swap_chain_extent, m_swap_chain_image_format, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_STORAGE_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_raytrace_storage_image, m_raytrace_storage_image_memory);
+	VulkanCommon::CreateImageView(m_device, m_raytrace_storage_image, m_swap_chain_image_format, VK_IMAGE_ASPECT_COLOR_BIT, m_raytrace_storage_image_view);
+
+	VulkanCommon::TransitionImageLayout(m_device, m_raytrace_storage_image, m_depth_image_format, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 });
+}
+
+void Renderer::Vulkan::VulkanSwapchain::DeInitRaytracingTempImage()
+{
+	vkDestroyImageView(
+		*m_device->GetVulkanDevice(),
+		m_raytrace_storage_image_view,
+		nullptr
+	);
+	vkFreeMemory(
+		*m_device->GetVulkanDevice(),
+		m_raytrace_storage_image_memory,
+		nullptr
+	);
+	vkDestroyImage(
+		*m_device->GetVulkanDevice(),
+		m_raytrace_storage_image,
 		nullptr
 	);
 }

@@ -76,12 +76,15 @@ void Renderer::Vulkan::VulkanRenderer::BeginFrame()
 {
 	if (!m_running)return;
 
+	if((m_instance->GetFlags()& VulkanFlags::ActiveCMDRebuild) == VulkanFlags::ActiveCMDRebuild)
+		m_swapchain->RequestRebuildCommandBuffers();
+
 	m_swapchain->FindNextImageIndex();
 }
 
 void Renderer::Vulkan::VulkanRenderer::EndFrame()
 {
-	unsigned int currentBuffer = m_swapchain->GetCurrentBufferIndex();
+	unsigned int currentBuffer = m_swapchain->GetCurrentFrameIndex();
 
 	m_swapchain->SubmitQueue(currentBuffer);
 

@@ -25,7 +25,11 @@ namespace Renderer
 
 			uint32_t FindMemoryType(VulkanPhysicalDevice* device, uint32_t type_filter, VkMemoryPropertyFlags properties);
 
-			void TransitionImageLayout(VulkanDevice* device, VkImage image, VkFormat format, VkImageLayout old_layout, VkImageLayout new_layout);
+			void TransitionImageLayout(VkCommandBuffer cmd, VkImage image, VkFormat format, VkImageLayout old_layout, VkImageLayout new_layout,
+				VkPipelineStageFlags srcStageMask,
+				VkPipelineStageFlags dstStageMask, VkImageSubresourceRange subresourceRange = {});
+
+			void TransitionImageLayout(VulkanDevice* device, VkImage image, VkFormat format, VkImageLayout old_layout, VkImageLayout new_layout, VkImageSubresourceRange subresourceRange = {});
 
 			VkCommandBuffer BeginSingleTimeCommands(VulkanDevice* device, VkCommandPool command_pool);
 

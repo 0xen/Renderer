@@ -99,11 +99,35 @@ uint32_t VulkanCommon::FindMemoryType(VulkanPhysicalDevice * device, uint32_t ty
 	return -1;
 }
 
-void VulkanCommon::TransitionImageLayout(VulkanDevice* device, VkImage image, VkFormat format, VkImageLayout old_layout, VkImageLayout new_layout)
+void Renderer::Vulkan::VulkanCommon::TransitionImageLayout(VkCommandBuffer cmd, VkImage image, VkFormat format, VkImageLayout old_layout, VkImageLayout new_layout,
+	VkPipelineStageFlags srcStageMask,
+	VkPipelineStageFlags dstStageMask, VkImageSubresourceRange subresourceRange)
+{
+	VkImageMemoryBarrier barrier = VulkanInitializers::ImageMemoryBarrier(image, format, old_layout, new_layout);
+
+	barrier.subresourceRange = subresourceRange;
+
+	vkCmdPipelineBarrier(
+		cmd,
+		srcStageMask,
+		dstStageMask,
+		0,
+		0,
+		nullptr,
+		0,
+		nullptr,
+		1,
+		&barrier
+	);
+}
+
+void VulkanCommon::TransitionImageLayout(VulkanDevice* device, VkImage image, VkFormat format, VkImageLayout old_layout, VkImageLayout new_layout, VkImageSubresourceRange subresourceRange)
 {
 	VkCommandBuffer command_buffer = BeginSingleTimeCommands(device,*device->GetGraphicsCommandPool());
 
 	VkImageMemoryBarrier barrier = VulkanInitializers::ImageMemoryBarrier(image, format, old_layout, new_layout);
+
+	barrier.subresourceRange = subresourceRange;
 
 	vkCmdPipelineBarrier(
 		command_buffer,
@@ -164,7 +188,7 @@ void VulkanCommon::EndSingleTimeCommands(VulkanDevice * device, VkCommandBuffer 
 {
 	vkEndCommandBuffer(command_buffer);
 	VkSubmitInfo submit_info = VulkanInitializers::SubmitInfo(command_buffer);
-	vkQueueSubmit(
+	VkResult res = vkQueueSubmit(
 		*device->GetGraphicsQueue(),
 		1,
 		&submit_info,

@@ -156,7 +156,7 @@ int main(int argc, char **argv)
 	// If the rendering was not fully created, error out
 	assert(renderer != nullptr && "Error, renderer instance could not be created");
 	
-	renderer->Start(window_handle, VulkanFlags::Raytrace | VulkanFlags::ActiveCMDRebuild);
+	renderer->Start(window_handle, VulkanFlags::Raytrace/* | VulkanFlags::ActiveCMDRebuild*/);
 
 
 
@@ -254,7 +254,7 @@ int main(int argc, char **argv)
 	IModel* model1 = model_pool1->CreateModel();
 
 	glm::mat4 modelPos = glm::mat4(1.0f);
-	//modelPos = glm::translate(modelPos, glm::vec3(0, 0, 0));
+	modelPos = glm::translate(modelPos, glm::vec3(0, 0, 0));
 	//modelPos = glm::scale(modelPos, glm::vec3(1.0f, 1.0f, 1.0f));
 
 	model1->SetData(POSITION_BUFFER, modelPos);
@@ -443,14 +443,14 @@ int main(int argc, char **argv)
 		*/
 
 
+	raytracingSet->AttachBuffer(1, { swapchain->GetRayTraceStagingBuffer() });
+	raytracingSet->UpdateSet();
 
 	//renderer->Update();
 
 	while (renderer->IsRunning())
 	{
 
-		raytracingSet->AttachBuffer(1, { swapchain->GetBackBufferImageInfo(swapchain->GetCurrentBufferIndex()) });
-		raytracingSet->UpdateSet();
 
 		renderer->BeginFrame();
 		
