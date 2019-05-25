@@ -183,7 +183,6 @@ int main(int argc, char **argv)
 
 	float aspectRatio = ((float)1080) / ((float)720);
 	camera.projection = glm::perspective(glm::radians(65.0f), aspectRatio, 0.1f, 1000.0f);
-	camera.projection[1][1] *= -1;  // Inverting Y for Vulkan
 
 
 
@@ -205,7 +204,8 @@ int main(int argc, char **argv)
 	rayCamera.viewInverse = glm::inverse(rayCamera.view);
 	rayCamera.projInverse = glm::inverse(rayCamera.proj);
 	
-
+	// Only flip the Y when the raytrace camera has out instance as it dose not flip
+	camera.projection[1][1] *= -1;  // Inverting Y for Vulkan
 
 
 
@@ -226,7 +226,7 @@ int main(int argc, char **argv)
 
 
 	ObjLoader<Vertex> loader;
-	loader.loadModel("../../renderer-demo/media/scenes/LetterBlockA.obj");
+	loader.loadModel("../../renderer-demo/media/scenes/Medieval_building.obj");
 
 
 	uint32_t m_nbIndices = static_cast<uint32_t>(loader.m_indices.size());
@@ -245,28 +245,54 @@ int main(int argc, char **argv)
 
 	IModelPool* model_pool1 = renderer->CreateModelPool(vertexBuffer, indexBuffer);
 
-	glm::mat4* model_position_array1 = new glm::mat4[12];
-	IUniformBuffer* model_position_buffer1 = renderer->CreateUniformBuffer(model_position_array1, BufferChain::Double, sizeof(glm::mat4), 2, true);
+	glm::mat4* model_position_array1 = new glm::mat4[1000];
+	IUniformBuffer* model_position_buffer1 = renderer->CreateUniformBuffer(model_position_array1, BufferChain::Double, sizeof(glm::mat4), 1000, true);
 
 
 	model_pool1->AttachBuffer(POSITION_BUFFER, model_position_buffer1);
 
 	IModel* model1 = model_pool1->CreateModel();
 
-	glm::mat4 modelPos = glm::mat4(1.0f);
-	modelPos = glm::translate(modelPos, glm::vec3(2, 0, 0));
-	//modelPos = glm::scale(modelPos, glm::vec3(1.0f, 1.0f, 1.0f));
+	glm::mat4 modelPosition = glm::mat4(1.0f);
+	modelPosition = glm::translate(modelPosition, glm::vec3(2, 0, 0));
+	float scale = 0.4f;
+	modelPosition = glm::scale(modelPosition, glm::vec3(scale, scale, scale));
 
-	model1->SetData(POSITION_BUFFER, modelPos);
+	model1->SetData(POSITION_BUFFER, modelPosition);
 
 	{
 
 
 		IModel* model2 = model_pool1->CreateModel();
 
+		glm::mat4 modelPos = glm::mat4(1.0f);
 		modelPos = glm::mat4(1.0f);
 		modelPos = glm::translate(modelPos, glm::vec3(-2, 0, 0));
-		//modelPos = glm::scale(modelPos, glm::vec3(1.0f, 1.0f, 1.0f));
+		modelPos = glm::scale(modelPos, glm::vec3(scale, scale, scale));
+
+		model2->SetData(POSITION_BUFFER, modelPos);
+	}
+	{
+
+
+		IModel* model2 = model_pool1->CreateModel();
+
+		glm::mat4 modelPos = glm::mat4(1.0f);
+		modelPos = glm::mat4(1.0f);
+		modelPos = glm::translate(modelPos, glm::vec3(-2, 2, 0));
+		modelPos = glm::scale(modelPos, glm::vec3(scale, scale, scale));
+
+		model2->SetData(POSITION_BUFFER, modelPos);
+	}
+	{
+
+
+		IModel* model2 = model_pool1->CreateModel();
+
+		glm::mat4 modelPos = glm::mat4(1.0f);
+		modelPos = glm::mat4(1.0f);
+		modelPos = glm::translate(modelPos, glm::vec3(2, 2, 0));
+		modelPos = glm::scale(modelPos, glm::vec3(scale, scale, scale));
 
 		model2->SetData(POSITION_BUFFER, modelPos);
 	}
@@ -385,6 +411,7 @@ int main(int argc, char **argv)
 
 		//raytracingSet->AttachBuffer(1, { swapchain->GetBackBufferImageInfo(2) });
 
+		raytracingSet->AttachBuffer(1, { swapchain->GetRayTraceStagingBuffer() });
 		raytracingSet->AttachBuffer(2, cameraInfo);
 		raytracingSet->AttachBuffer(3, model_pool1->GetVertexBuffer());
 		raytracingSet->AttachBuffer(4, model_pool1->GetIndexBuffer());
@@ -455,27 +482,22 @@ int main(int argc, char **argv)
 		*/
 
 
-	raytracingSet->AttachBuffer(1, { swapchain->GetRayTraceStagingBuffer() });
-	raytracingSet->UpdateSet();
-
-	//renderer->Update();
 
 	while (renderer->IsRunning())
 	{
 
-
 		renderer->BeginFrame();
-		
 
 
 
 
-		modelPos = glm::rotate(modelPos, 0.001f, glm::vec3(0,1,0));
+		modelPosition = glm::rotate(modelPosition, 0.001f, glm::vec3(0,1,0));
 
-		model1->SetData(POSITION_BUFFER, modelPos);
+		model1->SetData(POSITION_BUFFER, modelPosition);
 
 		model_position_buffer1->SetData(BufferSlot::Primary);
 
+		acceleration->Update();
 
 		renderer->EndFrame();
 		PollWindow();

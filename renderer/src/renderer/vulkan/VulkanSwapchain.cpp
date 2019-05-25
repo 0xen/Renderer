@@ -308,43 +308,6 @@ void Renderer::Vulkan::VulkanSwapchain::RebuildCommandBuffers()
 		assert(!HasError() && "Unable to create command buffer");
 
 
-
-
-
-
-		/*VkImageSubresourceRange subresourceRange;
-		subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		subresourceRange.baseMipLevel = 0;
-		subresourceRange.levelCount = 1;
-		subresourceRange.baseArrayLayer = 0;
-		subresourceRange.layerCount = 1;
-
-		VkImageMemoryBarrier imageMemoryBarrier;
-		imageMemoryBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-		imageMemoryBarrier.pNext = nullptr;
-		imageMemoryBarrier.srcAccessMask = 0;
-		imageMemoryBarrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-		imageMemoryBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		imageMemoryBarrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
-		imageMemoryBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		imageMemoryBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		imageMemoryBarrier.image = m_swap_chain_images[i];
-		imageMemoryBarrier.subresourceRange = subresourceRange;
-
-		vkCmdPipelineBarrier(m_command_buffers[i], VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-			VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1,
-			&imageMemoryBarrier);*/
-
-
-
-
-		/*vkCmdBeginRenderPass(
-			m_command_buffers[i],
-			&render_pass_info,
-			VK_SUBPASS_CONTENTS_INLINE
-		);*/
-
-
 		vkCmdSetLineWidth(m_command_buffers[i], 1.0f);
 		const VkViewport viewport = VulkanInitializers::Viewport((float)m_window_handle->width, (float)m_window_handle->height, 0.0f, 0.0f, 0.0f, 1.0f);
 		const VkRect2D scissor = VulkanInitializers::Scissor(m_window_handle->width, m_window_handle->height);
@@ -489,7 +452,6 @@ void Renderer::Vulkan::VulkanSwapchain::InitSwapchain()
 		&image_count,
 		m_swap_chain_images.data()
 	));
-
 
 
 

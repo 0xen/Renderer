@@ -71,11 +71,18 @@ namespace Renderer
 
 			void Build();
 
+			void Update();
+
 			VkWriteDescriptorSetAccelerationStructureNV GetDescriptorAcceleration();
 
 		private:
 			AccelerationStructure CreateBottomLevelAS(VkCommandBuffer commandBuffer, VulkanModelPool* pool);
 			void CreateTopLevelAS(VkCommandBuffer commandBuffer, std::vector<std::pair<VkAccelerationStructureNV, glm::mat4x4>>& instances);
+
+			void BuildTopLevelAS();
+
+			unsigned int UpdateGeometryInstances();
+
 
 			VulkanDevice* m_device;
 
@@ -83,7 +90,6 @@ namespace Renderer
 			std::vector<ASInstance> m_as_instance;
 			std::vector<AccelerationStructure> m_bottom_level_as;
 			std::vector<VulkanModelPool*> m_model_pools;
-
 		};
 
 	}
