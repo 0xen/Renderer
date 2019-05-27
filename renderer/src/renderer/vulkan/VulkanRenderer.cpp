@@ -162,14 +162,14 @@ ITextureBuffer * Renderer::Vulkan::VulkanRenderer::CreateTextureBuffer(void * da
 	return new VulkanTextureBuffer(m_device, dataPtr, format, width, height);
 }
 
-IDescriptor * Renderer::Vulkan::VulkanRenderer::CreateDescriptor(DescriptorType descriptor_type, ShaderStage shader_stage, unsigned int binding)
+IDescriptor * Renderer::Vulkan::VulkanRenderer::CreateDescriptor(DescriptorType descriptor_type, ShaderStage shader_stage, unsigned int binding, unsigned int count)
 {
-	return new VulkanDescriptor(descriptor_type, shader_stage, binding);
+	return new VulkanDescriptor(descriptor_type, shader_stage, binding, count);
 }
 
-IDescriptor * Renderer::Vulkan::VulkanRenderer::CreateDescriptor(VkDescriptorType descriptor_type, VkShaderStageFlags shader_stage, unsigned int binding)
+IDescriptor * Renderer::Vulkan::VulkanRenderer::CreateDescriptor(VkDescriptorType descriptor_type, VkShaderStageFlags shader_stage, unsigned int binding, unsigned int count)
 {
-	return new VulkanDescriptor(descriptor_type, shader_stage, binding);
+	return new VulkanDescriptor(descriptor_type, shader_stage, binding, count);
 }
 
 IDescriptorPool * Renderer::Vulkan::VulkanRenderer::CreateDescriptorPool(std::vector<IDescriptor*> descriptors)

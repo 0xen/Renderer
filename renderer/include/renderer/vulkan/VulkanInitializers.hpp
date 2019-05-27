@@ -72,9 +72,9 @@ namespace Renderer
 
 			VkDescriptorImageInfo DescriptorImageInfo(VkSampler sampler, VkImageView imageView, VkImageLayout imageLayout);
 
-			VkDescriptorPoolSize DescriptorPoolSize(VkDescriptorType type);
+			VkDescriptorPoolSize DescriptorPoolSize(VkDescriptorType type, unsigned int count);
 
-			VkDescriptorSetLayoutBinding DescriptorSetLayoutBinding(VkDescriptorType type, VkShaderStageFlags stage_flags, uint32_t binding);
+			VkDescriptorSetLayoutBinding DescriptorSetLayoutBinding(VkDescriptorType type, VkShaderStageFlags stage_flags, uint32_t binding, unsigned int count);
 
 			VkDescriptorPoolCreateInfo DescriptorPoolCreateInfo(std::vector<VkDescriptorPoolSize>& pool_sizes, uint32_t max_sets);
 

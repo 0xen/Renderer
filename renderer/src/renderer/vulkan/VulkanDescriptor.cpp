@@ -4,15 +4,15 @@
 using namespace Renderer;
 using namespace Renderer::Vulkan;
 
-Renderer::Vulkan::VulkanDescriptor::VulkanDescriptor(DescriptorType descriptor_type, ShaderStage shader_stage, unsigned int binding) :
-	IDescriptor(descriptor_type, shader_stage, binding)
+Renderer::Vulkan::VulkanDescriptor::VulkanDescriptor(DescriptorType descriptor_type, ShaderStage shader_stage, unsigned int binding, unsigned int count) :
+	IDescriptor(descriptor_type, shader_stage, binding, count)
 {
 	m_vulkan_descriptor_type = VulkanRenderer::ToDescriptorType(descriptor_type);
 	m_vulkan_shader_stage = VulkanRenderer::ToVulkanShader(shader_stage);
 }
 
-Renderer::Vulkan::VulkanDescriptor::VulkanDescriptor(VkDescriptorType descriptor_type, VkShaderStageFlags shader_stage, unsigned int binding) :
-	IDescriptor(binding)
+Renderer::Vulkan::VulkanDescriptor::VulkanDescriptor(VkDescriptorType descriptor_type, VkShaderStageFlags shader_stage, unsigned int binding, unsigned int count) :
+	IDescriptor(binding, count)
 {
 	m_vulkan_descriptor_type = descriptor_type;
 	m_vulkan_shader_stage = shader_stage;
@@ -27,3 +27,4 @@ VkShaderStageFlags Renderer::Vulkan::VulkanDescriptor::GetVulkanShaderStage()
 {
 	return m_vulkan_shader_stage;
 }
+

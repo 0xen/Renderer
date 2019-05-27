@@ -24,12 +24,12 @@ Renderer::Vulkan::VulkanDescriptorPool::VulkanDescriptorPool(VulkanDevice * devi
 	for (IDescriptor* descriptor : m_descriptor)
 	{
 		VulkanDescriptor* vulkan_descriptor = static_cast<VulkanDescriptor*>(descriptor);
-		m_descriptor_pool_sizes.push_back(VulkanInitializers::DescriptorPoolSize(vulkan_descriptor->GetVulkanDescriptorType()));
-		m_layout_bindings.push_back(VulkanInitializers::DescriptorSetLayoutBinding(vulkan_descriptor->GetVulkanDescriptorType(), vulkan_descriptor->GetVulkanShaderStage(), vulkan_descriptor->GetBinding()));
+		m_descriptor_pool_sizes.push_back(VulkanInitializers::DescriptorPoolSize(vulkan_descriptor->GetVulkanDescriptorType(), descriptor->GetCount()));
+		m_layout_bindings.push_back(VulkanInitializers::DescriptorSetLayoutBinding(vulkan_descriptor->GetVulkanDescriptorType(), vulkan_descriptor->GetVulkanShaderStage(), vulkan_descriptor->GetBinding(), descriptor->GetCount()));
 	}
 
 
-	VkDescriptorPoolCreateInfo create_info = VulkanInitializers::DescriptorPoolCreateInfo(m_descriptor_pool_sizes, 20);
+	VkDescriptorPoolCreateInfo create_info = VulkanInitializers::DescriptorPoolCreateInfo(m_descriptor_pool_sizes, 10000);
 
 	ErrorCheck(vkCreateDescriptorPool(
 		*m_device->GetVulkanDevice(),

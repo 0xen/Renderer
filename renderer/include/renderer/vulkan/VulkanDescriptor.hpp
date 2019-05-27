@@ -10,8 +10,8 @@ namespace Renderer
 		class VulkanDescriptor : public IDescriptor
 		{
 		public:
-			VulkanDescriptor(DescriptorType descriptor_type, ShaderStage shader_stage, unsigned int binding);
-			VulkanDescriptor(VkDescriptorType descriptor_type, VkShaderStageFlags shader_stage, unsigned int binding);
+			VulkanDescriptor(DescriptorType descriptor_type, ShaderStage shader_stage, unsigned int binding, unsigned int count);
+			VulkanDescriptor(VkDescriptorType descriptor_type, VkShaderStageFlags shader_stage, unsigned int binding, unsigned int count);
 
 			VkDescriptorType GetVulkanDescriptorType();
 			VkShaderStageFlags GetVulkanShaderStage();

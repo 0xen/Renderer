@@ -103,7 +103,7 @@ void main()
 
   WaveFrontMaterial mat = unpackMaterial(v1.matIndex);
 
-  vec3 c = dot_product * mat.diffuse; 
+  vec3 c = dot_product * vec3(1,1,1); 
   if (mat.textureId >= 0)
   {
     vec2 texCoord = v0.texCoord * barycentrics.x + v1.texCoord * barycentrics.y +

@@ -6,16 +6,18 @@ Renderer::IDescriptor::IDescriptor()
 {
 }
 
-Renderer::IDescriptor::IDescriptor(unsigned int binding)
+Renderer::IDescriptor::IDescriptor(unsigned int binding, unsigned int count)
 {
 	m_binding = binding;
+	m_count = count;
 }
 
-Renderer::IDescriptor::IDescriptor(DescriptorType descriptor_type, ShaderStage shader_stage, unsigned int binding)
+Renderer::IDescriptor::IDescriptor(DescriptorType descriptor_type, ShaderStage shader_stage, unsigned int binding, unsigned int count)
 {
 	m_descriptor_type = descriptor_type;
 	m_shader_stage = shader_stage;
 	m_binding = binding;
+	m_count = count;
 }
 
 ShaderStage Renderer::IDescriptor::GetShaderStage()
@@ -31,4 +33,9 @@ DescriptorType Renderer::IDescriptor::GetDescriptorType()
 unsigned int Renderer::IDescriptor::GetBinding()
 {
 	return m_binding;
+}
+
+unsigned int Renderer::IDescriptor::GetCount()
+{
+	return m_count;
 }

@@ -125,7 +125,7 @@ void Renderer::Vulkan::VulkanSwapchain::Present(std::vector<VkSemaphore> signal_
 	present_info.pWaitSemaphores = signal_semaphores.data();
 	present_info.swapchainCount = 1;
 	present_info.pSwapchains = swap_chains;
-	present_info.pImageIndices = &m_back_buffer_indices[m_frame_index];
+	present_info.pImageIndices = &m_frame_index;
 	present_info.pResults = nullptr;
 
 	vkQueuePresentKHR(
@@ -133,7 +133,7 @@ void Renderer::Vulkan::VulkanSwapchain::Present(std::vector<VkSemaphore> signal_
 		&present_info
 	);
 	vkDeviceWaitIdle(*m_device->GetVulkanDevice());
-	m_frame_index = (m_frame_index + 1) % m_swap_chain_images.size();
+	//m_frame_index = (m_frame_index + 1) % m_swap_chain_images.size();
 }
 
 VkRenderPass * Renderer::Vulkan::VulkanSwapchain::GetRenderPass()
@@ -261,7 +261,7 @@ void Renderer::Vulkan::VulkanSwapchain::FindNextImageIndex()
 		UINT64_MAX,
 		m_image_available_semaphore,
 		VK_NULL_HANDLE,
-		&m_back_buffer_indices[m_frame_index]
+		&m_frame_index
 	);
 	if (check == VK_ERROR_OUT_OF_DATE_KHR)
 	{
@@ -307,6 +307,12 @@ void Renderer::Vulkan::VulkanSwapchain::RebuildCommandBuffers()
 
 		assert(!HasError() && "Unable to create command buffer");
 
+		vkCmdBeginRenderPass(
+			m_command_buffers[i],
+			&render_pass_info,
+			VK_SUBPASS_CONTENTS_INLINE
+		);
+
 
 		vkCmdSetLineWidth(m_command_buffers[i], 1.0f);
 		const VkViewport viewport = VulkanInitializers::Viewport((float)m_window_handle->width, (float)m_window_handle->height, 0.0f, 0.0f, 0.0f, 1.0f);
@@ -320,38 +326,40 @@ void Renderer::Vulkan::VulkanSwapchain::RebuildCommandBuffers()
 		}
 
 
-
-
-
-		VulkanCommon::TransitionImageLayout(m_command_buffers[i], m_swap_chain_images[i], VK_FORMAT_UNDEFINED, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-			VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, subresourceRange);
-
-
-		VulkanCommon::TransitionImageLayout(m_command_buffers[i], m_raytrace_storage_image, VK_FORMAT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-			VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, subresourceRange);
-
-
-		VkImageCopy copyRegion{};
-		copyRegion.srcSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
-		copyRegion.srcOffset = { 0, 0, 0 };
-		copyRegion.dstSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
-		copyRegion.dstOffset = { 0, 0, 0 };
-		copyRegion.extent = { (unsigned int)m_window_handle->width, (unsigned int)m_window_handle->height, 1 };
-		vkCmdCopyImage(m_command_buffers[i], m_raytrace_storage_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, m_swap_chain_images[i], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
-
-
-		VulkanCommon::TransitionImageLayout(m_command_buffers[i], m_swap_chain_images[i], VK_FORMAT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-			VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, subresourceRange);
-
-
-		VulkanCommon::TransitionImageLayout(m_command_buffers[i], m_raytrace_storage_image, VK_FORMAT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL,
-			VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, subresourceRange);
-
-
-		/*vkCmdEndRenderPass(
+		vkCmdEndRenderPass(
 			m_command_buffers[i]
-		);*/
+		);
 
+
+
+		if (m_instance->GetFlags()&VulkanFlags::Raytrace == VulkanFlags::Raytrace)
+		{
+			VulkanCommon::TransitionImageLayout(m_command_buffers[i], m_swap_chain_images[i], VK_FORMAT_UNDEFINED, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+				VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, subresourceRange);
+
+
+			VulkanCommon::TransitionImageLayout(m_command_buffers[i], m_raytrace_storage_image, VK_FORMAT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+				VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, subresourceRange);
+
+
+			VkImageCopy copyRegion{};
+			copyRegion.srcSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+			copyRegion.srcOffset = { 0, 0, 0 };
+			copyRegion.dstSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+			copyRegion.dstOffset = { 0, 0, 0 };
+			copyRegion.extent = { (unsigned int)m_window_handle->width, (unsigned int)m_window_handle->height, 1 };
+			vkCmdCopyImage(m_command_buffers[i], m_raytrace_storage_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, m_swap_chain_images[i], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
+
+
+			VulkanCommon::TransitionImageLayout(m_command_buffers[i], m_swap_chain_images[i], VK_FORMAT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+				VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, subresourceRange);
+
+
+			VulkanCommon::TransitionImageLayout(m_command_buffers[i], m_raytrace_storage_image, VK_FORMAT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL,
+				VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, subresourceRange);
+
+		}
+		
 		ErrorCheck(vkEndCommandBuffer(
 			m_command_buffers[i]
 		));

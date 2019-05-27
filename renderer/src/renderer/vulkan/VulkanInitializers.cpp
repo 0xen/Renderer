@@ -386,20 +386,20 @@ VkDescriptorImageInfo Renderer::Vulkan::VulkanInitializers::DescriptorImageInfo(
 	return descriptorImageInfo;
 }
 
-VkDescriptorPoolSize Renderer::Vulkan::VulkanInitializers::DescriptorPoolSize(VkDescriptorType type)
+VkDescriptorPoolSize Renderer::Vulkan::VulkanInitializers::DescriptorPoolSize(VkDescriptorType type, unsigned int count)
 {
 	VkDescriptorPoolSize pool_size = {};
 	pool_size.type = type;
-	pool_size.descriptorCount = 1;
+	pool_size.descriptorCount = count;
 	return pool_size;
 }
 
-VkDescriptorSetLayoutBinding Renderer::Vulkan::VulkanInitializers::DescriptorSetLayoutBinding(VkDescriptorType type, VkShaderStageFlags stage_flags, uint32_t binding)
+VkDescriptorSetLayoutBinding Renderer::Vulkan::VulkanInitializers::DescriptorSetLayoutBinding(VkDescriptorType type, VkShaderStageFlags stage_flags, uint32_t binding, unsigned int count)
 {
 	VkDescriptorSetLayoutBinding layout_bindings = {};
 	layout_bindings.binding = binding;
 	layout_bindings.descriptorType = type;
-	layout_bindings.descriptorCount = 1;
+	layout_bindings.descriptorCount = count;
 	layout_bindings.stageFlags = stage_flags;
 	return layout_bindings;
 }

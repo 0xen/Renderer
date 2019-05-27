@@ -329,19 +329,22 @@ int main(int argc, char **argv)
 	/*bool raytrace = true;
 	if (raytrace)
 	{*/
-		VulkanRaytracePipeline* ray_pipeline = renderer->CreateRaytracePipeline({
+		VulkanRaytracePipeline* ray_pipeline = renderer->CreateRaytracePipeline(
+		{
 			{ ShaderStage::RAY_GEN,		"../../renderer-demo/Shaders/Raytrace/raygen.spv" },
-			{ ShaderStage::MISS,		"../../renderer-demo/Shaders/Raytrace/miss.spv" },
-			{ ShaderStage::MISS,		"../../renderer-demo/Shaders/Raytrace/shadowMiss.spv" }
+			{ ShaderStage::MISS,		"../../renderer-demo/Shaders/Raytrace/rmiss.spv" },
+			{ ShaderStage::MISS,		"../../renderer-demo/Shaders/Raytrace/shadowMiss.spv" },
 		},
 		{
 			{ // Involved 
-				{ ShaderStage::CLOSEST_HIT, "../../renderer-demo/Shaders/Raytrace/closesthit.spv" }
+				{ ShaderStage::CLOSEST_HIT, "../../renderer-demo/Shaders/Raytrace/closesthit.spv" },
 			},
 			{} // For simple shadows, we do not need a hitgroup
 		});
 
+		// Ray generation entry point
 		ray_pipeline->AddRayGenerationProgram(0, {});
+
 		ray_pipeline->AddMissProgram(1, {});
 		ray_pipeline->AddMissProgram(2, {});
 		ray_pipeline->AddHitGroup(3, {});
@@ -370,7 +373,7 @@ int main(int argc, char **argv)
 			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 3),
 			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 4),
 			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 5),
-			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 6),
+			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 6,13),
 
 
 		});
@@ -409,7 +412,6 @@ int main(int argc, char **argv)
 		
 		
 
-		//raytracingSet->AttachBuffer(1, { swapchain->GetBackBufferImageInfo(2) });
 
 		raytracingSet->AttachBuffer(1, { swapchain->GetRayTraceStagingBuffer() });
 		raytracingSet->AttachBuffer(2, cameraInfo);
@@ -486,9 +488,7 @@ int main(int argc, char **argv)
 	while (renderer->IsRunning())
 	{
 
-		renderer->BeginFrame();
-
-
+		//renderer->BeginFrame();
 
 
 		modelPosition = glm::rotate(modelPosition, 0.001f, glm::vec3(0,1,0));
@@ -499,7 +499,7 @@ int main(int argc, char **argv)
 
 		acceleration->Update();
 
-		renderer->EndFrame();
+		renderer->Update();
 		PollWindow();
 	}
 

@@ -108,7 +108,7 @@ namespace Renderer
 			VkFormat m_swap_chain_image_format;
 			VkFormat m_depth_image_format;
 			uint32_t m_frame_index = 0;
-			uint32_t m_back_buffer_indices[2];
+			uint32_t m_back_buffer_indices[3];
 			uint32_t image_count;
 
 			// Render pass
