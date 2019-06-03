@@ -1,3 +1,3 @@
-# Renderer
+# VK-EZ
 
 Documentaton coming soon
