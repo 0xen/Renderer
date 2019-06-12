@@ -22,11 +22,24 @@ Renderer::Vulkan::VulkanDevice::VulkanDevice(VulkanInstance * instance, VulkanPh
 		queue_create_infos.push_back(VulkanInitializers::DeviceQueueCreate(queue_family, 1.0f));
 	}
 
-	VkDeviceCreateInfo create_info = VulkanInitializers::DeviceCreateInfo(
-		queue_create_infos,
-		*m_physical_device->GetExtenstions(),
-		*m_physical_device->GetDeviceFeatures2()
-	);
+	VkDeviceCreateInfo create_info{};
+
+	if ((instance->GetFlags() & VulkanFlags::Raytrace) == VulkanFlags::Raytrace)
+	{
+		create_info = VulkanInitializers::DeviceCreateInfo(
+			queue_create_infos,
+			*m_physical_device->GetExtenstions(),
+			*m_physical_device->GetDeviceFeatures2()
+		);
+	}
+	else
+	{
+		create_info = VulkanInitializers::DeviceCreateInfo(
+			queue_create_infos,
+			*m_physical_device->GetExtenstions(),
+			*m_physical_device->GetDeviceFeatures()
+		);
+	}
 	// Create the device
 	ErrorCheck(vkCreateDevice(
 		*m_physical_device->GetPhysicalDevice(),

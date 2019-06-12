@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 2.6)
 
-set(project_name demo)
+set(project_name demo_VK-EZ)
 project(${project_name})
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)

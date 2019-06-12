@@ -6,7 +6,10 @@ namespace Renderer
 	{
 	public:
 		Status() : m_status(false) {}
-		bool HasError() { return m_status; }
+		bool HasError()
+		{ 
+			return m_status;
+		}
 	protected:
 		bool ErrorCheck(bool error)
 		{
