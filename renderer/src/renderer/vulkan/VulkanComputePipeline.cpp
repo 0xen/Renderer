@@ -63,7 +63,7 @@ bool Renderer::Vulkan::VulkanComputePipeline::CreatePipeline()
 
 	auto shaders = GetPaths();
 
-	if (shaders.size() > 0 && shaders[0].first == ShaderStage::COMPUTE_SHADER) return false;
+	if (shaders.size() <= 0 || shaders[0].first != ShaderStage::COMPUTE_SHADER) return false;
 
 	std::vector<char> shaderCode = VulkanCommon::ReadFile(shaders[0].second);
 	m_shader_module = VulkanCommon::CreateShaderModule(m_device, shaderCode);
