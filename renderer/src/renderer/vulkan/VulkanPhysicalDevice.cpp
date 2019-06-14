@@ -22,32 +22,15 @@ Renderer::Vulkan::VulkanPhysicalDevice::VulkanPhysicalDevice(VkPhysicalDevice de
 	m_device_raytracing_properties.maxRecursionDepth = 0;
 	m_device_raytracing_properties.shaderGroupHandleSize = 0;
 
-	if ((flags & VulkanFlags::Raytrace) == VulkanFlags::Raytrace)
-	{
-		m_physical_device_properties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
-		m_physical_device_properties2.pNext = &m_device_raytracing_properties;
-		m_physical_device_properties2.properties = {};
+	m_physical_device_properties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+	m_physical_device_properties2.pNext = &m_device_raytracing_properties;
+	m_physical_device_properties2.properties = {};
 
-		vkGetPhysicalDeviceProperties2(
-			m_device,
-			&m_physical_device_properties2
-		);
+	vkGetPhysicalDeviceProperties2(
+		m_device,
+		&m_physical_device_properties2
+	);
 
-
-		VkPhysicalDeviceDescriptorIndexingFeaturesEXT descIndexFeatures = {};
-		descIndexFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES_EXT;
-			
-		m_device_features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-		m_device_features2.pNext = &descIndexFeatures;
-
-		vkGetPhysicalDeviceFeatures2(
-			m_device,
-			&m_device_features2
-		);
-	}
-
-	
-	
 	// Get the devices physical features
 	vkGetPhysicalDeviceFeatures(
 		m_device,
@@ -55,7 +38,16 @@ Renderer::Vulkan::VulkanPhysicalDevice::VulkanPhysicalDevice(VkPhysicalDevice de
 	);
 
 
-	
+	VkPhysicalDeviceDescriptorIndexingFeaturesEXT descIndexFeatures = {};
+	descIndexFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES_EXT;
+
+	m_device_features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+	m_device_features2.pNext = &descIndexFeatures;
+
+	vkGetPhysicalDeviceFeatures2(
+		m_device,
+		&m_device_features2
+	);
 	
 	// Get the GPU's memory props
 	vkGetPhysicalDeviceMemoryProperties(
