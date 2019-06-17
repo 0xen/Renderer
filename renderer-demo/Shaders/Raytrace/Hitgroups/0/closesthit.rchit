@@ -114,9 +114,15 @@ void main()
   float tmax = 100.0;
   vec3 origin = gl_WorldRayOriginNV + gl_WorldRayDirectionNV * gl_HitTNV;
   isShadowed = true;
+  
+  
+  uint sbtRecordOffset = 1;
+  uint sbtRecordStride = 0;
+  uint missIndex = 1;
+  
   traceNV(topLevelAS, gl_RayFlagsTerminateOnFirstHitNV|gl_RayFlagsOpaqueNV|gl_RayFlagsSkipClosestHitShaderNV, 
-          0xFF, 1 /* sbtRecordOffset */, 0 /* sbtRecordStride */,
-          1 /* missIndex */, origin, tmin, lightVector, tmax, 2 /*payload location*/);
+          0xFF, sbtRecordOffset, sbtRecordStride, missIndex, 
+		  origin, tmin, lightVector, tmax, 2 /*payload location*/);
   if (isShadowed)
     hitValue = c * 0.3;
   else

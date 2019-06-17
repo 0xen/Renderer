@@ -31,7 +31,12 @@ void main()
     float tmin = 0.001;
     float tmax = 10000.0;
 
-    traceNV(topLevelAS, rayFlags, cullMask, 0 /*sbtRecordOffset*/, 0 /*sbtRecordStride*/,
-      0 /*missIndex*/, origin.xyz, tmin, direction.xyz, tmax, 0 /*payload*/);
+	uint sbtRecordOffset = 0;
+	uint sbtRecordStride = 0;
+	uint missIndex = 0;
+	
+	
+    traceNV(topLevelAS, rayFlags, cullMask, sbtRecordOffset, 0 sbtRecordStride,
+      missIndex, origin.xyz, tmin, direction.xyz, tmax, 0 /*payload*/);
     imageStore(image, ivec2(gl_LaunchIDNV.xy), vec4(hitValue, 0.0));
 }
