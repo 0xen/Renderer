@@ -36,7 +36,7 @@ VkWin32SurfaceCreateInfoKHR Renderer::Vulkan::VulkanInitializers::SurfaceCreateI
 	return createInfo;
 }
 
-VkDeviceQueueCreateInfo Renderer::Vulkan::VulkanInitializers::DeviceQueueCreate(uint32_t queue_family_index, const float& queue_priority)
+VkDeviceQueueCreateInfo Renderer::Vulkan::VulkanInitializers::DeviceQueueCreate(uint32_t queue_family_index, float queue_priority)
 {
 	VkDeviceQueueCreateInfo queue_create_info = {};
 	queue_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
@@ -138,7 +138,7 @@ VkSwapchainCreateInfoKHR Renderer::Vulkan::VulkanInitializers::SwapchainCreateIn
 	create_info.imageColorSpace = surface_format.colorSpace; // What colors will the images use
 	create_info.imageExtent = extent; // Image width and height
 	create_info.imageArrayLayers = 1; // Keep at 1
-	create_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;// | VK_IMAGE_USAGE_STORAGE_BIT; // VK_IMAGE_USAGE_STORAGE_BIT used for raytracing
+	create_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT; // VK_IMAGE_USAGE_STORAGE_BIT used for raytracing
 	create_info.presentMode = present_mode;
 	create_info.clipped = VK_TRUE; // If we can't see a pixel, get rid of it
 	create_info.oldSwapchain = VK_NULL_HANDLE; // We are not remaking the swapchain

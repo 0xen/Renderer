@@ -16,10 +16,10 @@ Renderer::Vulkan::VulkanDevice::VulkanDevice(VulkanInstance * instance, VulkanPh
 	unique_queue_families.push_back(m_physical_device->GetQueueFamilies()->graphics_indices);
 	//unique_queue_families.push_back(m_physical_device->GetQueueFamilies()->compute_indices);
 
-	static const float priority = 1.0f;
+
 	for (auto queue_family : unique_queue_families)
 	{
-		queue_create_infos.push_back(VulkanInitializers::DeviceQueueCreate(queue_family, priority));
+		queue_create_infos.push_back(VulkanInitializers::DeviceQueueCreate(queue_family, 1.0f));
 	}
 
 	VkDeviceCreateInfo create_info{};

@@ -20,7 +20,7 @@ namespace Renderer
 
 			VkWin32SurfaceCreateInfoKHR SurfaceCreateInfo(Renderer::NativeWindowHandle* window_handle);
 
-			VkDeviceQueueCreateInfo DeviceQueueCreate(uint32_t queue_family_index, const float& queue_priority);
+			VkDeviceQueueCreateInfo DeviceQueueCreate(uint32_t queue_family_index, float queue_priority);
 
 			VkDeviceCreateInfo DeviceCreateInfo(std::vector<VkDeviceQueueCreateInfo>& queue_create_infos, const std::vector<const char*>& device_extensions, VkPhysicalDeviceFeatures& device_features);
 
