@@ -419,15 +419,16 @@ void Renderer::Vulkan::VulkanSwapchain::InitSwapchain()
 	VulkanQueueFamilyIndices indices = *m_device->GetVulkanPhysicalDevice()->GetQueueFamilies();
 	VkSwapchainCreateInfoKHR create_info = VulkanInitializers::SwapchainCreateInfoKHR(surface_format, extent, present_mode, image_count, *m_surface, indices, swap_chain_support);
 
-	if (swap_chain_support.capabilities.supportedUsageFlags & VK_IMAGE_USAGE_STORAGE_BIT) {
+	if ((swap_chain_support.capabilities.supportedUsageFlags & VK_IMAGE_USAGE_STORAGE_BIT) == VK_IMAGE_USAGE_STORAGE_BIT && 
+		(m_instance->GetFlags() & Renderer::Vulkan::VulkanFlags::Raytrace) == Renderer::Vulkan::VulkanFlags::Raytrace) {
 		create_info.imageUsage |= VK_IMAGE_USAGE_STORAGE_BIT;
 	}
 
-	if (swap_chain_support.capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT) {
+	if ((swap_chain_support.capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT)== VK_IMAGE_USAGE_TRANSFER_DST_BIT) {
 		create_info.imageUsage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 	}
 
-	if (swap_chain_support.capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) {
+	if ((swap_chain_support.capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_SRC_BIT)== VK_IMAGE_USAGE_TRANSFER_SRC_BIT) {
 		create_info.imageUsage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 	}
 
