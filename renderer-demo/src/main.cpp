@@ -329,33 +329,35 @@ int main(int argc, char **argv)
 
 
 
-
 	VulkanRaytracePipeline* ray_pipeline = renderer->CreateRaytracePipeline(
 	{
 		{ ShaderStage::RAY_GEN,		"../../renderer-demo/Shaders/Raytrace/Gen/rgen.spv" },
 		{ ShaderStage::MISS,		"../../renderer-demo/Shaders/Raytrace/Miss/rmiss.spv" },
 		{ ShaderStage::MISS,		"../../renderer-demo/Shaders/Raytrace/Miss/ShadowMiss/rmiss.spv" },
-		{ ShaderStage::MISS,		"../../renderer-demo/Shaders/Raytrace/Miss/MissTest/rmiss.spv" },
+		{ ShaderStage::MISS,		"../../renderer-demo/Shaders/Raytrace/Miss/ShadowMiss/rmiss.spv" },
 	},
 	{
-		{}, // Fall through hit group for shadow's, etc
 		{ // Involved 
 			{ ShaderStage::CLOSEST_HIT, "../../renderer-demo/Shaders/Raytrace/Hitgroups/0/rchit.spv" },
 		},
+		{}, // Fall through hit group for shadow's, etc
 		{ // Involved 
 			{ ShaderStage::CLOSEST_HIT, "../../renderer-demo/Shaders/Raytrace/Hitgroups/TextureNoLight/rchit.spv" },
 		},
 	});
 
-	// Ray generation entry point
-	ray_pipeline->AddRayGenerationProgram(0, {});
+	int groupID = 0;
 
-	ray_pipeline->AddMissProgram(1, {});
-	ray_pipeline->AddMissProgram(2, {});
-	ray_pipeline->AddMissProgram(3, {});
-	ray_pipeline->AddHitGroup(4, {});
-	ray_pipeline->AddHitGroup(5, {});
-	ray_pipeline->AddHitGroup(6, {});
+	// Ray generation entry point
+	ray_pipeline->AddRayGenerationProgram(groupID++, {});
+
+	ray_pipeline->AddMissProgram(groupID++, {});
+	ray_pipeline->AddMissProgram(groupID++, {});
+	ray_pipeline->AddMissProgram(groupID++, {});
+	ray_pipeline->AddHitGroup(groupID++, {});
+	ray_pipeline->AddHitGroup(groupID++, {});
+	ray_pipeline->AddHitGroup(groupID++, {});
+
 
 
 	ray_pipeline->SetMaxRecursionDepth(2);

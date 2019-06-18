@@ -135,14 +135,15 @@ bool Renderer::Vulkan::VulkanRaytracePipeline::CreatePipeline()
 
 	// Calculate SBTS table size
 	VkDeviceSize sbtSize = 0;
-	VkDeviceSize rayGenEntrySize = GetEntrySize(m_rayGen);
-	VkDeviceSize missEntrySize = GetEntrySize(m_miss);
-	VkDeviceSize hitGroupEntrySize = GetEntrySize(m_hitGroup);
+	m_rayGenEntrySize = GetEntrySize(m_rayGen);
+	//VkDeviceSize rayGenEntrySize = GetEntrySize(m_rayGen);
+	m_missEntrySize = GetEntrySize(m_miss);
+	m_hitGroupEntrySize = GetEntrySize(m_hitGroup);
 
 
-	sbtSize = rayGenEntrySize * static_cast<VkDeviceSize>(m_rayGen.size())
-		+ missEntrySize * static_cast<VkDeviceSize>(m_miss.size())
-		+ hitGroupEntrySize * static_cast<VkDeviceSize>(m_hitGroup.size());
+	sbtSize = m_rayGenEntrySize * static_cast<VkDeviceSize>(m_rayGen.size())
+		+ m_missEntrySize * static_cast<VkDeviceSize>(m_miss.size())
+		+ m_hitGroupEntrySize * static_cast<VkDeviceSize>(m_hitGroup.size());
 
 
 	VulkanCommon::CreateBuffer(
@@ -174,13 +175,13 @@ bool Renderer::Vulkan::VulkanRaytracePipeline::CreatePipeline()
 
 		VkDeviceSize offset = 0;
 
-		offset = CopyShaderData(data, m_rayGen, rayGenEntrySize, shaderHandleStorage);
+		offset = CopyShaderData(data, m_rayGen, m_rayGenEntrySize, shaderHandleStorage);
 		data += offset;
 
-		offset = CopyShaderData(data, m_miss, missEntrySize, shaderHandleStorage);
+		offset = CopyShaderData(data, m_miss, m_missEntrySize, shaderHandleStorage);
 		data += offset;
 
-		offset = CopyShaderData(data, m_hitGroup, hitGroupEntrySize, shaderHandleStorage);
+		offset = CopyShaderData(data, m_hitGroup, m_hitGroupEntrySize, shaderHandleStorage);
 
 
 
@@ -220,10 +221,10 @@ void Renderer::Vulkan::VulkanRaytracePipeline::AttachToCommandBuffer(VkCommandBu
 	}
 
 	VkDeviceSize rayGenOffset = 0;
-	VkDeviceSize missOffset = 16;
-	VkDeviceSize missStride = 16;
-	VkDeviceSize hitGroupOffset = 48;
-	VkDeviceSize hitGroupStride = 16;
+	VkDeviceSize missOffset = GetRayGenSectionSize();
+	VkDeviceSize missStride = m_missEntrySize;
+	VkDeviceSize hitGroupOffset = GetRayGenSectionSize() + GetMissSectionSize();
+	VkDeviceSize hitGroupStride = m_hitGroupEntrySize;
 
 	vkCmdTraceRaysNV(command_buffer, m_shaderBindingTable.buffer, rayGenOffset,
 		m_shaderBindingTable.buffer, missOffset, missStride,
@@ -310,5 +311,15 @@ VkDeviceSize Renderer::Vulkan::VulkanRaytracePipeline::CopyShaderData(uint8_t * 
 	}
 	// Return the number of bytes actually written to the output buffer
 	return static_cast<uint32_t>(shaders.size()) * entrySize;
+}
+
+VkDeviceSize Renderer::Vulkan::VulkanRaytracePipeline::GetRayGenSectionSize()
+{
+	return m_rayGenEntrySize * static_cast<VkDeviceSize>(m_rayGen.size());
+}
+
+VkDeviceSize Renderer::Vulkan::VulkanRaytracePipeline::GetMissSectionSize()
+{
+	return m_missEntrySize * static_cast<VkDeviceSize>(m_miss.size());
 }
 

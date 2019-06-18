@@ -48,6 +48,8 @@ namespace Renderer
 			VkDeviceSize GetEntrySize(std::vector<SBTEntry>);
 			VkDeviceSize CopyShaderData(uint8_t* outputData, const std::vector<SBTEntry>& shaders, VkDeviceSize entrySize, const uint8_t* shaderHandleStorage);
 
+			VkDeviceSize GetRayGenSectionSize();
+			VkDeviceSize GetMissSectionSize();
 
 			VulkanDevice * m_device;
 			std::vector<std::map<ShaderStage, const char*>> m_hitgroups;

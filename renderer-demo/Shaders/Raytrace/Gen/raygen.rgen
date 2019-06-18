@@ -31,7 +31,7 @@ void main()
     float tmin = 0.001;
     float tmax = 10000.0;
 
-    uint sbtRecordOffset = 2; // Hitgroup
+    uint sbtRecordOffset = 0; // Hitgroup
     uint sbtRecordStride = 0;
     uint missIndex = 0;
 
