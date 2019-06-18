@@ -15,7 +15,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.588000 0.588000 0.588000
 Ks 0.450000 0.450000 0.450000
 Ns 32.000000
-map_Kd RooftilesWood0005_2_S.jpg
+map_Kd RooftilesWood0005_2_S.png
 
 newmtl _material_535-effect
 illum 2
@@ -31,7 +31,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.588000 0.588000 0.588000
 Ks 0.450000 0.450000 0.450000
 Ns 32.000000
-map_Kd WoodRough0106_2_S.jpg
+map_Kd WoodRough0106_2_S.png
 
 newmtl _material_583-effect
 illum 2
@@ -39,7 +39,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.588000 0.588000 0.588000
 Ks 0.450000 0.450000 0.450000
 Ns 32.000000
-map_Kd black.jpg
+map_Kd black.png
 
 newmtl _material_553-effect
 illum 2
@@ -47,7 +47,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.588000 0.588000 0.588000
 Ks 0.450000 0.450000 0.450000
 Ns 32.000000
-map_Kd WoodRough0106_2_S.jpg
+map_Kd WoodRough0106_2_S.png
 
 newmtl _material_547-effect
 illum 2
@@ -55,7 +55,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.588000 0.588000 0.588000
 Ks 0.450000 0.450000 0.450000
 Ns 32.000000
-map_Kd WoodPlanksBare0002_1_S.jpg
+map_Kd WoodPlanksBare0002_1_S.png
 
 newmtl _Material #45
 illum 2
@@ -70,7 +70,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.588000 0.588000 0.588000
 Ks 0.000000 0.000000 0.000000
 Ns 32.000000
-map_Kd yellow.jpg
+map_Kd yellow.png
 
 newmtl _Material #55
 illum 2
@@ -85,7 +85,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.588000 0.588000 0.588000
 Ks 0.000000 0.000000 0.000000
 Ns 32.000000
-map_Kd yellow.jpg
+map_Kd yellow.png
 
 newmtl _Material #65
 illum 2
@@ -100,7 +100,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.588000 0.588000 0.588000
 Ks 0.000000 0.000000 0.000000
 Ns 32.000000
-map_Kd yellow.jpg
+map_Kd yellow.png
 
 newmtl _Material #75
 illum 2
@@ -115,7 +115,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.588000 0.588000 0.588000
 Ks 0.000000 0.000000 0.000000
 Ns 32.000000
-map_Kd yellow.jpg
+map_Kd yellow.png
 
 newmtl _Material #85
 illum 2
@@ -130,7 +130,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.588000 0.588000 0.588000
 Ks 0.000000 0.000000 0.000000
 Ns 32.000000
-map_Kd yellow.jpg
+map_Kd yellow.png
 
 newmtl _Material #95
 illum 2
@@ -145,7 +145,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.588000 0.588000 0.588000
 Ks 0.000000 0.000000 0.000000
 Ns 32.000000
-map_Kd yellow.jpg
+map_Kd yellow.png
 
 newmtl _Material #105
 illum 2
@@ -160,7 +160,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.588000 0.588000 0.588000
 Ks 0.000000 0.000000 0.000000
 Ns 32.000000
-map_Kd yellow.jpg
+map_Kd yellow.png
 
 newmtl _Material #115
 illum 2
@@ -175,7 +175,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.588000 0.588000 0.588000
 Ks 0.000000 0.000000 0.000000
 Ns 32.000000
-map_Kd yellow.jpg
+map_Kd yellow.png
 
 newmtl _Material #125
 illum 2
@@ -190,7 +190,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.588000 0.588000 0.588000
 Ks 0.000000 0.000000 0.000000
 Ns 32.000000
-map_Kd yellow.jpg
+map_Kd yellow.png
 
 newmtl _Material #135
 illum 2
@@ -205,7 +205,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.588000 0.588000 0.588000
 Ks 0.000000 0.000000 0.000000
 Ns 32.000000
-map_Kd yellow.jpg
+map_Kd yellow.png
 
 newmtl _Material #145
 illum 2
@@ -220,7 +220,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.588000 0.588000 0.588000
 Ks 0.000000 0.000000 0.000000
 Ns 32.000000
-map_Kd yellow.jpg
+map_Kd yellow.png
 
 newmtl _Material #155
 illum 2
@@ -235,7 +235,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.588000 0.588000 0.588000
 Ks 0.000000 0.000000 0.000000
 Ns 32.000000
-map_Kd yellow.jpg
+map_Kd yellow.png
 
 newmtl _Material #165
 illum 2
@@ -250,7 +250,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.588000 0.588000 0.588000
 Ks 0.000000 0.000000 0.000000
 Ns 32.000000
-map_Kd yellow.jpg
+map_Kd yellow.png
 
 newmtl _Material #175
 illum 2
@@ -265,7 +265,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.588000 0.588000 0.588000
 Ks 0.000000 0.000000 0.000000
 Ns 32.000000
-map_Kd yellow.jpg
+map_Kd yellow.png
 
 newmtl _Material #185
 illum 2
@@ -280,7 +280,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.588000 0.588000 0.588000
 Ks 0.000000 0.000000 0.000000
 Ns 32.000000
-map_Kd yellow.jpg
+map_Kd yellow.png
 
 newmtl _Material #195
 illum 2
@@ -295,7 +295,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.588000 0.588000 0.588000
 Ks 0.000000 0.000000 0.000000
 Ns 32.000000
-map_Kd yellow.jpg
+map_Kd yellow.png
 
 newmtl _Material #205
 illum 2
@@ -310,7 +310,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.588000 0.588000 0.588000
 Ks 0.000000 0.000000 0.000000
 Ns 32.000000
-map_Kd yellow.jpg
+map_Kd yellow.png
 
 newmtl _Material #215
 illum 2
@@ -325,7 +325,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.588000 0.588000 0.588000
 Ks 0.000000 0.000000 0.000000
 Ns 32.000000
-map_Kd panneau_col.jpg
+map_Kd panneau_col.png
 
 newmtl _Material #225
 illum 2
@@ -340,7 +340,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.588000 0.588000 0.588000
 Ks 0.450000 0.450000 0.450000
 Ns 32.000000
-map_Kd WoodPlanksBare0002_1_S.jpg
+map_Kd WoodPlanksBare0002_1_S.png
 
 newmtl _Material #235
 illum 2
@@ -370,7 +370,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.588000 0.588000 0.588000
 Ks 0.450000 0.450000 0.450000
 Ns 32.000000
-map_Kd WoodRough0106_2_S.jpg
+map_Kd WoodRough0106_2_S.png
 
 newmtl _Material #255
 illum 2
@@ -385,7 +385,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.588000 0.588000 0.588000
 Ks 0.450000 0.450000 0.450000
 Ns 32.000000
-map_Kd RooftilesWood0005_2_S.jpg
+map_Kd RooftilesWood0005_2_S.png
 
 newmtl _Material #265
 illum 2
@@ -400,7 +400,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.588000 0.588000 0.588000
 Ks 0.450000 0.450000 0.450000
 Ns 32.000000
-map_Kd RooftilesWood0005_2_S.jpg
+map_Kd RooftilesWood0005_2_S.png
 
 newmtl _Material #275
 illum 2
@@ -415,7 +415,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.588000 0.588000 0.588000
 Ks 0.450000 0.450000 0.450000
 Ns 32.000000
-map_Kd WoodRough0106_2_S.jpg
+map_Kd WoodRough0106_2_S.png
 
 newmtl _Material #285
 illum 2
@@ -430,7 +430,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.588000 0.588000 0.588000
 Ks 0.450000 0.450000 0.450000
 Ns 32.000000
-map_Kd WoodPlanksBare0002_1_S.jpg
+map_Kd WoodPlanksBare0002_1_S.png
 
 newmtl _Material #295
 illum 2
@@ -445,7 +445,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.588000 0.588000 0.588000
 Ks 0.450000 0.450000 0.450000
 Ns 32.000000
-map_Kd WoodPlanksBare0002_1_S.jpg
+map_Kd WoodPlanksBare0002_1_S.png
 
 newmtl _Material #305
 illum 2
@@ -460,7 +460,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.588000 0.588000 0.588000
 Ks 0.450000 0.450000 0.450000
 Ns 32.000000
-map_Kd WoodRough0106_2_S.jpg
+map_Kd WoodRough0106_2_S.png
 
 newmtl _Material #315
 illum 2
@@ -475,7 +475,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.588000 0.588000 0.588000
 Ks 0.450000 0.450000 0.450000
 Ns 32.000000
-map_Kd WoodRough0106_2_S.jpg
+map_Kd WoodRough0106_2_S.png
 
 newmtl _Material #325
 illum 2
@@ -490,7 +490,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.588000 0.588000 0.588000
 Ks 0.450000 0.450000 0.450000
 Ns 32.000000
-map_Kd RooftilesWood0005_2_S.jpg
+map_Kd RooftilesWood0005_2_S.png
 
 newmtl _Material #335
 illum 2
@@ -505,7 +505,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.588000 0.588000 0.588000
 Ks 0.450000 0.450000 0.450000
 Ns 32.000000
-map_Kd WoodRough0106_2_S.jpg
+map_Kd WoodRough0106_2_S.png
 
 newmtl _Material #345
 illum 2
@@ -520,7 +520,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.588000 0.588000 0.588000
 Ks 0.450000 0.450000 0.450000
 Ns 32.000000
-map_Kd RooftilesWood0005_2_S.jpg
+map_Kd RooftilesWood0005_2_S.png
 
 newmtl _Material #355
 illum 2
@@ -535,7 +535,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.588000 0.588000 0.588000
 Ks 0.450000 0.450000 0.450000
 Ns 32.000000
-map_Kd black.jpg
+map_Kd black.png
 
 newmtl _Material #365
 illum 2
@@ -565,7 +565,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.588000 0.588000 0.588000
 Ks 0.450000 0.450000 0.450000
 Ns 32.000000
-map_Kd WoodRough0106_2_S.jpg
+map_Kd WoodRough0106_2_S.png
 
 newmtl _Material #385
 illum 2
@@ -580,7 +580,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.588000 0.588000 0.588000
 Ks 0.450000 0.450000 0.450000
 Ns 32.000000
-map_Kd black.jpg
+map_Kd black.png
 
 newmtl _Material #395
 illum 2
@@ -625,7 +625,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.588000 0.588000 0.588000
 Ks 0.450000 0.450000 0.450000
 Ns 32.000000
-map_Kd black.jpg
+map_Kd black.png
 
 newmtl _Material #435
 illum 2
@@ -640,7 +640,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.588000 0.588000 0.588000
 Ks 0.000000 0.000000 0.000000
 Ns 32.000000
-map_Kd yellow.jpg
+map_Kd yellow.png
 
 newmtl _Material #435
 illum 2
@@ -655,7 +655,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.588000 0.588000 0.588000
 Ks 0.000000 0.000000 0.000000
 Ns 32.000000
-map_Kd yellow.jpg
+map_Kd yellow.png
 
 newmtl _Material #455
 illum 2
@@ -670,7 +670,7 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.588000 0.588000 0.588000
 Ks 0.000000 0.000000 0.000000
 Ns 32.000000
-map_Kd panneau_col.jpg
+map_Kd panneau_col.png
 
 newmtl _Material #475
 illum 2
@@ -685,5 +685,5 @@ Ka 0.000000 0.000000 0.000000
 Kd 0.588000 0.588000 0.588000
 Ks 0.450000 0.450000 0.450000
 Ns 32.000000
-map_Kd black.jpg
+map_Kd black.png
 

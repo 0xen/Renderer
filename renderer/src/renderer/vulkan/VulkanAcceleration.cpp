@@ -27,7 +27,16 @@ void Renderer::Vulkan::VulkanAcceleration::AttachModelPool(VulkanModelPool * poo
 void Renderer::Vulkan::VulkanAcceleration::Build()
 {
 	VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
-	m_device->GetGraphicsCommand(&commandBuffer, true);
+	m_device->GetGraphicsCommand(&commandBuffer, false);
+
+
+	VkCommandBufferBeginInfo beginInfo;
+	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	beginInfo.pNext = nullptr;
+	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	beginInfo.pInheritanceInfo = nullptr;
+	VkResult res = vkBeginCommandBuffer(commandBuffer, &beginInfo);
+
 
 	m_bottom_level_as.resize(m_model_pools.size()); // Will be amount of geometry instances
 
@@ -49,12 +58,14 @@ void Renderer::Vulkan::VulkanAcceleration::Build()
 
 	CreateTopLevelAS(commandBuffer, instances);
 
+	BuildTopLevelAS(commandBuffer);
+
+	// End the command buffer and submit it
 	vkEndCommandBuffer(commandBuffer);
 
 	m_device->SubmitGraphicsCommand(&commandBuffer, 1);
 	m_device->FreeGraphicsCommand(&commandBuffer, 1);
 
-	BuildTopLevelAS();
 }
 
 void Renderer::Vulkan::VulkanAcceleration::Update()
@@ -78,7 +89,26 @@ void Renderer::Vulkan::VulkanAcceleration::Update()
 		m_as_instance.push_back({ instances[i].first,instances[i].second, i, i * 2 });
 	}
 
-	BuildTopLevelAS();
+	{
+		VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
+		m_device->GetGraphicsCommand(&commandBuffer, false);
+
+
+		VkCommandBufferBeginInfo beginInfo;
+		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+		beginInfo.pNext = nullptr;
+		beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+		beginInfo.pInheritanceInfo = nullptr;
+		VkResult res = vkBeginCommandBuffer(commandBuffer, &beginInfo);
+
+		BuildTopLevelAS(commandBuffer);
+
+
+		// End the command buffer and submit it
+		vkEndCommandBuffer(commandBuffer);
+
+		m_device->SubmitGraphicsCommand(&commandBuffer, 1);
+	}
 }
 
 VkWriteDescriptorSetAccelerationStructureNV Renderer::Vulkan::VulkanAcceleration::GetDescriptorAcceleration()
@@ -108,7 +138,7 @@ Renderer::Vulkan::AccelerationStructure Renderer::Vulkan::VulkanAcceleration::Cr
 		vertex_buffers.push_back(geom);
 	}
 
-	VkBuildAccelerationStructureFlagsNV flags = VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_NV;
+	VkBuildAccelerationStructureFlagsNV flags = 0;// VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_NV;
 
 	VkAccelerationStructureNV acceleration_structure;
 	{
@@ -236,7 +266,7 @@ void Renderer::Vulkan::VulkanAcceleration::CreateTopLevelAS(VkCommandBuffer comm
 
 
 		VkResult code = vkCreateAccelerationStructureNV(*m_device->GetVulkanDevice(), &create_info, nullptr, &m_top_level_as.structure);
-
+		code = code;
 	}
 
 
@@ -327,11 +357,9 @@ void Renderer::Vulkan::VulkanAcceleration::CreateTopLevelAS(VkCommandBuffer comm
 
 }
 
-void Renderer::Vulkan::VulkanAcceleration::BuildTopLevelAS()
+void Renderer::Vulkan::VulkanAcceleration::BuildTopLevelAS(VkCommandBuffer commandBuffer)
 {
-	VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
-	m_device->GetGraphicsCommand(&commandBuffer, true);
-
+	//VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
 
 	unsigned int geometryInstanceCount = UpdateGeometryInstances();
 
@@ -344,6 +372,7 @@ void Renderer::Vulkan::VulkanAcceleration::BuildTopLevelAS()
 
 	VkAccelerationStructureInfoNV acceleration_structure_info = VulkanInitializers::AccelerationStructureInfo(0, geometryInstanceCount);
 
+	acceleration_structure_info.flags = 1;
 
 
 	vkCmdBuildAccelerationStructureNV(commandBuffer, &acceleration_structure_info, m_top_level_as.instances.buffer, 0, VK_FALSE,
@@ -361,12 +390,6 @@ void Renderer::Vulkan::VulkanAcceleration::BuildTopLevelAS()
 	vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_NV,
 		VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_NV, 0, 1, &memoryBarrier,
 		0, nullptr, 0, nullptr);
-
-
-	vkEndCommandBuffer(commandBuffer);
-
-	m_device->SubmitGraphicsCommand(&commandBuffer, 1);
-	m_device->FreeGraphicsCommand(&commandBuffer, 1);
 }
 
 unsigned int Renderer::Vulkan::VulkanAcceleration::UpdateGeometryInstances()

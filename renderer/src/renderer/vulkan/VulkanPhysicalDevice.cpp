@@ -33,12 +33,11 @@ Renderer::Vulkan::VulkanPhysicalDevice::VulkanPhysicalDevice(VkPhysicalDevice de
 			&m_physical_device_properties2
 		);
 
-
-		VkPhysicalDeviceDescriptorIndexingFeaturesEXT descIndexFeatures = {};
-		descIndexFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES_EXT;
+		m_descIndexFeatures = {};
+		m_descIndexFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES_EXT;
 			
 		m_device_features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-		m_device_features2.pNext = &descIndexFeatures;
+		m_device_features2.pNext = &m_descIndexFeatures;
 
 		vkGetPhysicalDeviceFeatures2(
 			m_device,

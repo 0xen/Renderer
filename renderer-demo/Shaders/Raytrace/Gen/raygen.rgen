@@ -31,11 +31,10 @@ void main()
     float tmin = 0.001;
     float tmax = 10000.0;
 
-	uint sbtRecordOffset = 0; // Hit group??
-	uint sbtRecordStride = 0;
-	uint missIndex = 0;
-	
-	
+    uint sbtRecordOffset = 2; // Hitgroup
+    uint sbtRecordStride = 0;
+    uint missIndex = 0;
+
     traceNV(topLevelAS, rayFlags, cullMask, sbtRecordOffset, sbtRecordStride,
       missIndex, origin.xyz, tmin, direction.xyz, tmax, 0 /*payload*/);
     imageStore(image, ivec2(gl_LaunchIDNV.xy), vec4(hitValue, 0.0));

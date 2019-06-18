@@ -106,7 +106,10 @@ void Renderer::Vulkan::VulkanBuffer::CreateBuffer(BufferSlot slot)
 		m_memory_propertys_flag,
 		m_gpu_allocation[slot].buffer
 	);
-	VulkanCommon::MapBufferMemory(m_device, m_gpu_allocation[slot].buffer, m_gpu_allocation[slot].buffer.size);
+	if ((m_memory_propertys_flag & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) != VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
+	{
+		VulkanCommon::MapBufferMemory(m_device, m_gpu_allocation[slot].buffer, m_gpu_allocation[slot].buffer.size);
+	}
 }
 
 void Renderer::Vulkan::VulkanBuffer::DestroyBuffer(BufferSlot slot)

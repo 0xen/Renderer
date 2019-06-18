@@ -79,7 +79,7 @@ namespace Renderer
 			AccelerationStructure CreateBottomLevelAS(VkCommandBuffer commandBuffer, VulkanModelPool* pool);
 			void CreateTopLevelAS(VkCommandBuffer commandBuffer, std::vector<std::pair<VkAccelerationStructureNV, glm::mat4x4>>& instances);
 
-			void BuildTopLevelAS();
+			void BuildTopLevelAS(VkCommandBuffer commandBuffer);
 
 			unsigned int UpdateGeometryInstances();
 

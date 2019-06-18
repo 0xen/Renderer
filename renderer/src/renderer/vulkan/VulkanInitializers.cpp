@@ -110,9 +110,16 @@ VkSubmitInfo Renderer::Vulkan::VulkanInitializers::SubmitInfo(VkCommandBuffer & 
 VkSubmitInfo Renderer::Vulkan::VulkanInitializers::SubmitInfo(VkCommandBuffer* buffer, uint32_t count)
 {
 	VkSubmitInfo submit_info = {};
+
 	submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submit_info.pNext = nullptr;
+	submit_info.waitSemaphoreCount = 0;
+	submit_info.pWaitSemaphores = nullptr;
+	submit_info.pWaitDstStageMask = nullptr;
 	submit_info.commandBufferCount = count;
 	submit_info.pCommandBuffers = buffer;
+	submit_info.signalSemaphoreCount = 0;
+	submit_info.pSignalSemaphores = nullptr;
 	return submit_info;
 }
 
@@ -790,7 +797,7 @@ VkGeometryNV Renderer::Vulkan::VulkanInitializers::CreateRayTraceGeometry(VkBuff
 	geometry.geometry.triangles.indexOffset = indexOffsetInBytes;
 	geometry.geometry.triangles.indexCount = indexCount;
 	// Limitation to 32-bit indices
-	geometry.geometry.triangles.indexType = VK_INDEX_TYPE_UINT16;
+	geometry.geometry.triangles.indexType = VK_INDEX_TYPE_UINT32;
 	geometry.geometry.triangles.transformData = transformBuffer;
 	geometry.geometry.triangles.transformOffset = transformOffsetInBytes;
 	geometry.geometry.aabbs = { VK_STRUCTURE_TYPE_GEOMETRY_AABB_NV };
@@ -814,7 +821,7 @@ VkAccelerationStructureInfoNV Renderer::Vulkan::VulkanInitializers::Acceleration
 
 VkAccelerationStructureCreateInfoNV Renderer::Vulkan::VulkanInitializers::AccelerationStructureCreateInfoNV(VkAccelerationStructureInfoNV structure_info)
 {
-	VkAccelerationStructureCreateInfoNV info{};
+	VkAccelerationStructureCreateInfoNV info{ VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_NV };
 	info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_NV;
 	info.pNext = nullptr;
 	info.info = structure_info;
@@ -835,7 +842,7 @@ VkAccelerationStructureMemoryRequirementsInfoNV Renderer::Vulkan::VulkanInitiali
 
 VkBindAccelerationStructureMemoryInfoNV Renderer::Vulkan::VulkanInitializers::AccelerationStructureMemoryInfoNV(VkAccelerationStructureNV str, VkDeviceMemory memory)
 {
-	VkBindAccelerationStructureMemoryInfoNV info;
+	VkBindAccelerationStructureMemoryInfoNV info{};
 	info.sType = VK_STRUCTURE_TYPE_BIND_ACCELERATION_STRUCTURE_MEMORY_INFO_NV;
 	info.pNext = nullptr;
 	info.accelerationStructure = str;

@@ -45,6 +45,7 @@ namespace Renderer
 			VkPhysicalDeviceFeatures m_device_features;
 			VkPhysicalDeviceFeatures2 m_device_features2;
 			VkPhysicalDeviceMemoryProperties m_physical_device_mem_properties;
+			VkPhysicalDeviceDescriptorIndexingFeaturesEXT m_descIndexFeatures;
 		};
 	}
 }

@@ -35,7 +35,7 @@ public:
   void loadModel(const std::string& filename);
 
   std::vector<TVert>       m_vertices;
-  std::vector<uint16_t>    m_indices;
+  std::vector<uint32_t>    m_indices;
   std::vector<MatrialObj>  m_materials;
   std::vector<std::string> m_textures;
 };

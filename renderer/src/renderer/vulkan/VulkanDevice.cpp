@@ -31,6 +31,7 @@ Renderer::Vulkan::VulkanDevice::VulkanDevice(VulkanInstance * instance, VulkanPh
 			*m_physical_device->GetExtenstions(),
 			*m_physical_device->GetDeviceFeatures2()
 		);
+		create_info.pNext = m_physical_device->GetDeviceFeatures2()->pNext;
 	}
 	else
 	{
@@ -68,7 +69,7 @@ Renderer::Vulkan::VulkanDevice::VulkanDevice(VulkanInstance * instance, VulkanPh
 		&m_present_queue
 	);
 	// Setup command pools
-	VkCommandPoolCreateInfo compute_pool_info = VulkanInitializers::CommandPoolCreateInfo(m_physical_device->GetQueueFamilies()->compute_indices);
+	VkCommandPoolCreateInfo compute_pool_info = VulkanInitializers::CommandPoolCreateInfo(m_physical_device->GetQueueFamilies()->compute_indices, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
 	ErrorCheck(vkCreateCommandPool(
 		m_device,
 		&compute_pool_info,

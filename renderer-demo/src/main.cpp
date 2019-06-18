@@ -19,6 +19,7 @@
 #include <renderer\vulkan\VulkanAcceleration.hpp>
 #include <renderer\vulkan\VulkanRaytracePipeline.hpp>
 #include <renderer/vulkan/VulkanRenderer.hpp>
+#include <renderer/vulkan/VulkanTextureBuffer.hpp>
 #include <renderer/vulkan/VulkanFlags.hpp>
 #include <renderer\VertexBase.hpp>
 
@@ -27,6 +28,7 @@
 
 #include <vector>
 #include <iostream>
+#include <sstream>
 
 using namespace Renderer;
 using namespace Renderer::Vulkan;
@@ -161,7 +163,7 @@ int main(int argc, char **argv)
 	// Camera setup
 	camera.view = glm::mat4(1.0f);
 	camera.view = glm::scale(camera.view, glm::vec3(1.0f, 1.0f, 1.0f));
-	camera.view = glm::translate(camera.view, glm::vec3(0.0f, 0.0f, -15.0f));
+	camera.view = glm::translate(camera.view, glm::vec3(0.0f, 0.0f, -6.0f));
 
 
 	//camera.view = glm::lookAt(glm::vec3(4.0f, 4.0f, 4.0f), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
@@ -193,7 +195,7 @@ int main(int argc, char **argv)
 	camera.projection[1][1] *= -1;  // Inverting Y for Vulkan
 
 
-
+	
 									// Setup cameras descriptors and buffers
 	IUniformBuffer* cameraBuffer = renderer->CreateUniformBuffer(&camera, BufferChain::Single, sizeof(Camera), 1, true);
 	cameraBuffer->SetData(BufferSlot::Primary);
@@ -208,11 +210,10 @@ int main(int argc, char **argv)
 
 
 
-
+	
 
 	ObjLoader<Vertex> loader;
 	loader.loadModel("../../renderer-demo/media/scenes/Medieval_building.obj");
-
 
 	uint32_t m_nbIndices = static_cast<uint32_t>(loader.m_indices.size());
 	uint32_t m_nbVertices = static_cast<uint32_t>(loader.m_vertices.size());
@@ -223,7 +224,7 @@ int main(int argc, char **argv)
 
 
 	IVertexBuffer* vertexBuffer = renderer->CreateVertexBuffer(loader.m_vertices.data(), sizeof(Vertex), loader.m_vertices.size());
-	IIndexBuffer* indexBuffer = renderer->CreateIndexBuffer(loader.m_indices.data(), sizeof(uint16_t), loader.m_indices.size());
+	IIndexBuffer* indexBuffer = renderer->CreateIndexBuffer(loader.m_indices.data(), sizeof(uint32_t), loader.m_indices.size());
 
 	vertexBuffer->SetData(BufferSlot::Primary);
 	indexBuffer->SetData(BufferSlot::Primary);
@@ -287,15 +288,33 @@ int main(int argc, char **argv)
 	model_position_buffer1->Transfer(BufferSlot::Primary, BufferSlot::Secondery);
 
 
+	std::vector<VulkanTextureBuffer*> textures;
 
-	std::vector<unsigned char> image; //the raw pixels
-	unsigned width;
-	unsigned height;
-	unsigned error = lodepng::decode(image, width, height, "../../renderer-demo/Images/cobble.png");
-	if (error) std::cout << "decoder error " << error << ": " << lodepng_error_text(error) << std::endl;
+	std::vector<VkDescriptorImageInfo> texture_descriptors;
 
-	ITextureBuffer* texture = renderer->CreateTextureBuffer(image.data(), Renderer::DataFormat::R8G8B8A8_FLOAT, width, height);
 
+	for (auto& texturePath : loader.m_textures)
+	{
+		std::stringstream ss;
+		ss << "../../renderer-demo/media/textures/" << texturePath;
+
+
+		std::vector<unsigned char> image; //the raw pixels
+		unsigned width;
+		unsigned height;
+
+
+		unsigned error = lodepng::decode(image, width, height, ss.str()/*"../../renderer-demo/Images/cobble.png"*/);
+		if (error) std::cout << "decoder error " << error << ": " << lodepng_error_text(error) << std::endl;
+
+		VulkanTextureBuffer* texture = dynamic_cast<Vulkan::VulkanTextureBuffer*>(renderer->CreateTextureBuffer(image.data(), Renderer::DataFormat::R8G8B8A8_FLOAT, width, height));
+		textures.push_back(texture);
+		texture_descriptors.push_back(texture->GetDescriptorImageInfo(BufferSlot::Primary));
+		
+	}
+
+
+	/*
 	// Create texture pool
 	IDescriptorPool* texture_pool = renderer->CreateDescriptorPool({
 		renderer->CreateDescriptor(Renderer::DescriptorType::IMAGE_SAMPLER, Renderer::ShaderStage::FRAGMENT_SHADER, 0),
@@ -306,7 +325,7 @@ int main(int argc, char **argv)
 	texture_descriptor_set1->UpdateSet();
 
 	model_pool1->AttachDescriptorSet(1, texture_descriptor_set1);
-
+	*/
 
 
 
@@ -315,17 +334,17 @@ int main(int argc, char **argv)
 	{
 		{ ShaderStage::RAY_GEN,		"../../renderer-demo/Shaders/Raytrace/Gen/rgen.spv" },
 		{ ShaderStage::MISS,		"../../renderer-demo/Shaders/Raytrace/Miss/rmiss.spv" },
-		//{ ShaderStage::MISS,		"../../renderer-demo/Shaders/Raytrace/Miss/MissTest/rmiss.spv" },
 		{ ShaderStage::MISS,		"../../renderer-demo/Shaders/Raytrace/Miss/ShadowMiss/rmiss.spv" },
+		{ ShaderStage::MISS,		"../../renderer-demo/Shaders/Raytrace/Miss/MissTest/rmiss.spv" },
 	},
 	{
+		{}, // Fall through hit group for shadow's, etc
 		{ // Involved 
 			{ ShaderStage::CLOSEST_HIT, "../../renderer-demo/Shaders/Raytrace/Hitgroups/0/rchit.spv" },
 		},
 		{ // Involved 
-			{ ShaderStage::CLOSEST_HIT, "../../renderer-demo/Shaders/Raytrace/Hitgroups/1/rchit.spv" },
+			{ ShaderStage::CLOSEST_HIT, "../../renderer-demo/Shaders/Raytrace/Hitgroups/TextureNoLight/rchit.spv" },
 		},
-		{} // For simple shadows, we do not need a hitgroup
 	});
 
 	// Ray generation entry point
@@ -333,10 +352,10 @@ int main(int argc, char **argv)
 
 	ray_pipeline->AddMissProgram(1, {});
 	ray_pipeline->AddMissProgram(2, {});
-	//ray_pipeline->AddMissProgram(3, {});
-	ray_pipeline->AddHitGroup(3, {});
+	ray_pipeline->AddMissProgram(3, {});
 	ray_pipeline->AddHitGroup(4, {});
 	ray_pipeline->AddHitGroup(5, {});
+	ray_pipeline->AddHitGroup(6, {});
 
 
 	ray_pipeline->SetMaxRecursionDepth(2);
@@ -361,14 +380,14 @@ int main(int argc, char **argv)
 		renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 3),
 		renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 4),
 		renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 5),
-		renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 6,13),
+		renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 6,texture_descriptors.size()),
 	});
 
 
 
 
 	ray_pipeline->AttachDescriptorPool(raytracePool);
-
+	
 
 	VulkanAcceleration* acceleration = renderer->CreateAcceleration();
 
@@ -376,7 +395,7 @@ int main(int argc, char **argv)
 
 	acceleration->Build();
 
-
+	
 	VulkanDescriptorSet* raytracingSet = static_cast<VulkanDescriptorSet*>(raytracePool->CreateDescriptorSet());
 
 
@@ -406,7 +425,7 @@ int main(int argc, char **argv)
 	raytracingSet->AttachBuffer(5, materialbuffer);
 
 
-	raytracingSet->AttachBuffer(6, texture);
+	raytracingSet->AttachBuffer(6, texture_descriptors);
 
 
 	raytracingSet->UpdateSet();
@@ -445,6 +464,6 @@ int main(int argc, char **argv)
 
 
 	delete renderer;
-
+	
 	return 0;
 }

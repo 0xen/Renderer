@@ -236,7 +236,7 @@ void Renderer::Vulkan::VulkanCommon::CreateBuffer(VulkanDevice * device, VkDevic
 	));
 	buffer.size = mem_requirements.size > size ? size : mem_requirements.size;
 	buffer.alignment = mem_requirements.alignment;
-	vkAllocateMemory(
+	a = vkAllocateMemory(
 		*device->GetVulkanDevice(),
 		&alloc_info,
 		nullptr,
