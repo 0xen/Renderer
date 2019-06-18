@@ -313,13 +313,17 @@ int main(int argc, char **argv)
 
 	VulkanRaytracePipeline* ray_pipeline = renderer->CreateRaytracePipeline(
 	{
-		{ ShaderStage::RAY_GEN,		"../../renderer-demo/Shaders/Raytrace/Gen/raygen.spv" },
+		{ ShaderStage::RAY_GEN,		"../../renderer-demo/Shaders/Raytrace/Gen/rgen.spv" },
 		{ ShaderStage::MISS,		"../../renderer-demo/Shaders/Raytrace/Miss/rmiss.spv" },
+		//{ ShaderStage::MISS,		"../../renderer-demo/Shaders/Raytrace/Miss/MissTest/rmiss.spv" },
 		{ ShaderStage::MISS,		"../../renderer-demo/Shaders/Raytrace/Miss/ShadowMiss/rmiss.spv" },
 	},
 	{
 		{ // Involved 
-			{ ShaderStage::CLOSEST_HIT, "../../renderer-demo/Shaders/Raytrace/Hitgroups/0/rchit.spv"},
+			{ ShaderStage::CLOSEST_HIT, "../../renderer-demo/Shaders/Raytrace/Hitgroups/0/rchit.spv" },
+		},
+		{ // Involved 
+			{ ShaderStage::CLOSEST_HIT, "../../renderer-demo/Shaders/Raytrace/Hitgroups/1/rchit.spv" },
 		},
 		{} // For simple shadows, we do not need a hitgroup
 	});
@@ -329,8 +333,10 @@ int main(int argc, char **argv)
 
 	ray_pipeline->AddMissProgram(1, {});
 	ray_pipeline->AddMissProgram(2, {});
+	//ray_pipeline->AddMissProgram(3, {});
 	ray_pipeline->AddHitGroup(3, {});
 	ray_pipeline->AddHitGroup(4, {});
+	ray_pipeline->AddHitGroup(5, {});
 
 
 	ray_pipeline->SetMaxRecursionDepth(2);
@@ -356,8 +362,6 @@ int main(int argc, char **argv)
 		renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 4),
 		renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 5),
 		renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 6,13),
-
-
 	});
 
 

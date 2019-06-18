@@ -84,49 +84,7 @@ WaveFrontMaterial unpackMaterial(int matIndex)
 
 void main()
 {
-
-  ivec3 ind = ivec3(indices.i[3 * gl_PrimitiveID], indices.i[3 * gl_PrimitiveID + 1],
-                    indices.i[3 * gl_PrimitiveID + 2]);
-
-  Vertex v0 = unpackVertex(ind.x);
-  Vertex v1 = unpackVertex(ind.y);
-  Vertex v2 = unpackVertex(ind.z);
-
-  const vec3 barycentrics = vec3(1.0 - attribs.x - attribs.y, attribs.x, attribs.y);
-
-  vec3 normal =
-    normalize(v0.nrm * barycentrics.x + v1.nrm * barycentrics.y + v2.nrm * barycentrics.z);
-
-  vec3 lightVector = normalize(vec3(5, 4, 3));
-
-  float dot_product = max(dot(lightVector, normal), 0.2);
-
-  WaveFrontMaterial mat = unpackMaterial(v1.matIndex);
-
-  vec3 c = dot_product * vec3(1,1,1); 
-  if (mat.textureId >= 0)
-  {
-    vec2 texCoord = v0.texCoord * barycentrics.x + v1.texCoord * barycentrics.y +
-                              v2.texCoord * barycentrics.z;
-    c *= texture(textureSamplers[mat.textureId], texCoord).xyz;
-  }
-  float tmin = 0.001;
-  float tmax = 100.0;
-  vec3 origin = gl_WorldRayOriginNV + gl_WorldRayDirectionNV * gl_HitTNV;
-  isShadowed = true;
-  
-  
-  uint sbtRecordOffset = 2; // Hit group??
-  uint sbtRecordStride = 0;
-  uint missIndex = 1;
-  
-  traceNV(topLevelAS, gl_RayFlagsTerminateOnFirstHitNV|gl_RayFlagsOpaqueNV|gl_RayFlagsSkipClosestHitShaderNV, 
-          0xFF, sbtRecordOffset, sbtRecordStride, missIndex, 
-		  origin, tmin, lightVector, tmax, 2 /*payload location prehaps represents location 2*/);
-  if (isShadowed)
-    hitValue = c * 0.3;
-  else
-    hitValue = c; 
+    hitValue = vec3(0,1,0);
 }
 
 
