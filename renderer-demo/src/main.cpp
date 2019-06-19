@@ -143,6 +143,11 @@ struct Vertex
 	static auto getAttributeDescriptions();
 };
 
+struct Light
+{
+	glm::vec4 position;
+	glm::vec4 color;
+};
 
 int main(int argc, char **argv)
 {
@@ -163,7 +168,7 @@ int main(int argc, char **argv)
 	// Camera setup
 	camera.view = glm::mat4(1.0f);
 	camera.view = glm::scale(camera.view, glm::vec3(1.0f, 1.0f, 1.0f));
-	camera.view = glm::translate(camera.view, glm::vec3(0.0f, 0.0f, -6.0f));
+	camera.view = glm::translate(camera.view, glm::vec3(0.0f, 0.0f, -1.5f));
 
 
 	//camera.view = glm::lookAt(glm::vec3(4.0f, 4.0f, 4.0f), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
@@ -213,7 +218,7 @@ int main(int argc, char **argv)
 	
 
 	ObjLoader<Vertex> loader;
-	loader.loadModel("../../renderer-demo/media/scenes/Medieval_building.obj");
+	loader.loadModel("../../renderer-demo/media/scenes/sphere.obj");
 
 	uint32_t m_nbIndices = static_cast<uint32_t>(loader.m_indices.size());
 	uint32_t m_nbVertices = static_cast<uint32_t>(loader.m_vertices.size());
@@ -240,9 +245,10 @@ int main(int argc, char **argv)
 	IModel* model1 = model_pool1->CreateModel();
 
 	glm::mat4 modelPosition = glm::mat4(1.0f);
-	modelPosition = glm::translate(modelPosition, glm::vec3(2, 0, 0));
-	float scale = 0.4f;
+	modelPosition = glm::translate(modelPosition, glm::vec3(0, 0, -3));
+	float scale = 1.0f;
 	modelPosition = glm::scale(modelPosition, glm::vec3(scale, scale, scale));
+	scale = 0.4f;
 
 	model1->SetData(POSITION_BUFFER, modelPosition);
 
@@ -253,7 +259,7 @@ int main(int argc, char **argv)
 
 		glm::mat4 modelPos = glm::mat4(1.0f);
 		modelPos = glm::mat4(1.0f);
-		modelPos = glm::translate(modelPos, glm::vec3(-2, 0, 0));
+		modelPos = glm::translate(modelPos, glm::vec3(0, 1, 0));
 		modelPos = glm::scale(modelPos, glm::vec3(scale, scale, scale));
 
 		model2->SetData(POSITION_BUFFER, modelPos);
@@ -265,7 +271,7 @@ int main(int argc, char **argv)
 
 		glm::mat4 modelPos = glm::mat4(1.0f);
 		modelPos = glm::mat4(1.0f);
-		modelPos = glm::translate(modelPos, glm::vec3(-2, 2, 0));
+		modelPos = glm::translate(modelPos, glm::vec3(-1, 0, 0));
 		modelPos = glm::scale(modelPos, glm::vec3(scale, scale, scale));
 
 		model2->SetData(POSITION_BUFFER, modelPos);
@@ -277,7 +283,7 @@ int main(int argc, char **argv)
 
 		glm::mat4 modelPos = glm::mat4(1.0f);
 		modelPos = glm::mat4(1.0f);
-		modelPos = glm::translate(modelPos, glm::vec3(2, 2, 0));
+		modelPos = glm::translate(modelPos, glm::vec3(1, 0, 0));
 		modelPos = glm::scale(modelPos, glm::vec3(scale, scale, scale));
 
 		model2->SetData(POSITION_BUFFER, modelPos);
@@ -329,25 +335,24 @@ int main(int argc, char **argv)
 
 
 
-	VulkanRaytracePipeline* ray_pipeline = renderer->CreateRaytracePipeline(
+	/*VulkanRaytracePipeline* ray_pipeline = renderer->CreateRaytracePipeline(
 	{
-		{ ShaderStage::RAY_GEN,		"../../renderer-demo/Shaders/Raytrace/Gen/rgen.spv" },
-		{ ShaderStage::MISS,		"../../renderer-demo/Shaders/Raytrace/Miss/rmiss.spv" },
-		{ ShaderStage::MISS,		"../../renderer-demo/Shaders/Raytrace/Miss/ShadowMiss/rmiss.spv" },
-		{ ShaderStage::MISS,		"../../renderer-demo/Shaders/Raytrace/Miss/ShadowMiss/rmiss.spv" },
+		{ ShaderStage::RAY_GEN,		"../../renderer-demo/Shaders/Raytrace/BasicShadow/Gen/rgen.spv" },
+		{ ShaderStage::MISS,		"../../renderer-demo/Shaders/Raytrace/BasicShadow/Miss/rmiss.spv" },
+		{ ShaderStage::MISS,		"../../renderer-demo/Shaders/Raytrace/BasicShadow/Miss/ShadowMiss/rmiss.spv" },
+		{ ShaderStage::MISS,		"../../renderer-demo/Shaders/Raytrace/BasicShadow/Miss/ShadowMiss/rmiss.spv" },
 	},
 	{
 		{ // Involved 
-			{ ShaderStage::CLOSEST_HIT, "../../renderer-demo/Shaders/Raytrace/Hitgroups/0/rchit.spv" },
+			{ ShaderStage::CLOSEST_HIT, "../../renderer-demo/Shaders/Raytrace/BasicShadow/Hitgroups/0/rchit.spv" },
 		},
 		{}, // Fall through hit group for shadow's, etc
 		{ // Involved 
-			{ ShaderStage::CLOSEST_HIT, "../../renderer-demo/Shaders/Raytrace/Hitgroups/TextureNoLight/rchit.spv" },
+			{ ShaderStage::CLOSEST_HIT, "../../renderer-demo/Shaders/Raytrace/BasicShadow/Hitgroups/TextureNoLight/rchit.spv" },
 		},
 	});
 
 	int groupID = 0;
-
 	// Ray generation entry point
 	ray_pipeline->AddRayGenerationProgram(groupID++, {});
 
@@ -359,8 +364,34 @@ int main(int argc, char **argv)
 	ray_pipeline->AddHitGroup(groupID++, {});
 
 
+	ray_pipeline->SetMaxRecursionDepth(2);*/
 
-	ray_pipeline->SetMaxRecursionDepth(2);
+
+
+	VulkanRaytracePipeline* ray_pipeline = renderer->CreateRaytracePipeline(
+		{
+			{ ShaderStage::RAY_GEN,		"../../renderer-demo/Shaders/Raytrace/Reflective/Gen/rgen.spv" },
+			{ ShaderStage::MISS,		"../../renderer-demo/Shaders/Raytrace/Reflective/Miss/rmiss.spv" },
+			{ ShaderStage::MISS,		"../../renderer-demo/Shaders/Raytrace/Reflective/Miss/ShadowMiss/rmiss.spv" },
+		},
+	{
+		{ // Involved 
+			{ ShaderStage::CLOSEST_HIT, "../../renderer-demo/Shaders/Raytrace/Reflective/Hitgroups/0/rchit.spv" },
+		},
+		{}, // Fall through hit group for shadow's, etc
+	});
+
+	int groupID = 0;
+	// Ray generation entry point
+	ray_pipeline->AddRayGenerationProgram(groupID++, {});
+
+	ray_pipeline->AddMissProgram(groupID++, {});
+	ray_pipeline->AddMissProgram(groupID++, {});
+	ray_pipeline->AddHitGroup(groupID++, {});
+	ray_pipeline->AddHitGroup(groupID++, {});
+
+
+	ray_pipeline->SetMaxRecursionDepth(10);
 
 	ray_pipeline->AttachVertexBinding({
 		VertexInputRate::INPUT_RATE_VERTEX,
@@ -383,6 +414,7 @@ int main(int argc, char **argv)
 		renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 4),
 		renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 5),
 		renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 6,texture_descriptors.size()),
+		renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 7),
 	});
 
 
@@ -412,6 +444,16 @@ int main(int argc, char **argv)
 	materialbuffer->SetData(BufferSlot::Primary);
 
 
+	std::vector<Light> lights = {
+		{ glm::vec4(5, 4, 3,0), glm::vec4(1.0f,1.0f,1.0f,1.0f) },
+		{ glm::vec4(-5, 4, 3,0), glm::vec4(1.0f,1.0f,1.0f,0) }
+	};
+
+
+	IUniformBuffer* lightBuffer = renderer->CreateUniformBuffer(lights.data(), BufferChain::Single, sizeof(Light), lights.size(), true);
+	lightBuffer->SetData(BufferSlot::Primary);
+
+
 	raytracingSet->AttachBuffer(0, { acceleration->GetDescriptorAcceleration() });
 
 
@@ -430,6 +472,8 @@ int main(int argc, char **argv)
 	raytracingSet->AttachBuffer(6, texture_descriptors);
 
 
+	raytracingSet->AttachBuffer(7, lightBuffer);
+
 	raytracingSet->UpdateSet();
 
 
@@ -443,11 +487,13 @@ int main(int argc, char **argv)
 
 	ray_pipeline->Build();
 
-
+	float s = 0.0f;
 
 	while (renderer->IsRunning())
 	{
-		modelPosition = glm::rotate(modelPosition, 0.001f, glm::vec3(0, 1, 0));
+		s += 0.001f;
+		//modelPosition = glm::rotate(modelPosition, 0.001f, glm::vec3(0, 1, 0));
+		modelPosition = glm::translate(modelPosition, glm::vec3(0, 0, sin(s) * 0.001f));
 
 		model1->SetData(POSITION_BUFFER, modelPosition);
 

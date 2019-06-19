@@ -95,6 +95,7 @@ void ObjLoader<TVert>::loadModel(const std::string& filename)
     m.dissolve = material.dissolve;
     m.ior      = material.ior;
     m.illum    = material.illum;
+	m.shininess = material.shininess;
     if(!material.diffuse_texname.empty())
     {
       m_textures.push_back(material.diffuse_texname);

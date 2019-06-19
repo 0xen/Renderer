@@ -3,6 +3,13 @@
 #extension GL_EXT_nonuniform_qualifier : enable
 
 layout(location = 0) rayPayloadInNV vec3 hitValue;
+
+struct Light
+{
+  vec4 position;
+  vec4 color;
+};
+
 layout(location = 2) rayPayloadNV bool isShadowed;
 
 hitAttributeNV vec3 attribs;
@@ -16,6 +23,9 @@ indices;
 layout(binding = 5, set = 0) buffer MatColorBufferObject { vec4[] m; }
 materials;
 layout(binding = 6, set = 0) uniform sampler2D[] textureSamplers;
+
+layout(binding = 7, set = 0) buffer Lights { Light l[]; }
+lights;
 
 struct Vertex
 {
@@ -97,13 +107,13 @@ void main()
   vec3 normal =
     normalize(v0.nrm * barycentrics.x + v1.nrm * barycentrics.y + v2.nrm * barycentrics.z);
 
-  vec3 lightVector = normalize(vec3(5, 4, 3));
+  //vec3 lightVector = normalize(vec3(5, 4, 3));
 
-  float dot_product = max(dot(lightVector, normal), 0.2);
+  //float dot_product = max(dot(lightVector, normal), 0.2);
 
   WaveFrontMaterial mat = unpackMaterial(v1.matIndex);
 
-  vec3 c = dot_product * mat.diffuse; 
+  vec3 c = mat.diffuse;//dot_product * mat.diffuse; 
   if (mat.textureId >= 0)
   {
     vec2 texCoord = v0.texCoord * barycentrics.x + v1.texCoord * barycentrics.y +
@@ -113,21 +123,34 @@ void main()
   float tmin = 0.001;
   float tmax = 100.0;
   vec3 origin = gl_WorldRayOriginNV + gl_WorldRayDirectionNV * gl_HitTNV;
-  isShadowed = true;
+
+  uint lightCount = 2;
+
+  for(int i = 0 ; i < lightCount; i ++)
+  {
+
+    vec3 lightVector = normalize(lights.l[i].position.xyz);
+    //float dot_product = max(dot(lightVector, normal), 0.2);
+
+    isShadowed = true;
+
+    uint sbtRecordOffset = 0;
+    uint sbtRecordStride = 0;
+    uint missIndex = 1;
 
 
-  uint sbtRecordOffset = 0;
-  uint sbtRecordStride = 0;
-  uint missIndex = 1;
+    traceNV(topLevelAS, gl_RayFlagsTerminateOnFirstHitNV|gl_RayFlagsOpaqueNV|gl_RayFlagsSkipClosestHitShaderNV, 
+            0xFF, sbtRecordOffset, sbtRecordStride,
+            missIndex, origin, tmin, lightVector, tmax, 2 /*payload location*/);
+    if (isShadowed)
+      c *= 0.3;
+    else
+      c += lights.l[i].color.xyz; 
+  }
+  c /= lightCount;
+  hitValue = c;
 
-
-  traceNV(topLevelAS, gl_RayFlagsTerminateOnFirstHitNV|gl_RayFlagsOpaqueNV|gl_RayFlagsSkipClosestHitShaderNV, 
-          0xFF, sbtRecordOffset, sbtRecordStride,
-          missIndex, origin, tmin, lightVector, tmax, 2 /*payload location*/);
-  if (isShadowed)
-    hitValue = c * 0.3;
-  else
-    hitValue = c; 
+  
 }
 
 
