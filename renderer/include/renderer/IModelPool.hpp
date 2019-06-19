@@ -20,7 +20,7 @@ namespace Renderer
 		virtual IModel* GetModel(int index) = 0;
 		virtual void RemoveModel(IModel* model) = 0;
 		virtual void Update() = 0;
-		virtual void AttachBuffer(unsigned int index, IUniformBuffer * buffer) = 0;
+		virtual void AttachBuffer(unsigned int index, IUniformBuffer * buffer, unsigned int offset = 0) = 0;
 		virtual void UpdateModelBuffer(unsigned int index) = 0;
 		virtual void AttachDescriptorSet(unsigned int index, IDescriptorSet* descriptor_set) = 0;
 		virtual std::vector<IDescriptorSet*> GetDescriptorSets() = 0;

@@ -64,7 +64,7 @@ Renderer::IModel * Renderer::Vulkan::VulkanModelPool::CreateModel()
 	for (auto buffer = m_buffers.begin(); buffer != m_buffers.end(); buffer++)
 	{
 		void* data = buffer->second->GetDataPointer(BufferSlot::Primary);
-		model->SetDataPointer(buffer->first, ((char*)data) + (buffer->second->GetIndexSize(BufferSlot::Primary) * new_index));
+		model->SetDataPointer(buffer->first, ((char*)data) + (buffer->second->GetIndexSize(BufferSlot::Primary) * (new_index + m_buffer_offsets[buffer->first])));
 	}
 	m_change = true;
 
@@ -111,9 +111,11 @@ void Renderer::Vulkan::VulkanModelPool::Update()
 	}
 }
 
-void Renderer::Vulkan::VulkanModelPool::AttachBuffer(unsigned int index, IUniformBuffer * buffer)
+
+void Renderer::Vulkan::VulkanModelPool::AttachBuffer(unsigned int index, IUniformBuffer * buffer, unsigned int offset)
 {
 	m_buffers[index] = dynamic_cast<VulkanUniformBuffer*>(buffer);
+	m_buffer_offsets[index] = offset;
 }
 
 void Renderer::Vulkan::VulkanModelPool::UpdateModelBuffer(unsigned int index)

@@ -26,7 +26,7 @@ namespace Renderer
 			virtual IModel* GetModel(int index);
 			virtual void RemoveModel(IModel* model);
 			virtual void Update();
-			virtual void AttachBuffer(unsigned int index, IUniformBuffer * buffer);
+			virtual void AttachBuffer(unsigned int index, IUniformBuffer * buffer, unsigned int offset = 0);
 			virtual void UpdateModelBuffer(unsigned int index);
 			virtual void AttachDescriptorSet(unsigned int index, IDescriptorSet* descriptor_set);
 			virtual std::vector<IDescriptorSet*> GetDescriptorSets();
@@ -46,6 +46,7 @@ namespace Renderer
 			VulkanDevice * m_device;
 			std::map<unsigned int, VulkanDescriptorSet*> m_descriptor_sets;
 			std::map<unsigned int, VulkanUniformBuffer*> m_buffers;
+			std::map<unsigned int, unsigned int> m_buffer_offsets;
 			std::map<unsigned int, VulkanModel*> m_models;
 			static const unsigned int m_indirect_array_padding;
 			VulkanBuffer* m_indirect_draw_buffer = nullptr;
