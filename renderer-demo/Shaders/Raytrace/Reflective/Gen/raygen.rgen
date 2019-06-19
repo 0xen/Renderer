@@ -47,7 +47,7 @@ void main()
 
     vec3 color = vec3(0.0);
 
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 10; i++) {
 
 
 
@@ -63,8 +63,8 @@ void main()
         } else if (rayPayload.reflector > 0.01f) {
             const vec4 hitPos = origin + direction * rayPayload.distance;
             origin.xyz = hitPos.xyz + rayPayload.normal * 0.001f;
-            direction.xyz = vec3(0,0,1);//reflect(direction.xyz, rayPayload.normal);
-            color += hitColor * rayPayload.reflector;
+            direction.xyz = reflect(direction.xyz, rayPayload.normal);
+            color += hitColor * (rayPayload.reflector * 0.01f);
         } else {
             color += hitColor;
             break;

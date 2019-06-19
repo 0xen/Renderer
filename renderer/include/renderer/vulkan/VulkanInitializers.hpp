@@ -98,6 +98,8 @@ namespace Renderer
 
 			VkWriteDescriptorSet WriteDescriptorSet(VkDescriptorSet d_set, std::vector<VkDescriptorImageInfo>& buffer, VkDescriptorType type, int binding);
 
+			VkWriteDescriptorSet WriteDescriptorSet(VkDescriptorSet d_set, std::vector<VkDescriptorBufferInfo>& buffer, VkDescriptorType type, int binding);
+
 			VkFenceCreateInfo CreateFenceInfo();
 
 			VkVertexInputBindingDescription VertexInputBinding(uint32_t binding, uint32_t stride, VkVertexInputRate input_rate);

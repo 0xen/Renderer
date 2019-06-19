@@ -102,6 +102,7 @@ void PollWindow()
 
 	// Poll Window
 	SDL_Event event;
+	bool rebuild = false;
 	while (SDL_PollEvent(&event) > 0)
 	{
 		switch (event.type)
@@ -116,6 +117,7 @@ void PollWindow()
 			case SDL_WINDOWEVENT_SIZE_CHANGED:
 				window_handle->width = event.window.data1;
 				window_handle->height = event.window.data2;
+
 				renderer->Rebuild();
 				break;
 			}
@@ -148,6 +150,72 @@ struct Light
 	glm::vec4 position;
 	glm::vec4 color;
 };
+
+std::vector<VulkanTextureBuffer*> textures;
+std::vector<VkDescriptorImageInfo> texture_descriptors;
+std::vector<MatrialObj> materials;
+
+std::vector<uint32_t> all_indexs;
+std::vector<Vertex> all_vertexs;
+
+
+IModelPool* LoadModel(std::string path)
+{
+	ObjLoader<Vertex> loader;
+	loader.loadModel(path);
+
+	uint32_t m_nbIndices = static_cast<uint32_t>(loader.m_indices.size());
+	uint32_t m_nbVertices = static_cast<uint32_t>(loader.m_vertices.size());
+
+	IVertexBuffer* vertexBuffer = renderer->CreateVertexBuffer(loader.m_vertices.data(), sizeof(Vertex), loader.m_vertices.size());
+	IIndexBuffer* indexBuffer = renderer->CreateIndexBuffer(loader.m_indices.data(), sizeof(uint32_t), loader.m_indices.size());
+
+	vertexBuffer->SetData(BufferSlot::Primary);
+	indexBuffer->SetData(BufferSlot::Primary);
+
+	for (uint32_t& index : loader.m_indices)
+	{
+		all_indexs.push_back(index + all_vertexs.size());
+	}
+
+	for (Vertex& vertex : loader.m_vertices)
+	{
+		vertex.matID += materials.size();
+		all_vertexs.push_back(vertex);
+	}
+
+
+	unsigned int offset = texture_descriptors.size();
+
+
+	for (auto& material : loader.m_materials)
+	{
+		if (material.textureID >= 0) material.textureID += offset;
+		materials.push_back(material);
+	}
+
+	for (auto& texturePath : loader.m_textures)
+	{
+		std::stringstream ss;
+		ss << "../../renderer-demo/media/scenes/" << texturePath;
+
+		std::vector<unsigned char> image; //the raw pixels
+		unsigned width;
+		unsigned height;
+
+
+		unsigned error = lodepng::decode(image, width, height, ss.str());
+		if (error) std::cout << "decoder error " << error << ": " << lodepng_error_text(error) << std::endl;
+
+		VulkanTextureBuffer* texture = dynamic_cast<Vulkan::VulkanTextureBuffer*>(renderer->CreateTextureBuffer(image.data(), Renderer::DataFormat::R8G8B8A8_FLOAT, width, height));
+		texture->SetData(BufferSlot::Primary);
+		textures.push_back(texture);
+		texture_descriptors.push_back(texture->GetDescriptorImageInfo(BufferSlot::Primary));
+	}
+
+	return renderer->CreateModelPool(vertexBuffer, indexBuffer);
+}
+
 
 int main(int argc, char **argv)
 {
@@ -200,7 +268,7 @@ int main(int argc, char **argv)
 	camera.projection[1][1] *= -1;  // Inverting Y for Vulkan
 
 
-	
+
 									// Setup cameras descriptors and buffers
 	IUniformBuffer* cameraBuffer = renderer->CreateUniformBuffer(&camera, BufferChain::Single, sizeof(Camera), 1, true);
 	cameraBuffer->SetData(BufferSlot::Primary);
@@ -215,32 +283,23 @@ int main(int argc, char **argv)
 
 
 
-	
-
-	ObjLoader<Vertex> loader;
-	loader.loadModel("../../renderer-demo/media/scenes/sphere.obj");
-
-	uint32_t m_nbIndices = static_cast<uint32_t>(loader.m_indices.size());
-	uint32_t m_nbVertices = static_cast<uint32_t>(loader.m_vertices.size());
+	IModelPool* model_pool1 = LoadModel("../../renderer-demo/media/scenes/sphere.obj");
+	//IModelPool* model_pool2 = LoadModel("../../renderer-demo/media/scenes/sphere.obj");
 
 
 
 
 
 
-	IVertexBuffer* vertexBuffer = renderer->CreateVertexBuffer(loader.m_vertices.data(), sizeof(Vertex), loader.m_vertices.size());
-	IIndexBuffer* indexBuffer = renderer->CreateIndexBuffer(loader.m_indices.data(), sizeof(uint32_t), loader.m_indices.size());
-
-	vertexBuffer->SetData(BufferSlot::Primary);
-	indexBuffer->SetData(BufferSlot::Primary);
-
-	IModelPool* model_pool1 = renderer->CreateModelPool(vertexBuffer, indexBuffer);
-
-	glm::mat4* model_position_array1 = new glm::mat4[1000];
-	IUniformBuffer* model_position_buffer1 = renderer->CreateUniformBuffer(model_position_array1, BufferChain::Double, sizeof(glm::mat4), 1000, true);
 
 
-	model_pool1->AttachBuffer(POSITION_BUFFER, model_position_buffer1);
+	IUniformBuffer* model_position_buffer1;
+
+	{
+		glm::mat4* model_position_array = new glm::mat4[1000];
+		model_position_buffer1 = renderer->CreateUniformBuffer(model_position_array, BufferChain::Double, sizeof(glm::mat4), 1000, true);
+		model_pool1->AttachBuffer(POSITION_BUFFER, model_position_buffer1);
+	}
 
 	IModel* model1 = model_pool1->CreateModel();
 
@@ -248,7 +307,7 @@ int main(int argc, char **argv)
 	modelPosition = glm::translate(modelPosition, glm::vec3(0, 0, -3));
 	float scale = 1.0f;
 	modelPosition = glm::scale(modelPosition, glm::vec3(scale, scale, scale));
-	scale = 0.4f;
+	scale = 0.2f;
 
 	model1->SetData(POSITION_BUFFER, modelPosition);
 
@@ -294,30 +353,7 @@ int main(int argc, char **argv)
 	model_position_buffer1->Transfer(BufferSlot::Primary, BufferSlot::Secondery);
 
 
-	std::vector<VulkanTextureBuffer*> textures;
 
-	std::vector<VkDescriptorImageInfo> texture_descriptors;
-
-
-	for (auto& texturePath : loader.m_textures)
-	{
-		std::stringstream ss;
-		ss << "../../renderer-demo/media/textures/" << texturePath;
-
-
-		std::vector<unsigned char> image; //the raw pixels
-		unsigned width;
-		unsigned height;
-
-
-		unsigned error = lodepng::decode(image, width, height, ss.str()/*"../../renderer-demo/Images/cobble.png"*/);
-		if (error) std::cout << "decoder error " << error << ": " << lodepng_error_text(error) << std::endl;
-
-		VulkanTextureBuffer* texture = dynamic_cast<Vulkan::VulkanTextureBuffer*>(renderer->CreateTextureBuffer(image.data(), Renderer::DataFormat::R8G8B8A8_FLOAT, width, height));
-		textures.push_back(texture);
-		texture_descriptors.push_back(texture->GetDescriptorImageInfo(BufferSlot::Primary));
-		
-	}
 
 
 	/*
@@ -343,11 +379,11 @@ int main(int argc, char **argv)
 		{ ShaderStage::MISS,		"../../renderer-demo/Shaders/Raytrace/BasicShadow/Miss/ShadowMiss/rmiss.spv" },
 	},
 	{
-		{ // Involved 
+		{ // Involved
 			{ ShaderStage::CLOSEST_HIT, "../../renderer-demo/Shaders/Raytrace/BasicShadow/Hitgroups/0/rchit.spv" },
 		},
 		{}, // Fall through hit group for shadow's, etc
-		{ // Involved 
+		{ // Involved
 			{ ShaderStage::CLOSEST_HIT, "../../renderer-demo/Shaders/Raytrace/BasicShadow/Hitgroups/TextureNoLight/rchit.spv" },
 		},
 	});
@@ -369,11 +405,11 @@ int main(int argc, char **argv)
 
 
 	VulkanRaytracePipeline* ray_pipeline = renderer->CreateRaytracePipeline(
-		{
-			{ ShaderStage::RAY_GEN,		"../../renderer-demo/Shaders/Raytrace/Reflective/Gen/rgen.spv" },
-			{ ShaderStage::MISS,		"../../renderer-demo/Shaders/Raytrace/Reflective/Miss/rmiss.spv" },
-			{ ShaderStage::MISS,		"../../renderer-demo/Shaders/Raytrace/Reflective/Miss/ShadowMiss/rmiss.spv" },
-		},
+	{
+		{ ShaderStage::RAY_GEN,		"../../renderer-demo/Shaders/Raytrace/Reflective/Gen/rgen.spv" },
+		{ ShaderStage::MISS,		"../../renderer-demo/Shaders/Raytrace/Reflective/Miss/rmiss.spv" },
+		{ ShaderStage::MISS,		"../../renderer-demo/Shaders/Raytrace/Reflective/Miss/ShadowMiss/rmiss.spv" },
+	},
 	{
 		{ // Involved 
 			{ ShaderStage::CLOSEST_HIT, "../../renderer-demo/Shaders/Raytrace/Reflective/Hitgroups/0/rchit.spv" },
@@ -415,13 +451,14 @@ int main(int argc, char **argv)
 		renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 5),
 		renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 6,texture_descriptors.size()),
 		renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 7),
+		renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 8),
 	});
 
 
 
 
 	ray_pipeline->AttachDescriptorPool(raytracePool);
-	
+
 
 	VulkanAcceleration* acceleration = renderer->CreateAcceleration();
 
@@ -429,7 +466,7 @@ int main(int argc, char **argv)
 
 	acceleration->Build();
 
-	
+
 	VulkanDescriptorSet* raytracingSet = static_cast<VulkanDescriptorSet*>(raytracePool->CreateDescriptorSet());
 
 
@@ -440,7 +477,7 @@ int main(int argc, char **argv)
 	cameraInfo->SetData(BufferSlot::Primary);
 
 
-	IUniformBuffer* materialbuffer = renderer->CreateUniformBuffer(loader.m_materials.data(), BufferChain::Single, sizeof(MatrialObj), loader.m_materials.size(), true);
+	IUniformBuffer* materialbuffer = renderer->CreateUniformBuffer(materials.data(), BufferChain::Single, sizeof(MatrialObj), materials.size(), true);
 	materialbuffer->SetData(BufferSlot::Primary);
 
 
@@ -460,16 +497,22 @@ int main(int argc, char **argv)
 	VulkanSwapchain* swapchain = renderer->GetSwapchain();
 
 
+	IVertexBuffer* vertexBuffer = renderer->CreateVertexBuffer(all_vertexs.data(), sizeof(Vertex), all_vertexs.size());
+	IIndexBuffer* indexBuffer = renderer->CreateIndexBuffer(all_indexs.data(), sizeof(uint32_t), all_indexs.size());
+
+	vertexBuffer->SetData(BufferSlot::Primary);
+	indexBuffer->SetData(BufferSlot::Primary);
+
 
 
 	raytracingSet->AttachBuffer(1, { swapchain->GetRayTraceStagingBuffer() });
 	raytracingSet->AttachBuffer(2, cameraInfo);
-	raytracingSet->AttachBuffer(3, model_pool1->GetVertexBuffer());
-	raytracingSet->AttachBuffer(4, model_pool1->GetIndexBuffer());
+	raytracingSet->AttachBuffer(3, vertexBuffer);
+	raytracingSet->AttachBuffer(4, indexBuffer);
 	raytracingSet->AttachBuffer(5, materialbuffer);
 
 
-	raytracingSet->AttachBuffer(6, texture_descriptors);
+	if (texture_descriptors.size() > 0) raytracingSet->AttachBuffer(6, texture_descriptors);
 
 
 	raytracingSet->AttachBuffer(7, lightBuffer);
@@ -484,14 +527,13 @@ int main(int argc, char **argv)
 
 
 
-
 	ray_pipeline->Build();
 
 	float s = 0.0f;
 
 	while (renderer->IsRunning())
 	{
-		s += 0.001f;
+		s += 0.01f;
 		//modelPosition = glm::rotate(modelPosition, 0.001f, glm::vec3(0, 1, 0));
 		modelPosition = glm::translate(modelPosition, glm::vec3(0, 0, sin(s) * 0.001f));
 
@@ -502,7 +544,9 @@ int main(int argc, char **argv)
 		acceleration->Update();
 
 		renderer->Update();
+
 		PollWindow();
+
 	}
 
 

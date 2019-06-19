@@ -550,6 +550,30 @@ VkWriteDescriptorSet Renderer::Vulkan::VulkanInitializers::WriteDescriptorSet(Vk
 	return descriptorWrite;
 }
 
+VkWriteDescriptorSet Renderer::Vulkan::VulkanInitializers::WriteDescriptorSet(VkDescriptorSet d_set, std::vector<VkDescriptorBufferInfo>& buffer, VkDescriptorType type, int binding)
+{
+	VkWriteDescriptorSet descriptor_write = {};
+	descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	descriptor_write.dstSet = d_set; // write to this descriptor set.
+	descriptor_write.dstBinding = binding; // write to the first, and only binding.
+	descriptor_write.dstArrayElement = 0;
+	descriptor_write.descriptorType = type; // Type of buffer
+	descriptor_write.descriptorCount = 1; // update a single descriptor.
+	descriptor_write.descriptorCount = static_cast<uint32_t>(buffer.size());
+	descriptor_write.pBufferInfo = VK_NULL_HANDLE;
+	descriptor_write.pImageInfo = VK_NULL_HANDLE;
+	descriptor_write.pTexelBufferView = VK_NULL_HANDLE;
+	descriptor_write.pNext = VK_NULL_HANDLE;
+
+	static const int offset = offsetof(VkWriteDescriptorSet, pBufferInfo);
+
+	VkDescriptorBufferInfo** data = reinterpret_cast<VkDescriptorBufferInfo**>(reinterpret_cast<uint8_t*>(&descriptor_write) + offset);
+	*data = buffer.data();
+
+	return descriptor_write;
+}
+
+ ;
 VkFenceCreateInfo Renderer::Vulkan::VulkanInitializers::CreateFenceInfo()
 {
 	VkFenceCreateInfo fenceCreateInfo = {};

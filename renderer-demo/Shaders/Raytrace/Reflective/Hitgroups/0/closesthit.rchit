@@ -34,6 +34,7 @@ layout(binding = 6, set = 0) uniform sampler2D[] textureSamplers;
 layout(binding = 7, set = 0) buffer Lights { Light l[]; }
 lights;
 
+
 struct Vertex
 {
   vec3 pos;
@@ -102,8 +103,10 @@ WaveFrontMaterial unpackMaterial(int matIndex)
 void main()
 {
 
-  ivec3 ind = ivec3(indices.i[3 * gl_PrimitiveID], indices.i[3 * gl_PrimitiveID + 1],
-                    indices.i[3 * gl_PrimitiveID + 2]);
+  ivec3 ind = ivec3(
+  indices.i[3 * gl_PrimitiveID], 
+  indices.i[3 * gl_PrimitiveID + 1],
+  indices.i[3 * gl_PrimitiveID + 2]);
 
   Vertex v0 = unpackVertex(ind.x);
   Vertex v1 = unpackVertex(ind.y);
@@ -123,6 +126,10 @@ void main()
                               v2.texCoord * barycentrics.z;
     c *= texture(textureSamplers[mat.textureId], texCoord).xyz;
   }
+ /* else
+  {
+    c *= mat.diffuse;
+  }*/
 
 
 
@@ -137,7 +144,6 @@ void main()
   {
 
     vec3 lightVector = normalize(lights.l[i].position.xyz);
-    //float dot_product = max(dot(lightVector, normal), 0.2);
 
     isShadowed = true;
 
@@ -151,8 +157,6 @@ void main()
             missIndex, origin, tmin, normal, tmax, 2);
     if (isShadowed)
       c *= 0.3;
-    else
-      c += lights.l[i].color.xyz; 
   }
   c /= lightCount;*/
 
@@ -169,6 +173,26 @@ void main()
   rayPayload.reflector = mat.shininess;
 
   rayPayload.color = c;
+  /*if(gl_InstanceCustomIndexNV==0)
+  {
+    rayPayload.reflector = 0;
+    rayPayload.color = vec3(1,0,0);
+  }
+  else if(gl_InstanceCustomIndexNV==1)
+  {
+    rayPayload.reflector = 0;
+    rayPayload.color = vec3(0,1,0);
+  }
+  else if(gl_InstanceCustomIndexNV==2)
+  {
+    rayPayload.reflector = 0;
+    rayPayload.color = vec3(0,0,1);
+  }
+  else if(gl_InstanceCustomIndexNV==3)
+  {
+    rayPayload.reflector = 0;
+    rayPayload.color = vec3(1,1,0);
+  }*/
 
 
 
