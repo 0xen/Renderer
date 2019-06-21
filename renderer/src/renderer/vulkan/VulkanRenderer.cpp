@@ -147,14 +147,14 @@ IComputeProgram * Renderer::Vulkan::VulkanRenderer::CreateComputeProgram()
 	return new VulkanComputeProgram(m_device);
 }
 
-IModelPool * Renderer::Vulkan::VulkanRenderer::CreateModelPool(IVertexBuffer * vertex_buffer, IIndexBuffer * index_buffer)
+IModelPool * Renderer::Vulkan::VulkanRenderer::CreateModelPool(IVertexBuffer * vertex_buffer, unsigned int vertex_offset, unsigned int vertex_size, IIndexBuffer * index_buffer, unsigned int index_offset, unsigned int index_size)
 {
-	return new VulkanModelPool(m_device, vertex_buffer, index_buffer);
+	return new VulkanModelPool(m_device, vertex_buffer, vertex_offset,vertex_size, index_buffer, index_offset,index_size);
 }
 
-IModelPool * Renderer::Vulkan::VulkanRenderer::CreateModelPool(IVertexBuffer * vertex_buffer)
+IModelPool * Renderer::Vulkan::VulkanRenderer::CreateModelPool(IVertexBuffer * vertex_buffer, unsigned int vertex_offset, unsigned int vertex_size)
 {
-	return new VulkanModelPool(m_device, vertex_buffer);
+	return new VulkanModelPool(m_device, vertex_buffer, vertex_offset,vertex_size);
 }
 
 ITextureBuffer * Renderer::Vulkan::VulkanRenderer::CreateTextureBuffer(void * dataPtr, DataFormat format, unsigned int width, unsigned int height)

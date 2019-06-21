@@ -19,6 +19,7 @@ set(common_src
     src/renderer/IDescriptor.cpp
     src/renderer/IDescriptorPool.cpp
     src/renderer/IDescriptorSet.cpp
+    src/renderer/IBufferPool.cpp
 )
 
 set(common_headers
@@ -46,6 +47,7 @@ set(common_headers
     include/renderer/IDescriptor.hpp
     include/renderer/IDescriptorPool.hpp
     include/renderer/IDescriptorSet.hpp
+    include/renderer/IBufferPool.hpp
 
 )
 
@@ -86,6 +88,7 @@ if(Vulkan_FOUND)
         src/renderer/vulkan/VulkanDescriptor.cpp
         src/renderer/vulkan/VulkanDescriptorPool.cpp
         src/renderer/vulkan/VulkanDescriptorSet.cpp
+        src/renderer/vulkan/VulkanBufferPool.cpp
     )
 
     set(vulkan_headers
@@ -119,6 +122,7 @@ if(Vulkan_FOUND)
         include/renderer/vulkan/VulkanDescriptor.hpp
         include/renderer/vulkan/VulkanDescriptorPool.hpp
         include/renderer/vulkan/VulkanDescriptorSet.hpp
+        include/renderer/vulkan/VulkanBufferPool.hpp
     )
 
     include_directories(${Vulkan_INCLUDE_DIRS})

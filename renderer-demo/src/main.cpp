@@ -21,6 +21,7 @@
 #include <renderer/vulkan/VulkanRenderer.hpp>
 #include <renderer/vulkan/VulkanTextureBuffer.hpp>
 #include <renderer/vulkan/VulkanFlags.hpp>
+#include <renderer\IBufferPool.hpp>
 #include <renderer\VertexBase.hpp>
 
 #include "obj_loader.h"
@@ -153,39 +154,47 @@ std::vector<VulkanTextureBuffer*> textures;
 std::vector<VkDescriptorImageInfo> texture_descriptors;
 std::vector<MatrialObj> materials;
 
-std::vector<uint32_t> all_indexs;
-std::vector<Vertex> all_vertexs;
 
+
+unsigned int used_vertex = 0;
+unsigned int used_index = 0;
+
+const unsigned int vertex_max = 1000000;
+const unsigned int index_max = 1000000;
+
+Vertex all_vertexs[vertex_max];
+uint32_t all_indexs[index_max];
+
+IVertexBuffer* vertexBuffer;
+IIndexBuffer* indexBuffer;
 
 IModelPool* LoadModel(std::string path)
 {
 	ObjLoader<Vertex> loader;
 	loader.loadModel(path);
 
-	uint32_t m_nbIndices = static_cast<uint32_t>(loader.m_indices.size());
 	uint32_t m_nbVertices = static_cast<uint32_t>(loader.m_vertices.size());
+	uint32_t m_nbIndices = static_cast<uint32_t>(loader.m_indices.size());
 
-	IVertexBuffer* vertexBuffer = renderer->CreateVertexBuffer(loader.m_vertices.data(), sizeof(Vertex), loader.m_vertices.size());
-	IIndexBuffer* indexBuffer = renderer->CreateIndexBuffer(loader.m_indices.data(), sizeof(uint32_t), loader.m_indices.size());
-
-	vertexBuffer->SetData(BufferSlot::Primary);
-	indexBuffer->SetData(BufferSlot::Primary);
+	unsigned int vertexStart = used_vertex;
+	unsigned int indexStart = used_index;
 
 	for (uint32_t& index : loader.m_indices)
 	{
-		all_indexs.push_back(index + all_vertexs.size());
+		all_indexs[used_index] = index;
+		used_index++;
 	}
 
 	for (Vertex& vertex : loader.m_vertices)
 	{
 		vertex.matID += materials.size();
-		all_vertexs.push_back(vertex);
+		all_vertexs[used_vertex] = vertex;
+		used_vertex++;
 	}
 
 
+
 	unsigned int offset = texture_descriptors.size();
-
-
 	for (auto& material : loader.m_materials)
 	{
 		if (material.textureID >= 0) material.textureID += offset;
@@ -211,13 +220,12 @@ IModelPool* LoadModel(std::string path)
 		texture_descriptors.push_back(texture->GetDescriptorImageInfo(BufferSlot::Primary));
 	}
 
-	return renderer->CreateModelPool(vertexBuffer, indexBuffer);
+	return renderer->CreateModelPool(vertexBuffer, vertexStart, m_nbVertices, indexBuffer, indexStart, m_nbIndices);
 }
 
 
 int main(int argc, char **argv)
 {
-
 
 	renderer = new VulkanRenderer();
 
@@ -227,8 +235,6 @@ int main(int argc, char **argv)
 	assert(renderer != nullptr && "Error, renderer instance could not be created");
 
 	renderer->Start(window_handle, VulkanFlags::Raytrace/* | VulkanFlags::ActiveCMDRebuild*/);
-
-
 
 
 	// Camera setup
@@ -277,39 +283,37 @@ int main(int argc, char **argv)
 	camera_descriptor_set->AttachBuffer(0, cameraBuffer);
 	camera_descriptor_set->UpdateSet();
 
+	vertexBuffer = renderer->CreateVertexBuffer(all_vertexs, sizeof(Vertex), vertex_max);
+	indexBuffer = renderer->CreateIndexBuffer(all_indexs, sizeof(uint32_t), index_max);
 
-	
-	IModelPool* model_pool1 = LoadModel("../../renderer-demo/media/scenes/sphere.obj");
-	IModelPool* model_pool2 = LoadModel("../../renderer-demo/media/scenes/Medieval_building.obj");
+	IModelPool* model_pool1 = LoadModel("../../renderer-demo/media/scenes/Medieval_building.obj");
+	IModelPool* model_pool2 = LoadModel("../../renderer-demo/media/scenes/sphere.obj");
 
 
-	IUniformBuffer* model_position_buffer1;
-	{
-		glm::mat4* model_position_array = new glm::mat4[1000];
-		model_position_buffer1 = renderer->CreateUniformBuffer(model_position_array, BufferChain::Double, sizeof(glm::mat4), 1000, true);
-		model_pool1->AttachBuffer(POSITION_BUFFER, model_position_buffer1);
-	}
-	{
-		model_pool2->AttachBuffer(POSITION_BUFFER, model_position_buffer1, 1);
-	}
+	vertexBuffer->SetData(BufferSlot::Primary);
+	indexBuffer->SetData(BufferSlot::Primary);
 
-	std::vector<uint32_t> index_offset = {
-		0,
-		model_pool1->GetIndexBuffer()->GetElementCount(BufferSlot::Primary),
-		model_pool1->GetIndexBuffer()->GetElementCount(BufferSlot::Primary),
-		model_pool1->GetIndexBuffer()->GetElementCount(BufferSlot::Primary)
-	};
 
-	IUniformBuffer* index_offset_buffer = renderer->CreateUniformBuffer(index_offset.data(), BufferChain::Single, sizeof(uint32_t), index_offset.size(), true);
-	index_offset_buffer->SetData(BufferSlot::Primary);
 
-	IModel* model1 = model_pool1->CreateModel();
+
+	glm::mat4* model_position_array = new glm::mat4[1000];
+	IUniformBuffer* model_position_buffer1 = renderer->CreateUniformBuffer(model_position_array, BufferChain::Double, sizeof(glm::mat4), 1000, true);
+
+	IBufferPool* position_buffer_pool = new IBufferPool(model_position_buffer1);
+
+
+	model_pool1->AttachBufferPool(POSITION_BUFFER, position_buffer_pool);
+	model_pool2->AttachBufferPool(POSITION_BUFFER, position_buffer_pool);
+
+
+
+
+	IModel* model1 = model_pool2->CreateModel();
 
 	glm::mat4 modelPosition = glm::mat4(1.0f);
-	modelPosition = glm::translate(modelPosition, glm::vec3(0, 0, -3));
-	float scale = 1.0f;
+	modelPosition = glm::translate(modelPosition, glm::vec3(0, 0, -1));
+	float scale = 0.2f;
 	modelPosition = glm::scale(modelPosition, glm::vec3(scale, scale, scale));
-	scale = 0.2f;
 
 	model1->SetData(POSITION_BUFFER, modelPosition);
 
@@ -319,7 +323,7 @@ int main(int argc, char **argv)
 	{
 
 
-		model2 = model_pool2->CreateModel();
+		model2 = model_pool1->CreateModel();
 
 		glm::mat4 modelPos = glm::mat4(1.0f);
 		modelPos = glm::mat4(1.0f);
@@ -331,7 +335,7 @@ int main(int argc, char **argv)
 	{
 
 
-		model3 = model_pool2->CreateModel();
+		model3 = model_pool1->CreateModel();
 
 		glm::mat4 modelPos = glm::mat4(1.0f);
 		modelPos = glm::mat4(1.0f);
@@ -343,7 +347,7 @@ int main(int argc, char **argv)
 	{
 
 
-		model4 = model_pool2->CreateModel();
+		model4 = model_pool1->CreateModel();
 
 		glm::mat4 modelPos = glm::mat4(1.0f);
 		modelPos = glm::mat4(1.0f);
@@ -397,11 +401,43 @@ int main(int argc, char **argv)
 	});
 
 
-	VulkanAcceleration* acceleration = renderer->CreateAcceleration(); 
+	VulkanAcceleration* acceleration = renderer->CreateAcceleration();
 	acceleration->AttachModelPool(static_cast<VulkanModelPool*>(model_pool1));
 	acceleration->AttachModelPool(static_cast<VulkanModelPool*>(model_pool2));
 	acceleration->Build();
 
+
+
+
+	uint32_t* model_position_allocation_array = new uint32_t[100];
+	IUniformBuffer* model_position_allocation_array_buffer = renderer->CreateUniformBuffer(model_position_allocation_array, BufferChain::Single, sizeof(uint32_t), 100, true);
+
+	uint32_t* model_index_buffer_offset_array = new uint32_t[100];
+	IUniformBuffer* model_index_buffer_offset_array_buffer = renderer->CreateUniformBuffer(model_index_buffer_offset_array, BufferChain::Single, sizeof(uint32_t), 100, true);
+
+	uint32_t* model_vertex_buffer_offset_array = new uint32_t[100];
+	IUniformBuffer* model_vertex_buffer_offset_array_buffer = renderer->CreateUniformBuffer(model_vertex_buffer_offset_array, BufferChain::Single, sizeof(uint32_t), 100, true);
+
+
+	unsigned int index = 0;
+	for (auto& mp : acceleration->GetModelPools())
+	{
+		unsigned int index_offset = mp->GetIndexOffset();
+		unsigned int vertex_offset = mp->GetVertexOffset();
+		for (auto& model : mp->GetModels())
+		{
+			model_index_buffer_offset_array[index] = index_offset;
+			model_vertex_buffer_offset_array[index] = vertex_offset;
+			unsigned int temp = mp->GetModelBufferOffset(model.second, POSITION_BUFFER);
+			model_position_allocation_array[index] = temp;
+			index++;
+		}
+	}
+
+
+	model_position_allocation_array_buffer->SetData(BufferSlot::Primary);
+	model_index_buffer_offset_array_buffer->SetData(BufferSlot::Primary);
+	model_vertex_buffer_offset_array_buffer->SetData(BufferSlot::Primary);
 
 
 	//RayCamera
@@ -412,8 +448,8 @@ int main(int argc, char **argv)
 	materialbuffer->SetData(BufferSlot::Primary);
 
 	std::vector<Light> lights = {
-		{ glm::vec4(5, 4, 3,0), glm::vec4(1.0f,1.0f,1.0f,1.0f) },
-		{ glm::vec4(-5, 4, 3,0), glm::vec4(1.0f,1.0f,1.0f,0) }
+		{ glm::vec4(500, 400, 300,0), glm::vec4(1.0f,1.0f,1.0f,1.0f) },
+		{ glm::vec4(-500, 400, 300,0), glm::vec4(1.0f,1.0f,1.0f,1.0f) }
 	};
 
 	IUniformBuffer* lightBuffer = renderer->CreateUniformBuffer(lights.data(), BufferChain::Single, sizeof(Light), lights.size(), true);
@@ -422,61 +458,73 @@ int main(int argc, char **argv)
 
 
 
-	IVertexBuffer* vertexBuffer = renderer->CreateVertexBuffer(all_vertexs.data(), sizeof(Vertex), all_vertexs.size());
-	IIndexBuffer* indexBuffer = renderer->CreateIndexBuffer(all_indexs.data(), sizeof(uint32_t), all_indexs.size());
 
-	vertexBuffer->SetData(BufferSlot::Primary);
-	indexBuffer->SetData(BufferSlot::Primary);
+	{
+		IDescriptorPool* standardRTConfigPool = renderer->CreateDescriptorPool({
+			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV, VK_SHADER_STAGE_RAYGEN_BIT_NV | VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 0),
+			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_RAYGEN_BIT_NV, 1),
+			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_NV, 2),
+		});
+		ray_pipeline->AttachDescriptorPool(standardRTConfigPool);
 
+		VulkanDescriptorSet* standardRTConfigSet = static_cast<VulkanDescriptorSet*>(standardRTConfigPool->CreateDescriptorSet());
 
+		standardRTConfigSet->AttachBuffer(0, { acceleration->GetDescriptorAcceleration() });
+		standardRTConfigSet->AttachBuffer(1, { renderer->GetSwapchain()->GetRayTraceStagingBuffer() });
+		standardRTConfigSet->AttachBuffer(2, cameraInfo);
+		standardRTConfigSet->UpdateSet();
 
-	IDescriptorPool* standardRTConfigPool = renderer->CreateDescriptorPool({
-		renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV, VK_SHADER_STAGE_RAYGEN_BIT_NV | VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 0),
-		renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_RAYGEN_BIT_NV, 1),
-		renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_NV, 2),
-	});
-	ray_pipeline->AttachDescriptorPool(standardRTConfigPool);
-
-	VulkanDescriptorSet* standardRTConfigSet = static_cast<VulkanDescriptorSet*>(standardRTConfigPool->CreateDescriptorSet());
-
-	standardRTConfigSet->AttachBuffer(0, { acceleration->GetDescriptorAcceleration() });
-	standardRTConfigSet->AttachBuffer(1, { renderer->GetSwapchain()->GetRayTraceStagingBuffer() });
-	standardRTConfigSet->AttachBuffer(2, cameraInfo);
-	standardRTConfigSet->UpdateSet();
-
-	ray_pipeline->AttachDescriptorSet(0, standardRTConfigSet);
+		ray_pipeline->AttachDescriptorSet(0, standardRTConfigSet);
+	}
 
 
+	{
+		IDescriptorPool* RTModelPool = renderer->CreateDescriptorPool({
+			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 0),
+			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 1),
+			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 2),
+			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 3,texture_descriptors.size()),
+			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 4),
+		});
+		ray_pipeline->AttachDescriptorPool(RTModelPool);
+
+		VulkanDescriptorSet* RTModelPoolSet = static_cast<VulkanDescriptorSet*>(RTModelPool->CreateDescriptorSet());
+
+		RTModelPoolSet->AttachBuffer(0, vertexBuffer);
+		RTModelPoolSet->AttachBuffer(1, indexBuffer);
+		RTModelPoolSet->AttachBuffer(2, materialbuffer);
+		if (texture_descriptors.size() > 0) RTModelPoolSet->AttachBuffer(3, texture_descriptors);
+		RTModelPoolSet->AttachBuffer(4, lightBuffer);
 
 
+		RTModelPoolSet->UpdateSet();
+
+		ray_pipeline->AttachDescriptorSet(1, RTModelPoolSet);
+	}
 
 
+	{
+		IDescriptorPool* RTModelInstancePool = renderer->CreateDescriptorPool({
+			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 0),
+			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 1),
+			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 2),
+			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 3),
+		});
+		ray_pipeline->AttachDescriptorPool(RTModelInstancePool);
 
 
+		VulkanDescriptorSet* RTModelInstanceSet = static_cast<VulkanDescriptorSet*>(RTModelInstancePool->CreateDescriptorSet());
 
-	IDescriptorPool* RTModelPool = renderer->CreateDescriptorPool({
-		renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 0),
-		renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 1),
-		renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 2),
-		renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 3,texture_descriptors.size()),
-		renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 4),
-		renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 5),
-		renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 6),
-	});
-	ray_pipeline->AttachDescriptorPool(RTModelPool);
+		RTModelInstanceSet->AttachBuffer(0, model_position_buffer1);
+		RTModelInstanceSet->AttachBuffer(1, model_position_allocation_array_buffer);
+		RTModelInstanceSet->AttachBuffer(2, model_index_buffer_offset_array_buffer);
+		RTModelInstanceSet->AttachBuffer(3, model_vertex_buffer_offset_array_buffer);
 
-	VulkanDescriptorSet* RTModelSet = static_cast<VulkanDescriptorSet*>(RTModelPool->CreateDescriptorSet());
 
-	RTModelSet->AttachBuffer(0, vertexBuffer);
-	RTModelSet->AttachBuffer(1, indexBuffer);
-	RTModelSet->AttachBuffer(2, materialbuffer);
-	if (texture_descriptors.size() > 0) RTModelSet->AttachBuffer(3, texture_descriptors);
-	RTModelSet->AttachBuffer(4, lightBuffer);
-	RTModelSet->AttachBuffer(5, index_offset_buffer);
-	RTModelSet->AttachBuffer(6, model_position_buffer1);
-	RTModelSet->UpdateSet();
-	
-	ray_pipeline->AttachDescriptorSet(1, RTModelSet);
+		RTModelInstanceSet->UpdateSet();
+
+		ray_pipeline->AttachDescriptorSet(2, RTModelInstanceSet);
+	}
 
 
 
@@ -505,12 +553,14 @@ int main(int argc, char **argv)
 	{
 		s += 0.01f;
 
-		model2->GetData<glm::mat4>(POSITION_BUFFER) = glm::rotate(model2->GetData<glm::mat4>(POSITION_BUFFER), 0.001f, glm::vec3(0, 1, 0));
+		/*model2->GetData<glm::mat4>(POSITION_BUFFER) = glm::rotate(model2->GetData<glm::mat4>(POSITION_BUFFER), 0.001f, glm::vec3(0, 1, 0));
 		model3->GetData<glm::mat4>(POSITION_BUFFER) = glm::rotate(model3->GetData<glm::mat4>(POSITION_BUFFER), 0.002f, glm::vec3(0, 1, 0));
 		model4->GetData<glm::mat4>(POSITION_BUFFER) = glm::rotate(model4->GetData<glm::mat4>(POSITION_BUFFER), 0.003f, glm::vec3(0, 1, 0));
+		*/
 
+		modelPosition = glm::translate(modelPosition, glm::vec3(0, 0, sin(s) * 0.01f));
 
-		modelPosition = glm::translate(modelPosition, glm::vec3(0, 0, sin(s) * 0.001f));
+		//modelPosition = glm::rotate(modelPosition, 0.001f, glm::vec3(0, 1, 0));
 
 		model1->SetData(POSITION_BUFFER, modelPosition);
 

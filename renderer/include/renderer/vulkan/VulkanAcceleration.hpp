@@ -75,6 +75,7 @@ namespace Renderer
 
 			VkWriteDescriptorSetAccelerationStructureNV GetDescriptorAcceleration();
 
+			std::vector<VulkanModelPool*>& GetModelPools();
 		private:
 			AccelerationStructure CreateBottomLevelAS(VkCommandBuffer commandBuffer, VulkanModelPool* pool);
 			void CreateTopLevelAS(VkCommandBuffer commandBuffer, std::vector<std::pair<VkAccelerationStructureNV, glm::mat4x4>>& instances);

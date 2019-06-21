@@ -116,6 +116,11 @@ VkWriteDescriptorSetAccelerationStructureNV Renderer::Vulkan::VulkanAcceleration
 	return VulkanInitializers::WriteDescriptorSetAccelerator(m_top_level_as.structure);
 }
 
+std::vector<Renderer::Vulkan::VulkanModelPool*>& Renderer::Vulkan::VulkanAcceleration::GetModelPools()
+{
+	return m_model_pools;
+}
+
 Renderer::Vulkan::AccelerationStructure Renderer::Vulkan::VulkanAcceleration::CreateBottomLevelAS(VkCommandBuffer commandBuffer, VulkanModelPool * pool)
 {
 
@@ -126,15 +131,28 @@ Renderer::Vulkan::AccelerationStructure Renderer::Vulkan::VulkanAcceleration::Cr
 	{
 		VulkanVertexBuffer* vertexBuffer = static_cast<VulkanVertexBuffer*>(pool->GetVertexBuffer());
 		VulkanIndexBuffer* indexBuffer = static_cast<VulkanIndexBuffer*>(pool->GetIndexBuffer());
-		VkGeometryNV geom = VulkanInitializers::CreateRayTraceGeometry(vertexBuffer->GetBufferData(BufferSlot::Primary)->buffer, 0, vertexBuffer->GetElementCount(BufferSlot::Primary),
-			vertexBuffer->GetIndexSize(BufferSlot::Primary), indexBuffer->GetBufferData(BufferSlot::Primary)->buffer, 0, indexBuffer->GetElementCount(BufferSlot::Primary), VK_NULL_HANDLE, 0, true);
+		VkGeometryNV geom = VulkanInitializers::CreateRayTraceGeometry(
+			vertexBuffer->GetBufferData(BufferSlot::Primary)->buffer,                   // buffer
+			pool->GetVertexOffset() *vertexBuffer->GetIndexSize(BufferSlot::Primary),  // Offset
+			pool->GetVertexSize(),                                                      // Size
+			vertexBuffer->GetIndexSize(BufferSlot::Primary),                            // Each vertex size
+
+			indexBuffer->GetBufferData(BufferSlot::Primary)->buffer,                    // Index buffer
+			pool->GetIndexOffset() * indexBuffer->GetIndexSize(BufferSlot::Primary),    // Index offset
+			pool->GetIndexSize(),                                                       // Get Index Size
+
+			VK_NULL_HANDLE, 0, true);
 		vertex_buffers.push_back(geom);
 	}
 	else
 	{
 		VulkanVertexBuffer* vertexBuffer = static_cast<VulkanVertexBuffer*>(pool->GetVertexBuffer());
-		VkGeometryNV geom = VulkanInitializers::CreateRayTraceGeometry(vertexBuffer->GetBufferData(BufferSlot::Primary)->buffer, 0, vertexBuffer->GetElementCount(BufferSlot::Primary),
-			vertexBuffer->GetIndexSize(BufferSlot::Primary), nullptr, 0, 0, VK_NULL_HANDLE, 0, true);
+		VkGeometryNV geom = VulkanInitializers::CreateRayTraceGeometry(
+			vertexBuffer->GetBufferData(BufferSlot::Primary)->buffer,                   // buffer
+			pool->GetVertexOffset() * vertexBuffer->GetIndexSize(BufferSlot::Primary),  // Offset
+			pool->GetVertexSize(),                                                      // Size
+			vertexBuffer->GetIndexSize(BufferSlot::Primary),                            // Each vertex size
+			nullptr, 0, 0, VK_NULL_HANDLE, 0, true);
 		vertex_buffers.push_back(geom);
 	}
 

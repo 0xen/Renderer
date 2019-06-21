@@ -35,11 +35,17 @@ layout(binding = 3, set = 1) uniform sampler2D[] textureSamplers;
 layout(binding = 4, set = 1) buffer Lights { Light l[]; }
 lights;
 
-layout(binding = 5, set = 1) buffer IndexOffset { uint o[]; }
+layout(binding = 0, set = 2) buffer ModelPos { mat4 m[]; }
+models;
+
+layout(binding = 1, set = 2) buffer ModelPosOffset { uint o[]; }
+model_offsets;
+
+layout(binding = 2, set = 2) buffer IndexOffset { uint o[]; }
 index_offset;
 
-layout(binding = 6, set = 1) buffer ModelPos { mat4 m[]; }
-models;
+layout(binding = 3, set = 2) buffer VertexOffset { uint o[]; }
+vertex_offset;
 
 
 struct Vertex
@@ -57,9 +63,9 @@ Vertex unpackVertex(uint index)
 {
   Vertex v;
 
-  vec4 d0 = vertices.v[vertexSize * index + 0];
-  vec4 d1 = vertices.v[vertexSize * index + 1];
-  vec4 d2 = vertices.v[vertexSize * index + 2];
+  vec4 d0 = vertices.v[vertexSize * (index + vertex_offset.o[gl_InstanceID])];
+  vec4 d1 = vertices.v[vertexSize * (index + vertex_offset.o[gl_InstanceID]) + 1];
+  vec4 d2 = vertices.v[vertexSize * (index + vertex_offset.o[gl_InstanceID]) + 2];
 
   v.pos = d0.xyz;
   v.nrm = vec3(d0.w, d1.x, d1.y);
@@ -107,6 +113,17 @@ WaveFrontMaterial unpackMaterial(int matIndex)
   return m;
 }
 
+vec3 CalculateLight(Light light, /*vec3 lightDirection,*/ vec3 viewDir, vec3 normal)
+{
+  
+    //vec3 lightDir = normalize(-light.direction);
+    // diffuse shading
+    //float diff = max(dot(normal, lightDir), 0.0);
+
+
+  return vec3(1.0f);
+}
+
 void main()
 {
 
@@ -125,8 +142,7 @@ void main()
 
   vec3 f_normal = normalize(v0.nrm * barycentrics.x + v1.nrm * barycentrics.y + v2.nrm * barycentrics.z);
 
-  mat3 normalMatrix = mat3(models.m[gl_InstanceID]);
- // normalMatrix = inverse(normalMatrix);
+  mat3 normalMatrix = mat3(models.m[model_offsets.o[gl_InstanceID]]);
   normalMatrix = transpose(normalMatrix);
   vec3 normal = normalize(f_normal * normalMatrix);
 
@@ -136,17 +152,14 @@ void main()
 
   WaveFrontMaterial mat = unpackMaterial(v1.matIndex);
 
-  vec3 c = mat.diffuse;//dot_product * mat.diffuse; 
+  vec3 c = vec3(0.0f);//mat.diffuse;
+
   if (mat.textureId >= 0)
   {
     vec2 texCoord = v0.texCoord * barycentrics.x + v1.texCoord * barycentrics.y +
                               v2.texCoord * barycentrics.z;
-    c *= texture(textureSamplers[mat.textureId], texCoord).xyz;
+    c += texture(textureSamplers[mat.textureId], texCoord).xyz;
   }
- /* else
-  {
-    c *= mat.diffuse;
-  }*/
 
 
 
@@ -157,27 +170,33 @@ void main()
 
   uint lightCount = 2;
 
-  for(int i = 0 ; i < lightCount; i ++)
+  for(int i = 0 ; i < 1; i ++)
   {
-
     vec3 lightVector = normalize(lights.l[i].position.xyz);
 
-    isShadowed = true;
 
     uint sbtRecordOffset = 0;
     uint sbtRecordStride = 0;
     uint missIndex = 1;
-
+    isShadowed = true;
 
     traceNV(topLevelAS, gl_RayFlagsTerminateOnFirstHitNV|gl_RayFlagsOpaqueNV|gl_RayFlagsSkipClosestHitShaderNV, 
             0xFF, sbtRecordOffset, sbtRecordStride,
-            missIndex, origin, tmin, normal, tmax, 2);
+            missIndex, origin, tmin, lightVector, tmax, 2);
     if (isShadowed)
+    {
       c *= 0.3;
+    }
+    else
+    {
+
+      //c += CalculateLight(lights.l[i], gl_WorldRayDirectionNV, normal);
+
+    }
   }
-  c /= lightCount;
+  //c /= lightCount;
 
-
+  rayPayload.color = c;// * totalDiffuseLight;// * totalShadow;
 
 
 
@@ -188,29 +207,6 @@ void main()
   rayPayload.normal = normal;
 
   rayPayload.reflector = mat.shininess;
-
-  rayPayload.color = c;
-  /*if(gl_InstanceCustomIndexNV==0)
-  {
-    rayPayload.reflector = 0;
-    rayPayload.color = vec3(1,0,0);
-  }
-  else if(gl_InstanceCustomIndexNV==1)
-  {
-    rayPayload.reflector = 0;
-    rayPayload.color = vec3(0,1,0);
-  }
-  else if(gl_InstanceCustomIndexNV==2)
-  {
-    rayPayload.reflector = 0;
-    rayPayload.color = vec3(0,0,1);
-  }
-  else if(gl_InstanceCustomIndexNV==3)
-  {
-    rayPayload.reflector = 0;
-    rayPayload.color = vec3(1,1,0);
-  }*/
-
 
 
 }
