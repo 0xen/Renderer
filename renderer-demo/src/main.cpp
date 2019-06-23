@@ -306,16 +306,17 @@ int main(int argc, char **argv)
 	model_pool2->AttachBufferPool(POSITION_BUFFER, position_buffer_pool);
 
 
-
-
 	IModel* model1 = model_pool2->CreateModel();
 
 	glm::mat4 modelPosition = glm::mat4(1.0f);
-	modelPosition = glm::translate(modelPosition, glm::vec3(0, 0, -1));
-	float scale = 0.2f;
+	modelPosition = glm::translate(modelPosition, glm::vec3(0, 0, -2));
+	float scale = 0.2;
 	modelPosition = glm::scale(modelPosition, glm::vec3(scale, scale, scale));
+	scale = 0.25f;
 
 	model1->SetData(POSITION_BUFFER, modelPosition);
+
+
 
 	IModel* model2;
 	IModel* model3;
@@ -407,16 +408,17 @@ int main(int argc, char **argv)
 	acceleration->Build();
 
 
+	struct ModelOffsets
+	{
+		uint32_t index;
+		uint32_t vertex;
+		uint32_t position;
+	};
 
 
-	uint32_t* model_position_allocation_array = new uint32_t[100];
-	IUniformBuffer* model_position_allocation_array_buffer = renderer->CreateUniformBuffer(model_position_allocation_array, BufferChain::Single, sizeof(uint32_t), 100, true);
+	ModelOffsets* offset_allocation_array = new ModelOffsets[1000];
+	IUniformBuffer* offset_allocation_array_buffer = renderer->CreateUniformBuffer(offset_allocation_array, BufferChain::Single, sizeof(ModelOffsets), 1000, true);
 
-	uint32_t* model_index_buffer_offset_array = new uint32_t[100];
-	IUniformBuffer* model_index_buffer_offset_array_buffer = renderer->CreateUniformBuffer(model_index_buffer_offset_array, BufferChain::Single, sizeof(uint32_t), 100, true);
-
-	uint32_t* model_vertex_buffer_offset_array = new uint32_t[100];
-	IUniformBuffer* model_vertex_buffer_offset_array_buffer = renderer->CreateUniformBuffer(model_vertex_buffer_offset_array, BufferChain::Single, sizeof(uint32_t), 100, true);
 
 
 	unsigned int index = 0;
@@ -426,18 +428,14 @@ int main(int argc, char **argv)
 		unsigned int vertex_offset = mp->GetVertexOffset();
 		for (auto& model : mp->GetModels())
 		{
-			model_index_buffer_offset_array[index] = index_offset;
-			model_vertex_buffer_offset_array[index] = vertex_offset;
-			unsigned int temp = mp->GetModelBufferOffset(model.second, POSITION_BUFFER);
-			model_position_allocation_array[index] = temp;
+			offset_allocation_array[index].index = index_offset;
+			offset_allocation_array[index].vertex = vertex_offset;
+			offset_allocation_array[index].position = mp->GetModelBufferOffset(model.second, POSITION_BUFFER);
 			index++;
 		}
 	}
 
-
-	model_position_allocation_array_buffer->SetData(BufferSlot::Primary);
-	model_index_buffer_offset_array_buffer->SetData(BufferSlot::Primary);
-	model_vertex_buffer_offset_array_buffer->SetData(BufferSlot::Primary);
+	offset_allocation_array_buffer->SetData(BufferSlot::Primary);
 
 
 	//RayCamera
@@ -516,9 +514,7 @@ int main(int argc, char **argv)
 		VulkanDescriptorSet* RTModelInstanceSet = static_cast<VulkanDescriptorSet*>(RTModelInstancePool->CreateDescriptorSet());
 
 		RTModelInstanceSet->AttachBuffer(0, model_position_buffer1);
-		RTModelInstanceSet->AttachBuffer(1, model_position_allocation_array_buffer);
-		RTModelInstanceSet->AttachBuffer(2, model_index_buffer_offset_array_buffer);
-		RTModelInstanceSet->AttachBuffer(3, model_vertex_buffer_offset_array_buffer);
+		RTModelInstanceSet->AttachBuffer(1, offset_allocation_array_buffer);
 
 
 		RTModelInstanceSet->UpdateSet();

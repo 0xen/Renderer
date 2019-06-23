@@ -38,15 +38,25 @@ lights;
 layout(binding = 0, set = 2) buffer ModelPos { mat4 m[]; }
 models;
 
-layout(binding = 1, set = 2) buffer ModelPosOffset { uint o[]; }
-model_offsets;
+layout(binding = 1, set = 2) buffer ModelOffsets { uint o[]; }
+offsets;
 
-layout(binding = 2, set = 2) buffer IndexOffset { uint o[]; }
-index_offset;
+struct Offsets
+{
+  uint index;
+  uint vertex;
+  uint position;
+};
 
-layout(binding = 3, set = 2) buffer VertexOffset { uint o[]; }
-vertex_offset;
-
+Offsets unpackOffsets(uint index)
+{
+  uint startingIndex = index * 3;
+  Offsets o;
+  o.index = offsets.o[startingIndex];
+  o.vertex = offsets.o[startingIndex + 1];
+  o.position = offsets.o[startingIndex + 2];
+  return o;
+}
 
 struct Vertex
 {
@@ -59,13 +69,13 @@ struct Vertex
 // Number of vec4 values used to represent a vertex
 uint vertexSize = 3;
 
-Vertex unpackVertex(uint index)
+Vertex unpackVertex(uint index, uint vertexOffset)
 {
   Vertex v;
 
-  vec4 d0 = vertices.v[vertexSize * (index + vertex_offset.o[gl_InstanceID])];
-  vec4 d1 = vertices.v[vertexSize * (index + vertex_offset.o[gl_InstanceID]) + 1];
-  vec4 d2 = vertices.v[vertexSize * (index + vertex_offset.o[gl_InstanceID]) + 2];
+  vec4 d0 = vertices.v[vertexSize * (index + vertexOffset)];
+  vec4 d1 = vertices.v[vertexSize * (index + vertexOffset) + 1];
+  vec4 d2 = vertices.v[vertexSize * (index + vertexOffset) + 2];
 
   v.pos = d0.xyz;
   v.nrm = vec3(d0.w, d1.x, d1.y);
@@ -127,14 +137,17 @@ vec3 CalculateLight(Light light, /*vec3 lightDirection,*/ vec3 viewDir, vec3 nor
 void main()
 {
 
-  ivec3 ind = ivec3(
-  indices.i[3 * gl_PrimitiveID + index_offset.o[gl_InstanceID]], 
-  indices.i[3 * gl_PrimitiveID + 1 + index_offset.o[gl_InstanceID]],
-  indices.i[3 * gl_PrimitiveID + 2 + index_offset.o[gl_InstanceID]]);
+  Offsets o = unpackOffsets(gl_InstanceID);
 
-  Vertex v0 = unpackVertex(ind.x);
-  Vertex v1 = unpackVertex(ind.y);
-  Vertex v2 = unpackVertex(ind.z);
+
+  ivec3 ind = ivec3(
+  indices.i[3 * gl_PrimitiveID + o.index], 
+  indices.i[3 * gl_PrimitiveID + 1 + o.index],
+  indices.i[3 * gl_PrimitiveID + 2 + o.index]);
+
+  Vertex v0 = unpackVertex(ind.x,o.vertex);
+  Vertex v1 = unpackVertex(ind.y,o.vertex);
+  Vertex v2 = unpackVertex(ind.z,o.vertex);
 
   const vec3 barycentrics = vec3(1.0 - attribs.x - attribs.y, attribs.x, attribs.y);
 
@@ -142,7 +155,7 @@ void main()
 
   vec3 f_normal = normalize(v0.nrm * barycentrics.x + v1.nrm * barycentrics.y + v2.nrm * barycentrics.z);
 
-  mat3 normalMatrix = mat3(models.m[model_offsets.o[gl_InstanceID]]);
+  mat3 normalMatrix = mat3(models.m[o.position]);
   normalMatrix = transpose(normalMatrix);
   vec3 normal = normalize(f_normal * normalMatrix);
 
