@@ -36,13 +36,6 @@ using namespace Renderer::Vulkan;
 
 static const int POSITION_BUFFER = 0;
 
-struct Camera
-{
-	glm::mat4 view;
-	glm::mat4 projection;
-};
-
-
 
 struct RayCamera
 {
@@ -57,7 +50,6 @@ struct RayCamera
 SDL_Window* window;
 NativeWindowHandle* window_handle;
 VulkanRenderer* renderer;
-Camera camera;
 RayCamera rayCamera;
 
 class MeshVertex
@@ -237,16 +229,14 @@ int main(int argc, char **argv)
 	renderer->Start(window_handle, VulkanFlags::Raytrace/* | VulkanFlags::ActiveCMDRebuild*/);
 
 
+
+
+
 	// Camera setup
-	camera.view = glm::mat4(1.0f);
-	camera.view = glm::scale(camera.view, glm::vec3(1.0f, 1.0f, 1.0f));
-	camera.view = glm::translate(camera.view, glm::vec3(0.0f, 0.0f, -1.5f));
 
 
 	//camera.view = glm::lookAt(glm::vec3(4.0f, 4.0f, 4.0f), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
 
-	float aspectRatio = ((float)1080) / ((float)720);
-	camera.projection = glm::perspective(glm::radians(65.0f), aspectRatio, 0.1f, 1000.0f);
 
 
 
@@ -255,8 +245,11 @@ int main(int argc, char **argv)
 	mPos = glm::translate(mPos, glm::vec3(0, 0, 0));
 	mPos = glm::scale(mPos, glm::vec3(1.0f, 1.0f, 1.0f));
 
-	rayCamera.view = camera.view;
-	rayCamera.proj = camera.projection;
+	rayCamera.view = glm::mat4(1.0f);
+	rayCamera.view = glm::scale(rayCamera.view, glm::vec3(1.0f, 1.0f, 1.0f));
+	rayCamera.view = glm::translate(rayCamera.view, glm::vec3(0.0f, 0.0f, -1.5f));
+	float aspectRatio = ((float)1080) / ((float)720);
+	rayCamera.proj = glm::perspective(glm::radians(65.0f), aspectRatio, 0.1f, 1000.0f);
 
 
 	// Need to flip the projection as GLM was made for OpenGL
@@ -267,27 +260,51 @@ int main(int argc, char **argv)
 	rayCamera.projInverse = glm::inverse(rayCamera.proj);
 
 	// Only flip the Y when the raytrace camera has out instance as it dose not flip
-	camera.projection[1][1] *= -1;  // Inverting Y for Vulkan
+	rayCamera.proj[1][1] *= -1;  // Inverting Y for Vulkan
 
 
-
-									// Setup cameras descriptors and buffers
-	IUniformBuffer* cameraBuffer = renderer->CreateUniformBuffer(&camera, BufferChain::Single, sizeof(Camera), 1, true);
-	cameraBuffer->SetData(BufferSlot::Primary);
-
-	IDescriptorPool* camera_pool = renderer->CreateDescriptorPool({
-		renderer->CreateDescriptor(Renderer::DescriptorType::UNIFORM, Renderer::ShaderStage::VERTEX_SHADER, 0),
-	});
-
-	IDescriptorSet* camera_descriptor_set = camera_pool->CreateDescriptorSet();
-	camera_descriptor_set->AttachBuffer(0, cameraBuffer);
-	camera_descriptor_set->UpdateSet();
 
 	vertexBuffer = renderer->CreateVertexBuffer(all_vertexs, sizeof(Vertex), vertex_max);
 	indexBuffer = renderer->CreateIndexBuffer(all_indexs, sizeof(uint32_t), index_max);
 
 	IModelPool* model_pool1 = LoadModel("../../renderer-demo/media/scenes/Medieval_building.obj");
 	IModelPool* model_pool2 = LoadModel("../../renderer-demo/media/scenes/sphere.obj");
+
+
+
+
+	std::vector<Vertex> vertexData = {
+		{ glm::vec3(1.0f,1.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(1.0f,1.0f,0.0f), glm::vec2(0.0f,0.0f) ,-1 },
+		{ glm::vec3(1.0f,-1.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(0.0f,1.0f,0.0f), glm::vec2(0.0f,1.0f)  ,-1 },
+		{ glm::vec3(-1.0f,-1.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(.0f,1.0f,1.0f), glm::vec2(1.0f,1.0f)  ,-1 },
+		{ glm::vec3(-1.0f,1.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(1.0f,0.0f,1.0f), glm::vec2(1.0f,0.0f)  ,-1 }
+	};
+
+	std::vector<uint32_t> indexData{
+		0,1,2,
+		0,2,3
+	};
+
+	unsigned int vertexStart = used_vertex;
+	unsigned int indexStart = used_index;
+
+	for (uint32_t& index : indexData)
+	{
+		all_indexs[used_index] = index;
+		used_index++;
+	}
+
+	for (Vertex& vertex : vertexData)
+	{
+		vertex.matID += materials.size();
+		all_vertexs[used_vertex] = vertex;
+		used_vertex++;
+	}
+
+	IModelPool* model_pool3 = renderer->CreateModelPool(vertexBuffer, vertexStart, vertexData.size(), indexBuffer, indexStart, indexData.size());
+
+
+
 
 
 	vertexBuffer->SetData(BufferSlot::Primary);
@@ -304,6 +321,7 @@ int main(int argc, char **argv)
 
 	model_pool1->AttachBufferPool(POSITION_BUFFER, position_buffer_pool);
 	model_pool2->AttachBufferPool(POSITION_BUFFER, position_buffer_pool);
+	model_pool3->AttachBufferPool(POSITION_BUFFER, position_buffer_pool);
 
 
 	IModel* model1 = model_pool2->CreateModel();
@@ -316,6 +334,17 @@ int main(int argc, char **argv)
 
 	model1->SetData(POSITION_BUFFER, modelPosition);
 
+
+	{
+		IModel* model = model_pool3->CreateModel();
+
+		glm::mat4 pos = glm::mat4(1.0f);
+		pos = glm::translate(pos, glm::vec3(0, 0, 0));
+		float s = 1.0f;
+		pos = glm::scale(pos, glm::vec3(s, s, s));
+
+		model->SetData(POSITION_BUFFER, modelPosition);
+	}
 
 
 	IModel* model2;
@@ -364,6 +393,107 @@ int main(int argc, char **argv)
 
 
 
+
+
+
+
+
+
+
+	//RayCamera
+	IUniformBuffer* cameraInfo = renderer->CreateUniformBuffer(&rayCamera, BufferChain::Single, sizeof(RayCamera), 1, true);
+	cameraInfo->SetData(BufferSlot::Primary);
+
+
+
+
+	IGraphicsPipeline* pipeline = renderer->CreateGraphicsPipeline({
+		{ ShaderStage::VERTEX_SHADER, "../../renderer-demo/Shaders/vert.spv" },
+		{ ShaderStage::FRAGMENT_SHADER, "../../renderer-demo/Shaders/frag.spv" }
+	});
+
+
+	pipeline->AttachVertexBinding({
+		VertexInputRate::INPUT_RATE_VERTEX,
+		{
+			{ 0, DataFormat::R32G32B32_FLOAT,offsetof(Vertex,pos) },
+			{ 1, DataFormat::R32G32B32_FLOAT,offsetof(Vertex,nrm) },
+			{ 2, DataFormat::R32G32B32_FLOAT,offsetof(Vertex,color) },
+			{ 3, DataFormat::R32G32_FLOAT,offsetof(Vertex,texCoord) },
+			{ 4, DataFormat::R8_UINT,offsetof(Vertex,matID) },
+		},
+		sizeof(Vertex),
+		0
+	});
+
+	pipeline->AttachVertexBinding({
+		VertexInputRate::INPUT_RATE_INSTANCE,
+		{
+			{ 5, DataFormat::MAT4_FLOAT,0 }
+		},
+		sizeof(PositionVertex),
+		1
+	});
+
+
+
+	IDescriptorPool* camera_pool = renderer->CreateDescriptorPool({
+		renderer->CreateDescriptor(Renderer::DescriptorType::UNIFORM, Renderer::ShaderStage::VERTEX_SHADER, 0),
+	});
+	pipeline->AttachDescriptorPool(camera_pool);
+
+	IDescriptorSet* camera_descriptor_set = camera_pool->CreateDescriptorSet();
+	camera_descriptor_set->AttachBuffer(0, cameraInfo);
+	camera_descriptor_set->UpdateSet();
+
+	pipeline->AttachDescriptorSet(0, camera_descriptor_set);
+
+
+
+	IDescriptorPool* texture_pool = renderer->CreateDescriptorPool({
+		renderer->CreateDescriptor(Renderer::DescriptorType::IMAGE_SAMPLER, Renderer::ShaderStage::FRAGMENT_SHADER, 0),
+	});
+	pipeline->AttachDescriptorPool(texture_pool);
+
+
+
+
+	pipeline->Build();
+
+
+
+	std::vector<unsigned char> image; //the raw pixels
+	unsigned width;
+	unsigned height;
+	unsigned error = lodepng::decode(image, width, height, "../../renderer-demo/Images/cobble.png");
+	if (error) std::cout << "decoder error " << error << ": " << lodepng_error_text(error) << std::endl;
+
+	ITextureBuffer* texture = renderer->CreateTextureBuffer(image.data(), Renderer::DataFormat::R8G8B8A8_FLOAT, width, height);
+
+
+
+	IDescriptorSet* texture_descriptor_set1 = texture_pool->CreateDescriptorSet();
+	texture_descriptor_set1->AttachBuffer(0, texture);
+	texture_descriptor_set1->UpdateSet();
+
+	model_pool3->AttachDescriptorSet(1, texture_descriptor_set1);
+
+
+
+
+	pipeline->AttachModelPool(model_pool3);
+	
+
+
+
+
+
+
+
+
+
+
+	
 	VulkanRaytracePipeline* ray_pipeline = renderer->CreateRaytracePipeline(
 	{
 		{ ShaderStage::RAY_GEN,		"../../renderer-demo/Shaders/Raytrace/Compleate/Gen/rgen.spv" },
@@ -438,9 +568,6 @@ int main(int argc, char **argv)
 	offset_allocation_array_buffer->SetData(BufferSlot::Primary);
 
 
-	//RayCamera
-	IUniformBuffer* cameraInfo = renderer->CreateUniformBuffer(&rayCamera, BufferChain::Single, sizeof(RayCamera), 1, true);
-	cameraInfo->SetData(BufferSlot::Primary);
 
 	IUniformBuffer* materialbuffer = renderer->CreateUniformBuffer(materials.data(), BufferChain::Single, sizeof(MatrialObj), materials.size(), true);
 	materialbuffer->SetData(BufferSlot::Primary);
@@ -452,11 +579,11 @@ int main(int argc, char **argv)
 
 	IUniformBuffer* lightBuffer = renderer->CreateUniformBuffer(lights.data(), BufferChain::Single, sizeof(Light), lights.size(), true);
 	lightBuffer->SetData(BufferSlot::Primary);
+	
 
 
 
-
-
+	
 	{
 		IDescriptorPool* standardRTConfigPool = renderer->CreateDescriptorPool({
 			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV, VK_SHADER_STAGE_RAYGEN_BIT_NV | VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 0),
@@ -542,7 +669,7 @@ int main(int argc, char **argv)
 
 
 	ray_pipeline->Build();
-
+	
 	float s = 0.0f;
 
 	while (renderer->IsRunning())

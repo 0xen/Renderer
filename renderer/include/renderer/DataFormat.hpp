@@ -11,6 +11,7 @@ namespace Renderer
 		R8G8B8A8_FLOAT,
 		R8G8B8_FLOAT,
 		R8G8_FLOAT,
+		R8_UINT,
 		R8G8B8A8_UNORM
 	};
 }

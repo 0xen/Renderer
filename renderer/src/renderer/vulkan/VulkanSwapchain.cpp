@@ -5,6 +5,7 @@
 #include <renderer/vulkan/VulkanInitializers.hpp>
 #include <renderer/vulkan/VulkanCommon.hpp>
 #include <renderer/vulkan/VulkanGraphicsPipeline.hpp>
+#include <renderer/vulkan/VulkanRaytracePipeline.hpp>
 
 #include <assert.h>
 
@@ -240,19 +241,19 @@ VkExtent2D Renderer::Vulkan::VulkanSwapchain::GetSwapchainExtent()
 
 void Renderer::Vulkan::VulkanSwapchain::FindNextImageIndex()
 {
+	for (auto pipeline : m_pipelines)
+	{
+		if (pipeline->HasChanged())
+		{
+			m_should_rebuild_cmd = true;
+		}
+	}
+
 	if (m_should_rebuild_cmd)
 	{
 		m_should_rebuild_cmd = false;
 		RebuildCommandBuffers();
 	}
-	for (auto pipeline : m_pipelines)
-	{
-		if (pipeline->HasChanged())
-		{
-			RebuildCommandBuffers();
-		}
-	}
-
 	vkWaitForFences(*m_device->GetVulkanDevice(), 1, &m_fence[m_frame_index], VK_TRUE, 100);
 
 	VkResult check = vkAcquireNextImageKHR(
@@ -263,7 +264,7 @@ void Renderer::Vulkan::VulkanSwapchain::FindNextImageIndex()
 		VK_NULL_HANDLE,
 		&m_frame_index
 	);
-	if (check == VK_ERROR_OUT_OF_DATE_KHR)
+	if (check == VK_ERROR_OUT_OF_DATE_KHR || m_should_rebuild_cmd)
 	{
 		RebuildSwapchain();
 		GetCurrentFrameIndex();
@@ -299,13 +300,15 @@ void Renderer::Vulkan::VulkanSwapchain::RebuildCommandBuffers()
 		// Setup unique frame buffer
 		render_pass_info.framebuffer = m_swap_chain_framebuffers[i];
 
-
 		ErrorCheck(vkBeginCommandBuffer(
 			m_command_buffers[i],
 			&begin_info
 		));
 
 		assert(!HasError() && "Unable to create command buffer");
+
+
+
 
 		vkCmdBeginRenderPass(
 			m_command_buffers[i],
@@ -320,17 +323,19 @@ void Renderer::Vulkan::VulkanSwapchain::RebuildCommandBuffers()
 		vkCmdSetViewport(m_command_buffers[i], 0, 1, &viewport);
 		vkCmdSetScissor(m_command_buffers[i], 0, 1, &scissor);
 
+		
 		for (auto pipeline : m_pipelines)
 		{
-			pipeline->AttachToCommandBuffer(m_command_buffers[i]);
+			if (dynamic_cast<VulkanRaytracePipeline*>(pipeline)!=nullptr)
+			{
+				pipeline->AttachToCommandBuffer(m_command_buffers[i]);
+			}
 		}
 
 
 		vkCmdEndRenderPass(
 			m_command_buffers[i]
 		);
-
-
 
 		if (m_instance->GetFlags()&VulkanFlags::Raytrace == VulkanFlags::Raytrace)
 		{
@@ -359,6 +364,7 @@ void Renderer::Vulkan::VulkanSwapchain::RebuildCommandBuffers()
 				VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, subresourceRange);
 
 		}
+
 		
 		ErrorCheck(vkEndCommandBuffer(
 			m_command_buffers[i]

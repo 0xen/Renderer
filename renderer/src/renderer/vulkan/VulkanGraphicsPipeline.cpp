@@ -38,6 +38,7 @@ std::map<Renderer::DataFormat, VkFormat> Renderer::Vulkan::VulkanGraphicsPipelin
 	{ Renderer::DataFormat::R32G32B32_FLOAT,VkFormat::VK_FORMAT_R32G32B32_SFLOAT },
 	{ Renderer::DataFormat::R32G32B32A32_FLOAT,VkFormat::VK_FORMAT_R32G32B32A32_SFLOAT },
 	{ Renderer::DataFormat::R8G8B8A8_UNORM,VkFormat::VK_FORMAT_R8G8B8A8_UNORM },
+	{ Renderer::DataFormat::R8_UINT,VkFormat::VK_FORMAT_R8_UINT },
 };
 
 
