@@ -36,6 +36,8 @@ namespace Renderer
 
 			VkSubmitInfo SubmitInfo(VkCommandBuffer* buffer, uint32_t count = 1);
 
+			VkRenderPassBeginInfo RenderPassBeginInfo(VkRenderPass render_pass, VkExtent2D swapchain_extent);
+
 			VkRenderPassBeginInfo RenderPassBeginInfo(VkRenderPass render_pass, VkExtent2D swapchain_extent, std::array<VkClearValue, 2>& clear_values);
 
 			VkSwapchainCreateInfoKHR SwapchainCreateInfoKHR(VkSurfaceFormatKHR surface_format, VkExtent2D extent, VkPresentModeKHR present_mode, uint32_t image_count, VkSurfaceKHR surface, Renderer::Vulkan::VulkanQueueFamilyIndices indices, Renderer::Vulkan::VulkanSwapChainSupport swap_chain_support);
@@ -47,6 +49,8 @@ namespace Renderer
 			VkRenderPassCreateInfo RenderPassCreateInfo(std::vector<VkAttachmentDescription>& color_attachment, VkSubpassDescription* subpass, uint32_t subpass_count, VkSubpassDependency* subpass_dependency, uint32_t subpass_dependency_count);
 
 			VkAttachmentDescription AttachmentDescription(VkFormat format, VkAttachmentStoreOp store_op, VkImageLayout final_layout);
+
+			VkAttachmentDescription AttachmentDescription(VkFormat format, VkAttachmentStoreOp store_op, VkImageLayout final_layout, VkAttachmentLoadOp loadOp);
 
 			VkAttachmentReference AttachmentReference(VkImageLayout layout, uint32_t attachment);
 

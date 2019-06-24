@@ -123,6 +123,18 @@ VkSubmitInfo Renderer::Vulkan::VulkanInitializers::SubmitInfo(VkCommandBuffer* b
 	return submit_info;
 }
 
+VkRenderPassBeginInfo Renderer::Vulkan::VulkanInitializers::RenderPassBeginInfo(VkRenderPass render_pass, VkExtent2D swapchain_extent)
+{
+	VkRenderPassBeginInfo render_pass_info = {};
+	render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+	render_pass_info.renderPass = render_pass;
+	render_pass_info.renderArea.offset = { 0, 0 };
+	render_pass_info.renderArea.extent = swapchain_extent;
+	render_pass_info.clearValueCount = 0;
+	render_pass_info.pClearValues = nullptr;
+	return render_pass_info;
+}
+
 VkRenderPassBeginInfo Renderer::Vulkan::VulkanInitializers::RenderPassBeginInfo(VkRenderPass render_pass, VkExtent2D swapchain_extent, std::array<VkClearValue, 2>& clear_values)
 {
 	VkRenderPassBeginInfo render_pass_info = {};
@@ -212,6 +224,20 @@ VkAttachmentDescription Renderer::Vulkan::VulkanInitializers::AttachmentDescript
 	color_attachment.format = format;
 	color_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
 	color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR ;
+	color_attachment.storeOp = store_op;
+	color_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	color_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	color_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	color_attachment.finalLayout = final_layout;//VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+	return color_attachment;
+}
+
+VkAttachmentDescription Renderer::Vulkan::VulkanInitializers::AttachmentDescription(VkFormat format, VkAttachmentStoreOp store_op, VkImageLayout final_layout, VkAttachmentLoadOp loadOp)
+{
+	VkAttachmentDescription color_attachment = {};
+	color_attachment.format = format;
+	color_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+	color_attachment.loadOp = loadOp;
 	color_attachment.storeOp = store_op;
 	color_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 	color_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;

@@ -284,7 +284,6 @@ void Renderer::Vulkan::VulkanSwapchain::RebuildCommandBuffers()
 	
 	std::copy(std::begin(m_window_handle->clear_color.float32), std::end(m_window_handle->clear_color.float32), std::begin(clear_values[0].color.float32));
 	clear_values[1].depthStencil = { 1.0f, 0 };
-
 	VkRenderPassBeginInfo render_pass_info = VulkanInitializers::RenderPassBeginInfo(m_render_pass, m_swap_chain_extent, clear_values);
 
 	VkImageSubresourceRange subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
@@ -297,6 +296,7 @@ void Renderer::Vulkan::VulkanSwapchain::RebuildCommandBuffers()
 			m_command_buffers[i],
 			0
 		);
+
 		// Setup unique frame buffer
 		render_pass_info.framebuffer = m_swap_chain_framebuffers[i];
 
@@ -307,38 +307,16 @@ void Renderer::Vulkan::VulkanSwapchain::RebuildCommandBuffers()
 
 		assert(!HasError() && "Unable to create command buffer");
 
-
-
-
-		vkCmdBeginRenderPass(
-			m_command_buffers[i],
-			&render_pass_info,
-			VK_SUBPASS_CONTENTS_INLINE
-		);
-
-
-		vkCmdSetLineWidth(m_command_buffers[i], 1.0f);
-		const VkViewport viewport = VulkanInitializers::Viewport((float)m_window_handle->width, (float)m_window_handle->height, 0.0f, 0.0f, 0.0f, 1.0f);
-		const VkRect2D scissor = VulkanInitializers::Scissor(m_window_handle->width, m_window_handle->height);
-		vkCmdSetViewport(m_command_buffers[i], 0, 1, &viewport);
-		vkCmdSetScissor(m_command_buffers[i], 0, 1, &scissor);
-
-		
-		for (auto pipeline : m_pipelines)
+		if ((m_instance->GetFlags()&VulkanFlags::Raytrace) == VulkanFlags::Raytrace)
 		{
-			if (dynamic_cast<VulkanRaytracePipeline*>(pipeline)!=nullptr)
+			for (auto pipeline : m_pipelines)
 			{
-				pipeline->AttachToCommandBuffer(m_command_buffers[i]);
+				if (dynamic_cast<VulkanRaytracePipeline*>(pipeline) != nullptr)
+				{
+					pipeline->AttachToCommandBuffer(m_command_buffers[i]);
+				}
 			}
-		}
 
-
-		vkCmdEndRenderPass(
-			m_command_buffers[i]
-		);
-
-		if (m_instance->GetFlags()&VulkanFlags::Raytrace == VulkanFlags::Raytrace)
-		{
 			VulkanCommon::TransitionImageLayout(m_command_buffers[i], m_swap_chain_images[i], VK_FORMAT_UNDEFINED, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 				VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, subresourceRange);
 
@@ -362,8 +340,37 @@ void Renderer::Vulkan::VulkanSwapchain::RebuildCommandBuffers()
 
 			VulkanCommon::TransitionImageLayout(m_command_buffers[i], m_raytrace_storage_image, VK_FORMAT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL,
 				VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, subresourceRange);
-
 		}
+
+		vkCmdBeginRenderPass(
+			m_command_buffers[i],
+			&render_pass_info,
+			VK_SUBPASS_CONTENTS_INLINE
+		);
+
+
+		vkCmdSetLineWidth(m_command_buffers[i], 1.0f);
+		const VkViewport viewport = VulkanInitializers::Viewport((float)m_window_handle->width, (float)m_window_handle->height, 0.0f, 0.0f, 0.0f, 1.0f);
+		const VkRect2D scissor = VulkanInitializers::Scissor(m_window_handle->width, m_window_handle->height);
+		vkCmdSetViewport(m_command_buffers[i], 0, 1, &viewport);
+		vkCmdSetScissor(m_command_buffers[i], 0, 1, &scissor);
+		
+
+		for (auto pipeline : m_pipelines)
+		{
+			if (dynamic_cast<VulkanRaytracePipeline*>(pipeline)==nullptr)
+			{
+				pipeline->AttachToCommandBuffer(m_command_buffers[i]);
+			}
+		}
+
+
+
+		vkCmdEndRenderPass(
+			m_command_buffers[i]
+		);
+
+		
 
 		
 		ErrorCheck(vkEndCommandBuffer(
@@ -598,10 +605,21 @@ void Renderer::Vulkan::VulkanSwapchain::DeInitSwapchainImages()
 
 void Renderer::Vulkan::VulkanSwapchain::InitRenderPass()
 {
-	std::vector<VkAttachmentDescription> attachments = {
-		VulkanInitializers::AttachmentDescription(m_swap_chain_image_format, VK_ATTACHMENT_STORE_OP_STORE,VK_IMAGE_LAYOUT_PRESENT_SRC_KHR),	//Color
-		VulkanInitializers::AttachmentDescription(VulkanCommon::GetDepthImageFormat(m_device), VK_ATTACHMENT_STORE_OP_DONT_CARE,VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)		// Depth
-	};
+	std::vector<VkAttachmentDescription> attachments;
+	if ((m_instance->GetFlags()&VulkanFlags::Raytrace) == VulkanFlags::Raytrace)
+	{
+		attachments = {
+			VulkanInitializers::AttachmentDescription(m_swap_chain_image_format, VK_ATTACHMENT_STORE_OP_STORE,VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ATTACHMENT_LOAD_OP_DONT_CARE) ,	//Color
+			VulkanInitializers::AttachmentDescription(VulkanCommon::GetDepthImageFormat(m_device), VK_ATTACHMENT_STORE_OP_DONT_CARE,VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)		// Depth
+		};
+	}
+	else
+	{
+		attachments = {
+			VulkanInitializers::AttachmentDescription(m_swap_chain_image_format, VK_ATTACHMENT_STORE_OP_STORE,VK_IMAGE_LAYOUT_PRESENT_SRC_KHR),	//Color
+			VulkanInitializers::AttachmentDescription(VulkanCommon::GetDepthImageFormat(m_device), VK_ATTACHMENT_STORE_OP_DONT_CARE,VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)		// Depth
+		};
+	}
 
 	VkAttachmentReference color_attachment_refrence = VulkanInitializers::AttachmentReference(VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, 0);
 	VkAttachmentReference depth_attachment_refrence = VulkanInitializers::AttachmentReference(VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, 1);
