@@ -52,3 +52,27 @@ unsigned int Renderer::IModelPool::GetIndexSize()
 {
 	return m_index_size;
 }
+
+void Renderer::IModelPool::SetVertexOffset(unsigned int offset)
+{
+	m_vertex_offset = offset;
+	m_vertex_index_change = true;
+}
+
+void Renderer::IModelPool::SetIndexOffset(unsigned int offset)
+{
+	m_index_offset = offset;
+	m_vertex_index_change = true;
+}
+
+void Renderer::IModelPool::SetVertexSize(unsigned int size)
+{
+	m_vertex_size = size;
+	m_vertex_index_change = true;
+}
+
+void Renderer::IModelPool::SetIndexSize(unsigned int size)
+{
+	m_index_size = size;
+	m_vertex_index_change = true;
+}

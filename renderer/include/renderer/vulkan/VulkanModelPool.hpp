@@ -30,7 +30,6 @@ namespace Renderer
 			virtual void UpdateModelBuffer(unsigned int index);
 			virtual void AttachDescriptorSet(unsigned int index, IDescriptorSet* descriptor_set);
 			virtual std::vector<IDescriptorSet*> GetDescriptorSets();
-			virtual void SetVertexDrawCount(unsigned int count);
 			virtual unsigned int GetLargestIndex();
 			unsigned int GetModelBufferOffset(IModel* model,unsigned int buffer);
 			std::map<unsigned int, VulkanModel*>& GetModels();
@@ -43,7 +42,6 @@ namespace Renderer
 			unsigned int m_current_index;
 			unsigned int m_largest_index;
 			std::vector<unsigned int> m_free_indexs;
-			unsigned int m_vertex_draw_count;
 			VulkanDevice * m_device;
 			std::map<unsigned int, VulkanDescriptorSet*> m_descriptor_sets;
 			std::map<unsigned int, IBufferPool*> m_buffers;
