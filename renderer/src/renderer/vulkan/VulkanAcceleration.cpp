@@ -360,15 +360,18 @@ void Renderer::Vulkan::VulkanAcceleration::CreateTopLevelAS(VkCommandBuffer comm
 
 
 	{
-		// this buffer is used to describe a instances: ID, shader binding and matricies
-		VulkanCommon::CreateBuffer(
-			m_device,
-			instances_size,
-			VK_BUFFER_USAGE_RAY_TRACING_BIT_NV,
-			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-			m_top_level_as.instances
-		);
-		//VulkanCommon::MapBufferMemory(m_device, acceleration.result, acceleration.result.size);
+		if (instances_size > 0)
+		{
+			// this buffer is used to describe a instances: ID, shader binding and matricies
+			VulkanCommon::CreateBuffer(
+				m_device,
+				instances_size,
+				VK_BUFFER_USAGE_RAY_TRACING_BIT_NV,
+				VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+				m_top_level_as.instances
+			);
+			//VulkanCommon::MapBufferMemory(m_device, acceleration.result, acceleration.result.size);
+		}
 	}
 
 
@@ -461,14 +464,14 @@ unsigned int Renderer::Vulkan::VulkanAcceleration::UpdateGeometryInstances()
 			m_top_level_as.instances
 		);
 	}
+	if (instancesBufferSize > 0)
+	{
+		VulkanCommon::MapBufferMemory(m_device, m_top_level_as.instances, instancesBufferSize);
 
+		memcpy(m_top_level_as.instances.mapped_memory, geometryInstances.data(), instancesBufferSize);
 
-	VulkanCommon::MapBufferMemory(m_device, m_top_level_as.instances, instancesBufferSize);
-
-
-	memcpy(m_top_level_as.instances.mapped_memory, geometryInstances.data(), instancesBufferSize);
-
-	VulkanCommon::UnMapBufferMemory(m_device, m_top_level_as.instances);
+		VulkanCommon::UnMapBufferMemory(m_device, m_top_level_as.instances);
+	}
 
 	return geometryInstances.size();
 }
