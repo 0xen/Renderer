@@ -1,9 +1,9 @@
 #include <renderer/vulkan/VulkanBuffer.hpp>
 #include <renderer/vulkan/VulkanCommon.hpp>
 
-Renderer::Vulkan::VulkanBuffer::VulkanBuffer(VulkanDevice * device, BufferChain level, void * dataPtr, unsigned int indexSize, unsigned int elementCount, VkBufferUsageFlags usage, VkMemoryPropertyFlags memory_propertys_flag) :
-	IBuffer(level)
+Renderer::Vulkan::VulkanBuffer::VulkanBuffer(VulkanDevice * device, BufferChain level, void * dataPtr, unsigned int indexSize, unsigned int elementCount, VkBufferUsageFlags usage, VkMemoryPropertyFlags memory_propertys_flag)
 {
+	m_level = level;
 	m_device = device;
 	m_gpu_allocation = new GpuBufferAllocation[(unsigned int)level + 1];
 
@@ -74,12 +74,22 @@ void Renderer::Vulkan::VulkanBuffer::Resize(BufferSlot slot, void * dataPtr, uns
 
 void Renderer::Vulkan::VulkanBuffer::Transfer(BufferSlot to, BufferSlot from)
 {
-	//IBuffer::Transfer(s1, s2);
-	//memcpy(m_gpu_allocation + (unsigned int)s1, m_gpu_allocation + (unsigned int)s2, sizeof(GpuBufferAllocation));
-	
 	VulkanCommon::CopyBuffer(m_device, m_gpu_allocation[from].buffer.buffer, m_gpu_allocation[to].buffer.buffer, m_local_allocation[to].bufferSize);
+}
 
+unsigned int Renderer::Vulkan::VulkanBuffer::GetIndexSize(BufferSlot slot)
+{
+	return m_local_allocation[(unsigned int)slot].indexSize;
+}
 
+unsigned int Renderer::Vulkan::VulkanBuffer::GetElementCount(BufferSlot slot)
+{
+	return m_local_allocation[(unsigned int)slot].elementCount;
+}
+
+void * Renderer::Vulkan::VulkanBuffer::GetDataPointer(BufferSlot slot)
+{
+	return m_local_allocation[(unsigned int)slot].dataPtr;
 }
 
 Renderer::Vulkan::VulkanBufferData * Renderer::Vulkan::VulkanBuffer::GetBufferData(BufferSlot slot)

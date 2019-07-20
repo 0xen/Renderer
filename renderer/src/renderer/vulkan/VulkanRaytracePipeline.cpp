@@ -7,14 +7,15 @@
 #include <renderer/vulkan/VulkanPhysicalDevice.hpp>
 #include <renderer/vulkan/VulkanDescriptorSet.hpp>
 
+#include <renderer\VertexBase.hpp>
+
 #include <algorithm>
 
 #ifndef ROUND_UP
 #define ROUND_UP(v, powerOf2Alignment) (((v) + (powerOf2Alignment)-1) & ~((powerOf2Alignment)-1))
 #endif
 
-Renderer::Vulkan::VulkanRaytracePipeline::VulkanRaytracePipeline(VulkanDevice * device, VulkanSwapchain * swapchain, std::vector<std::pair<Renderer::ShaderStage, const char*>> paths, std::vector<std::map<ShaderStage, const char*>> hitgroups) :
-	IPipeline(paths),
+Renderer::Vulkan::VulkanRaytracePipeline::VulkanRaytracePipeline(VulkanDevice * device, VulkanSwapchain * swapchain, std::vector<std::pair<VkShaderStageFlagBits, const char*>> paths, std::vector<std::map<VkShaderStageFlagBits, const char*>> hitgroups) :
 	VulkanGraphicsPipeline(device, swapchain, paths)
 {
 	m_device = device;
@@ -60,7 +61,7 @@ bool Renderer::Vulkan::VulkanRaytracePipeline::CreatePipeline()
 		// Create a module
 		auto shader_module = VulkanCommon::CreateShaderModule(m_device, shaderCode);
 		// Push the shader back
-		VkShaderStageFlagBits shaderStage = GetShaderStageFlag(shader->first);
+		VkShaderStageFlagBits shaderStage = shader->first;
 		m_shader_stages.push_back(VulkanInitializers::PipelineShaderStageCreateInfo(shader_module, "main", shaderStage));
 
 		uint32_t shaderID = m_shader_stages.size() - 1;
@@ -85,7 +86,7 @@ bool Renderer::Vulkan::VulkanRaytracePipeline::CreatePipeline()
 			// Create a module
 			auto shader_module = VulkanCommon::CreateShaderModule(m_device, shaderCode);
 			// Push the shader back
-			VkShaderStageFlagBits shaderStage = GetShaderStageFlag(shader->first);
+			VkShaderStageFlagBits shaderStage = shader->first;
 			m_shader_stages.push_back(VulkanInitializers::PipelineShaderStageCreateInfo(shader_module, "main", shaderStage));
 
 			uint32_t shaderID = m_shader_stages.size() - 1;
@@ -233,7 +234,7 @@ void Renderer::Vulkan::VulkanRaytracePipeline::AttachToCommandBuffer(VkCommandBu
 		m_swapchain->GetNativeWindowHandle()->height, 1);
 }
 
-void Renderer::Vulkan::VulkanRaytracePipeline::AttachModelPool(IModelPool * model_pool)
+void Renderer::Vulkan::VulkanRaytracePipeline::AttachModelPool(VulkanModelPool * model_pool)
 {
 }
 

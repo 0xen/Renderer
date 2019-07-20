@@ -1,7 +1,6 @@
 #pragma once
 
 #include <renderer/vulkan/VulkanStatus.hpp>
-#include <renderer/IRenderer.hpp>
 #include <renderer\DescriptorType.hpp>
 #include <renderer\ShaderStage.hpp>
 
@@ -23,9 +22,12 @@ namespace Renderer
 		class VulkanIndexBuffer;
 		class VulkanTextureBuffer;
 		class VulkanRaytracePipeline;
+		class VulkanUniformBuffer;
 		class VulkanAcceleration;
+		class VulkanComputePipeline;
+		class VulkanComputeProgram;
 
-		class VulkanRenderer : public IRenderer, public VulkanStatus
+		class VulkanRenderer : public VulkanStatus
 		{
 		public:
 			VulkanRenderer();
@@ -36,41 +38,43 @@ namespace Renderer
 			void BeginFrame();
 			void EndFrame();
 
-			virtual void Stop();
-			virtual void Rebuild();
-			virtual IUniformBuffer* CreateUniformBuffer(void* dataPtr, BufferChain level, unsigned int indexSize, unsigned int elementCount, bool modifiable);
+			void Stop();
+			void Rebuild();
+			VulkanUniformBuffer* CreateUniformBuffer(void* dataPtr, BufferChain level, unsigned int indexSize, unsigned int elementCount, bool modifiable);
 
-			virtual IVertexBuffer* CreateVertexBuffer(void* dataPtr, unsigned int indexSize, unsigned int elementCount);
+			VulkanVertexBuffer* CreateVertexBuffer(void* dataPtr, unsigned int indexSize, unsigned int elementCount);
 
-			virtual IIndexBuffer* CreateIndexBuffer(void* dataPtr, unsigned int indexSize, unsigned int elementCount);
+			VulkanIndexBuffer* CreateIndexBuffer(void* dataPtr, unsigned int indexSize, unsigned int elementCount);
 
-			virtual IGraphicsPipeline* CreateGraphicsPipeline(std::vector<std::pair<Renderer::ShaderStage, const char*>> paths, bool priority = false);
+			VulkanGraphicsPipeline* CreateGraphicsPipeline(std::vector<std::pair<VkShaderStageFlagBits, const char*>> paths, bool priority = false);
 
-			virtual void RemoveGraphicsPipeline(IGraphicsPipeline* pipeline);
+			void RemoveGraphicsPipeline(VulkanGraphicsPipeline* pipeline);
 
-			virtual IComputePipeline* CreateComputePipeline(const char* path, unsigned int x, unsigned int y, unsigned int z);
+			VulkanComputePipeline* CreateComputePipeline(const char* path, unsigned int x, unsigned int y, unsigned int z);
 
-			virtual IComputeProgram* CreateComputeProgram();
+			VulkanComputeProgram* CreateComputeProgram();
 
-			virtual IModelPool* CreateModelPool(IVertexBuffer* vertex_buffer, unsigned int vertex_offset, unsigned int vertex_size, IIndexBuffer* index_buffer, unsigned int index_offset, unsigned int index_size);
+			VulkanModelPool* CreateModelPool(VulkanVertexBuffer* vertex_buffer, unsigned int vertex_offset, unsigned int vertex_size, VulkanIndexBuffer* index_buffer, unsigned int index_offset, unsigned int index_size);
 
-			virtual IModelPool* CreateModelPool(IVertexBuffer* vertex_buffer, unsigned int vertex_offset, unsigned int vertex_size);
+			VulkanModelPool* CreateModelPool(VulkanVertexBuffer* vertex_buffer, unsigned int vertex_offset, unsigned int vertex_size);
 
-			virtual ITextureBuffer* CreateTextureBuffer(void* dataPtr, DataFormat format, unsigned int width, unsigned int height);
+			VulkanTextureBuffer* CreateTextureBuffer(void* dataPtr, DataFormat format, unsigned int width, unsigned int height);
 
-			virtual ITextureBuffer* CreateTextureBuffer(void* dataPtr, BufferChain level, DataFormat format, unsigned int width, unsigned int height);
+			VulkanTextureBuffer* CreateTextureBuffer(void* dataPtr, BufferChain level, DataFormat format, unsigned int width, unsigned int height);
 
-			virtual IDescriptor* CreateDescriptor(DescriptorType descriptor_type, ShaderStage shader_stage, unsigned int binding, unsigned int count = 1);
+			//VulkanDescriptor* CreateDescriptor(DescriptorType descriptor_type, ShaderStage shader_stage, unsigned int binding, unsigned int count = 1);
 
-			virtual IDescriptor* CreateDescriptor(VkDescriptorType descriptor_type, VkShaderStageFlags shader_stage, unsigned int binding,unsigned int count = 1);
+			VulkanDescriptor* CreateDescriptor(VkDescriptorType descriptor_type, VkShaderStageFlags shader_stage, unsigned int binding,unsigned int count = 1);
 
-			virtual IDescriptorPool* CreateDescriptorPool(std::vector<IDescriptor*> descriptors);
+			VulkanDescriptorPool* CreateDescriptorPool(std::vector<VulkanDescriptor*> descriptors);
 
-			VulkanRaytracePipeline* CreateRaytracePipeline(std::vector<std::pair<Renderer::ShaderStage, const char*>> paths, std::vector<std::map<ShaderStage, const char*>> hitgroups, bool priority = false);
+			VulkanRaytracePipeline* CreateRaytracePipeline(std::vector<std::pair<VkShaderStageFlagBits, const char*>> paths, std::vector<std::map<VkShaderStageFlagBits, const char*>> hitgroups, bool priority = false);
 
 			VulkanAcceleration* CreateAcceleration();
 
 			VulkanSwapchain* GetSwapchain();
+
+			bool IsRunning();
 
 			static VkDescriptorType ToDescriptorType(DescriptorType descriptor_type);
 
@@ -83,6 +87,8 @@ namespace Renderer
 			VulkanPhysicalDevice* m_physical_device;
 			VulkanDevice* m_device;
 			VulkanSwapchain* m_swapchain;
+
+			bool m_running = false;
 		};
 	}
 }

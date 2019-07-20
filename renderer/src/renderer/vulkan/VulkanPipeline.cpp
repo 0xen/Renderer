@@ -6,8 +6,7 @@
 
 
 
-Renderer::Vulkan::VulkanPipeline::VulkanPipeline(VulkanDevice * device, std::vector<std::pair<Renderer::ShaderStage, const char*>> paths) :
-	IPipeline(paths)
+Renderer::Vulkan::VulkanPipeline::VulkanPipeline(VulkanDevice * device, std::vector<std::pair<VkShaderStageFlagBits, const char*>> paths) : m_paths(paths)
 {
 	m_device = device;
 }
@@ -16,14 +15,14 @@ Renderer::Vulkan::VulkanPipeline::~VulkanPipeline()
 {
 }
 
-void Renderer::Vulkan::VulkanPipeline::AttachDescriptorPool(IDescriptorPool * buffer)
+void Renderer::Vulkan::VulkanPipeline::AttachDescriptorPool(VulkanDescriptorPool * buffer)
 {
-	m_descriptor_pools.push_back(static_cast<VulkanDescriptorPool*>(buffer));
+	m_descriptor_pools.push_back(buffer);
 }
 
-void Renderer::Vulkan::VulkanPipeline::AttachDescriptorSet(unsigned int setID, IDescriptorSet* descriptor_set)
+void Renderer::Vulkan::VulkanPipeline::AttachDescriptorSet(unsigned int setID, VulkanDescriptorSet* descriptor_set)
 {
-	m_descriptor_sets[setID] = static_cast<VulkanDescriptorSet*>(descriptor_set);
+	m_descriptor_sets[setID] = descriptor_set;
 }
 
 bool Renderer::Vulkan::VulkanPipeline::Build()
@@ -54,4 +53,9 @@ bool Renderer::Vulkan::VulkanPipeline::Rebuild()
 VkPipelineLayout & Renderer::Vulkan::VulkanPipeline::GetPipelineLayout()
 {
 	return m_pipeline_layout;
+}
+
+std::vector<std::pair<VkShaderStageFlagBits, const char*>> Renderer::Vulkan::VulkanPipeline::GetPaths()
+{
+	return m_paths;
 }

@@ -7,7 +7,7 @@ namespace Renderer
 	class VertexBinding
 	{
 	public:
-		VertexBinding(unsigned int location, DataFormat format, unsigned int offset)
+		VertexBinding(unsigned int location, VkFormat format, unsigned int offset)
 		{
 			m_location = location;
 			m_format = format;
@@ -21,13 +21,13 @@ namespace Renderer
 		{
 			return m_offset;
 		}
-		DataFormat GetFormat()
+		VkFormat GetFormat()
 		{
 			return m_format;
 		}
 	private:
 		unsigned int m_location;
 		unsigned int m_offset;
-		DataFormat m_format;
+		VkFormat m_format;
 	};
 }

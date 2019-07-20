@@ -21,7 +21,6 @@
 #include <renderer/vulkan/VulkanRenderer.hpp>
 #include <renderer/vulkan/VulkanTextureBuffer.hpp>
 #include <renderer/vulkan/VulkanFlags.hpp>
-#include <renderer\IBufferPool.hpp>
 #include <renderer\VertexBase.hpp>
 
 #include "obj_loader.h"
@@ -164,10 +163,10 @@ const unsigned int index_max = 1000000;
 Vertex all_vertexs[vertex_max];
 uint32_t all_indexs[index_max];
 
-IVertexBuffer* vertexBuffer;
-IIndexBuffer* indexBuffer;
-
-IModelPool* LoadModel(std::string path)
+VulkanVertexBuffer* vertexBuffer;
+VulkanIndexBuffer* indexBuffer;
+/*
+VulkanModelPool* LoadModel(std::string path)
 {
 	ObjLoader<Vertex> loader;
 	loader.loadModel(path);
@@ -220,7 +219,7 @@ IModelPool* LoadModel(std::string path)
 	}
 
 	return renderer->CreateModelPool(vertexBuffer, vertexStart, m_nbVertices, indexBuffer, indexStart, m_nbIndices);
-}
+}*/
 
 
 int main(int argc, char **argv)
@@ -237,15 +236,7 @@ int main(int argc, char **argv)
 
 
 
-
-
-	// Camera setup
-
-
-	//camera.view = glm::lookAt(glm::vec3(4.0f, 4.0f, 4.0f), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
-
-
-
+	/*
 
 	// Ray camera
 	glm::mat4 mPos = glm::mat4(1.0f);
@@ -282,9 +273,9 @@ int main(int argc, char **argv)
 
 	std::vector<Vertex> vertexData = {
 		{ glm::vec3(1.0f,1.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(1.0f,1.0f,0.0f), glm::vec2(0.0f,0.0f) ,-1 },
-		{ glm::vec3(1.0f,-1.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(0.0f,1.0f,0.0f), glm::vec2(0.0f,1.0f)  ,-1 },
-		{ glm::vec3(-1.0f,-1.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(.0f,1.0f,1.0f), glm::vec2(1.0f,1.0f)  ,-1 },
-		{ glm::vec3(-1.0f,1.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(1.0f,0.0f,1.0f), glm::vec2(1.0f,0.0f)  ,-1 }
+	{ glm::vec3(1.0f,-1.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(0.0f,1.0f,0.0f), glm::vec2(0.0f,1.0f)  ,-1 },
+	{ glm::vec3(-1.0f,-1.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(.0f,1.0f,1.0f), glm::vec2(1.0f,1.0f)  ,-1 },
+	{ glm::vec3(-1.0f,1.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(1.0f,0.0f,1.0f), glm::vec2(1.0f,0.0f)  ,-1 }
 	};
 
 	std::vector<uint32_t> indexData{
@@ -416,21 +407,21 @@ int main(int argc, char **argv)
 	IGraphicsPipeline* pipeline = renderer->CreateGraphicsPipeline({
 		{ ShaderStage::VERTEX_SHADER, "../../renderer-demo/Shaders/vert.spv" },
 		{ ShaderStage::FRAGMENT_SHADER, "../../renderer-demo/Shaders/frag.spv" }
-	});
+		});
 
 
 	pipeline->AttachVertexBinding({
 		VertexInputRate::INPUT_RATE_VERTEX,
 		{
 			{ 0, DataFormat::R32G32B32_FLOAT,offsetof(Vertex,pos) },
-			{ 1, DataFormat::R32G32B32_FLOAT,offsetof(Vertex,nrm) },
-			{ 2, DataFormat::R32G32B32_FLOAT,offsetof(Vertex,color) },
-			{ 3, DataFormat::R32G32_FLOAT,offsetof(Vertex,texCoord) },
-			{ 4, DataFormat::R8_UINT,offsetof(Vertex,matID) },
+		{ 1, DataFormat::R32G32B32_FLOAT,offsetof(Vertex,nrm) },
+		{ 2, DataFormat::R32G32B32_FLOAT,offsetof(Vertex,color) },
+		{ 3, DataFormat::R32G32_FLOAT,offsetof(Vertex,texCoord) },
+		{ 4, DataFormat::R8_UINT,offsetof(Vertex,matID) },
 		},
 		sizeof(Vertex),
 		0
-	});
+		});
 
 	pipeline->AttachVertexBinding({
 		VertexInputRate::INPUT_RATE_INSTANCE,
@@ -439,13 +430,13 @@ int main(int argc, char **argv)
 		},
 		sizeof(PositionVertex),
 		1
-	});
+		});
 
 
 
-	IDescriptorPool* camera_pool = renderer->CreateDescriptorPool({
+	VulkanDescriptorPool* camera_pool = renderer->CreateDescriptorPool({
 		renderer->CreateDescriptor(Renderer::DescriptorType::UNIFORM, Renderer::ShaderStage::VERTEX_SHADER, 0),
-	});
+		});
 	pipeline->AttachDescriptorPool(camera_pool);
 
 	IDescriptorSet* camera_descriptor_set = camera_pool->CreateDescriptorSet();
@@ -458,7 +449,7 @@ int main(int argc, char **argv)
 
 	IDescriptorPool* texture_pool = renderer->CreateDescriptorPool({
 		renderer->CreateDescriptor(Renderer::DescriptorType::IMAGE_SAMPLER, Renderer::ShaderStage::FRAGMENT_SHADER, 0),
-	});
+		});
 	pipeline->AttachDescriptorPool(texture_pool);
 
 
@@ -488,7 +479,6 @@ int main(int argc, char **argv)
 
 
 	pipeline->AttachModelPool(model_pool3);
-	
 
 
 
@@ -499,13 +489,14 @@ int main(int argc, char **argv)
 
 
 
-	
+
+
 	VulkanRaytracePipeline* ray_pipeline = renderer->CreateRaytracePipeline(
-	{
-		{ ShaderStage::RAY_GEN,		"../../renderer-demo/Shaders/Raytrace/Compleate/Gen/rgen.spv" },
+		{
+			{ ShaderStage::RAY_GEN,		"../../renderer-demo/Shaders/Raytrace/Compleate/Gen/rgen.spv" },
 		{ ShaderStage::MISS,		"../../renderer-demo/Shaders/Raytrace/Compleate/Miss/rmiss.spv" },
 		{ ShaderStage::MISS,		"../../renderer-demo/Shaders/Raytrace/Compleate/Miss/ShadowMiss/rmiss.spv" },
-	},
+		},
 	{
 		{ // Involved 
 			{ ShaderStage::CLOSEST_HIT, "../../renderer-demo/Shaders/Raytrace/Compleate/Hitgroups/rchit.spv" },
@@ -529,13 +520,13 @@ int main(int argc, char **argv)
 		VertexInputRate::INPUT_RATE_VERTEX,
 		{
 			{ 0, DataFormat::R32G32B32_FLOAT,offsetof(MeshVertex,position) },
-			{ 1, DataFormat::R32G32_FLOAT,offsetof(MeshVertex,uv) },
-			{ 2, DataFormat::R32G32B32_FLOAT,offsetof(MeshVertex,normal) },
-			{ 3, DataFormat::R32G32B32_FLOAT,offsetof(MeshVertex,color) },
+		{ 1, DataFormat::R32G32_FLOAT,offsetof(MeshVertex,uv) },
+		{ 2, DataFormat::R32G32B32_FLOAT,offsetof(MeshVertex,normal) },
+		{ 3, DataFormat::R32G32B32_FLOAT,offsetof(MeshVertex,color) },
 		},
 		sizeof(MeshVertex),
 		0
-	});
+		});
 
 
 	VulkanAcceleration* acceleration = renderer->CreateAcceleration();
@@ -580,21 +571,21 @@ int main(int argc, char **argv)
 
 	std::vector<Light> lights = {
 		{ glm::vec4(500, 400, 300,0), glm::vec4(1.0f,1.0f,1.0f,1.0f) },
-		{ glm::vec4(-500, 400, 300,0), glm::vec4(1.0f,1.0f,1.0f,1.0f) }
+	{ glm::vec4(-500, 400, 300,0), glm::vec4(1.0f,1.0f,1.0f,1.0f) }
 	};
 
 	IUniformBuffer* lightBuffer = renderer->CreateUniformBuffer(lights.data(), BufferChain::Single, sizeof(Light), lights.size(), true);
 	lightBuffer->SetData(BufferSlot::Primary);
-	
 
 
-	
+
+
 	{
 		IDescriptorPool* standardRTConfigPool = renderer->CreateDescriptorPool({
 			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV, VK_SHADER_STAGE_RAYGEN_BIT_NV | VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 0),
 			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_RAYGEN_BIT_NV, 1),
 			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_NV, 2),
-		});
+			});
 		ray_pipeline->AttachDescriptorPool(standardRTConfigPool);
 
 		standardRTConfigSet = static_cast<VulkanDescriptorSet*>(standardRTConfigPool->CreateDescriptorSet());
@@ -615,7 +606,7 @@ int main(int argc, char **argv)
 			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 2),
 			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 3,texture_descriptors.size()),
 			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 4),
-		});
+			});
 		ray_pipeline->AttachDescriptorPool(RTModelPool);
 
 		VulkanDescriptorSet* RTModelPoolSet = static_cast<VulkanDescriptorSet*>(RTModelPool->CreateDescriptorSet());
@@ -639,7 +630,7 @@ int main(int argc, char **argv)
 			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 1),
 			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 2),
 			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 3),
-		});
+			});
 		ray_pipeline->AttachDescriptorPool(RTModelInstancePool);
 
 
@@ -656,7 +647,7 @@ int main(int argc, char **argv)
 
 
 
-	
+
 
 
 
@@ -674,17 +665,12 @@ int main(int argc, char **argv)
 
 
 	ray_pipeline->Build();
-	
+
 	float s = 0.0f;
 
 	while (renderer->IsRunning())
 	{
 		s += 0.01f;
-
-		/*model2->GetData<glm::mat4>(POSITION_BUFFER) = glm::rotate(model2->GetData<glm::mat4>(POSITION_BUFFER), 0.001f, glm::vec3(0, 1, 0));
-		model3->GetData<glm::mat4>(POSITION_BUFFER) = glm::rotate(model3->GetData<glm::mat4>(POSITION_BUFFER), 0.002f, glm::vec3(0, 1, 0));
-		model4->GetData<glm::mat4>(POSITION_BUFFER) = glm::rotate(model4->GetData<glm::mat4>(POSITION_BUFFER), 0.003f, glm::vec3(0, 1, 0));
-		*/
 
 		modelPosition = glm::translate(modelPosition, glm::vec3(0, 0, sin(s) * 0.01f));
 
@@ -704,10 +690,10 @@ int main(int argc, char **argv)
 
 
 
-	DestroyWindow();
+	DestroyWindow();*/
 
 
 	delete renderer;
-	
+
 	return 0;
 }

@@ -11,9 +11,9 @@ namespace Renderer
 	class VertexBase
 	{
 	public:
-		VertexBase(VertexInputRate vertex_input_rate, std::vector<VertexBinding> vertex_bindings, unsigned int size, unsigned int binding) :
+		VertexBase(VkVertexInputRate vertex_input_rate, std::vector<VertexBinding> vertex_bindings, unsigned int size, unsigned int binding) :
 			vertex_input_rate(vertex_input_rate), vertex_bindings(vertex_bindings), size(size), binding(binding){}
-		VertexInputRate vertex_input_rate;
+		VkVertexInputRate vertex_input_rate;
 		std::vector<VertexBinding> vertex_bindings;
 		unsigned int size;
 		unsigned int binding;

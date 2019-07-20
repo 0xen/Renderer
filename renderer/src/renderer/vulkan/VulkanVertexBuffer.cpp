@@ -2,14 +2,12 @@
 #include <renderer\vulkan\VulkanCommon.hpp>
 
 
-const Renderer::BufferChain Renderer::Vulkan::VulkanVertexBuffer::m_level = BufferChain::Single;
+const Renderer::Vulkan::BufferChain Renderer::Vulkan::VulkanVertexBuffer::m_level = BufferChain::Single;
 
 Renderer::Vulkan::VulkanVertexBuffer::VulkanVertexBuffer(VulkanDevice * device, void * dataPtr, unsigned int indexSize, unsigned int elementCount) :
 	VulkanBuffer(device, m_level, dataPtr, indexSize, elementCount,
 		VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT),
-	IVertexBuffer(m_level),
-	IBuffer(m_level)
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
 {
 	VkDeviceSize offset = 0;
 

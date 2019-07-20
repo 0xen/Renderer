@@ -1,7 +1,8 @@
 #pragma once
 
 #include <renderer\vulkan\VulkanHeader.hpp>
-#include <renderer/IDescriptor.hpp>
+#include <renderer\DescriptorType.hpp>
+#include <renderer\ShaderStage.hpp>
 
 namespace Renderer
 {
@@ -15,9 +16,19 @@ namespace Renderer
 
 			VkDescriptorType GetVulkanDescriptorType();
 			VkShaderStageFlags GetVulkanShaderStage();
+
+			ShaderStage GetShaderStage();
+			DescriptorType GetDescriptorType();
+			unsigned int GetBinding();
+			unsigned int GetCount();
 		private:
 			VkDescriptorType m_vulkan_descriptor_type;
 			VkShaderStageFlags m_vulkan_shader_stage;
+
+			DescriptorType m_descriptor_type;
+			ShaderStage m_shader_stage;
+			unsigned int m_binding;
+			unsigned int m_count;
 		};
 
 	}

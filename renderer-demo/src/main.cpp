@@ -21,7 +21,6 @@
 #include <renderer/vulkan/VulkanRenderer.hpp>
 #include <renderer/vulkan/VulkanTextureBuffer.hpp>
 #include <renderer/vulkan/VulkanFlags.hpp>
-#include <renderer\IBufferPool.hpp>
 #include <renderer\VertexBase.hpp>
 
 #include "obj_loader.h"
@@ -164,10 +163,10 @@ const unsigned int index_max = 1000000;
 Vertex all_vertexs[vertex_max];
 uint32_t all_indexs[index_max];
 
-IVertexBuffer* vertexBuffer;
-IIndexBuffer* indexBuffer;
+VulkanVertexBuffer* vertexBuffer;
+VulkanIndexBuffer* indexBuffer;
 
-IModelPool* LoadModel(std::string path)
+VulkanModelPool* LoadModel(std::string path)
 {
 	ObjLoader<Vertex> loader;
 	loader.loadModel(path);
@@ -443,7 +442,7 @@ int main(int argc, char **argv)
 
 
 
-	IDescriptorPool* camera_pool = renderer->CreateDescriptorPool({
+	VulkanDescriptorPool* camera_pool = renderer->CreateDescriptorPool({
 		renderer->CreateDescriptor(Renderer::DescriptorType::UNIFORM, Renderer::ShaderStage::VERTEX_SHADER, 0),
 	});
 	pipeline->AttachDescriptorPool(camera_pool);

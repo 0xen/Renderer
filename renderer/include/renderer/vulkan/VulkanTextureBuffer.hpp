@@ -2,7 +2,6 @@
 
 #include <renderer/vulkan/VulkanHeader.hpp>
 #include <renderer/vulkan/VulkanBuffer.hpp>
-#include <renderer/ITextureBuffer.hpp>
 #include <renderer/DataFormat.hpp>
 
 namespace Renderer
@@ -10,7 +9,7 @@ namespace Renderer
 
 	namespace Vulkan
 	{
-		class VulkanTextureBuffer : public ITextureBuffer, public VulkanBuffer, public VulkanStatus
+		class VulkanTextureBuffer : public VulkanBuffer, public VulkanStatus
 		{
 		public:
 			VulkanTextureBuffer(VulkanDevice* device, void* dataPtr, DataFormat format, unsigned int width, unsigned int height);

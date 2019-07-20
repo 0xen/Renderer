@@ -4,7 +4,6 @@ project(${project_name})
 set(HAVE_LIBC TRUE)
 
 set(common_src
-    src/renderer/IRenderer.cpp
     src/renderer/IBuffer.cpp
     src/renderer/IUniformBuffer.cpp
     src/renderer/IPipeline.cpp
@@ -24,7 +23,6 @@ set(common_src
 
 set(common_headers
     include/renderer/NativeWindowHandle.hpp
-    include/renderer/IRenderer.hpp
     include/renderer/IBuffer.hpp
     include/renderer/IUniformBuffer.hpp
     include/renderer/Status.hpp
@@ -64,7 +62,6 @@ find_package(Vulkan)
 if(Vulkan_FOUND)
     
     set(vulkan_src
-        src/renderer/vulkan/VulkanShaderBindingTable.cpp
         src/renderer/vulkan/VulkanAcceleration.cpp
         src/renderer/vulkan/VulkanRaytracePipeline.cpp
         src/renderer/vulkan/VulkanCommon.cpp
@@ -92,7 +89,6 @@ if(Vulkan_FOUND)
     )
 
     set(vulkan_headers
-    	include/renderer/vulkan/VulkanShaderBindingTable.hpp
     	include/renderer/vulkan/VulkanAcceleration.hpp
     	include/renderer/vulkan/VulkanFlags.hpp
     	include/renderer/vulkan/VulkanRaytracePipeline.hpp

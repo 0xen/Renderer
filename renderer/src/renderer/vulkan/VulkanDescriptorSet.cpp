@@ -23,43 +23,42 @@ void Renderer::Vulkan::VulkanDescriptorSet::UpdateSet()
 {
 	VkDeviceSize offset = 0;
 	m_write_descriptor_sets.clear();
-	for (IDescriptor* descriptor : m_descriptor_pool->GetDescriptors())
+	for (VulkanDescriptor* descriptor : m_descriptor_pool->GetDescriptors())
 	{
-		VulkanDescriptor* vulkan_descriptor = static_cast<VulkanDescriptor*>(descriptor);
 		if (HasBufferAtLocation(descriptor->GetBinding()))
 		{
-			VulkanBuffer* buffer = m_bufers[vulkan_descriptor->GetBinding()];
-			if (vulkan_descriptor->GetVulkanDescriptorType() == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+			VulkanBuffer* buffer = m_bufers[descriptor->GetBinding()];
+			if (descriptor->GetVulkanDescriptorType() == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
 			{
-				m_write_descriptor_sets.push_back(VulkanInitializers::WriteDescriptorSet(m_descriptor_set, buffer->GetDescriptorImageInfo(BufferSlot::Primary), vulkan_descriptor->GetVulkanDescriptorType(), vulkan_descriptor->GetBinding()));
+				m_write_descriptor_sets.push_back(VulkanInitializers::WriteDescriptorSet(m_descriptor_set, buffer->GetDescriptorImageInfo(BufferSlot::Primary), descriptor->GetVulkanDescriptorType(), descriptor->GetBinding()));
 			}
 			else
 			{
-				m_write_descriptor_sets.push_back(VulkanInitializers::WriteDescriptorSet(m_descriptor_set, buffer->GetDescriptorBufferInfo(BufferSlot::Primary), vulkan_descriptor->GetVulkanDescriptorType(), vulkan_descriptor->GetBinding()));
+				m_write_descriptor_sets.push_back(VulkanInitializers::WriteDescriptorSet(m_descriptor_set, buffer->GetDescriptorBufferInfo(BufferSlot::Primary), descriptor->GetVulkanDescriptorType(), descriptor->GetBinding()));
 			}
 		}
 		else if (m_as_structs.find(descriptor->GetBinding()) != m_as_structs.end())
 		{
-			m_write_descriptor_sets.push_back(VulkanInitializers::WriteDescriptorSet(m_descriptor_set, m_as_structs[descriptor->GetBinding()], vulkan_descriptor->GetVulkanDescriptorType(), vulkan_descriptor->GetBinding()));
+			m_write_descriptor_sets.push_back(VulkanInitializers::WriteDescriptorSet(m_descriptor_set, m_as_structs[descriptor->GetBinding()], descriptor->GetVulkanDescriptorType(), descriptor->GetBinding()));
 		}
 		else if (m_images.find(descriptor->GetBinding()) != m_images.end())
 		{
-			m_write_descriptor_sets.push_back(VulkanInitializers::WriteDescriptorSet(m_descriptor_set, m_images[descriptor->GetBinding()], vulkan_descriptor->GetVulkanDescriptorType(), vulkan_descriptor->GetBinding()));
+			m_write_descriptor_sets.push_back(VulkanInitializers::WriteDescriptorSet(m_descriptor_set, m_images[descriptor->GetBinding()], descriptor->GetVulkanDescriptorType(), descriptor->GetBinding()));
 		}
 		else if (m_buffers_arrays.find(descriptor->GetBinding()) != m_buffers_arrays.end())
 		{
-			m_write_descriptor_sets.push_back(VulkanInitializers::WriteDescriptorSet(m_descriptor_set, m_buffers_arrays[descriptor->GetBinding()], vulkan_descriptor->GetVulkanDescriptorType(), vulkan_descriptor->GetBinding()));
+			m_write_descriptor_sets.push_back(VulkanInitializers::WriteDescriptorSet(m_descriptor_set, m_buffers_arrays[descriptor->GetBinding()], descriptor->GetVulkanDescriptorType(), descriptor->GetBinding()));
 		}
 	}
 	vkUpdateDescriptorSets(*m_device->GetVulkanDevice(), (uint32_t)m_write_descriptor_sets.size(), m_write_descriptor_sets.data(), 0, NULL);
 }
 
-void Renderer::Vulkan::VulkanDescriptorSet::AttachBuffer(unsigned int location, IBuffer * buffer)
+void Renderer::Vulkan::VulkanDescriptorSet::AttachBuffer(unsigned int location, VulkanBuffer * buffer)
 {
 	m_bufers[location] = dynamic_cast<VulkanBuffer*>(buffer);
 }
 
-void Renderer::Vulkan::VulkanDescriptorSet::AttachBuffer(unsigned int location, std::vector<IBuffer*> descriptorSet)
+void Renderer::Vulkan::VulkanDescriptorSet::AttachBuffer(unsigned int location, std::vector<VulkanBuffer*> descriptorSet)
 {
 	std::vector<VkDescriptorBufferInfo> buffers;
 	for (auto& buffer : descriptorSet)
@@ -79,9 +78,9 @@ void Renderer::Vulkan::VulkanDescriptorSet::AttachBuffer(unsigned int location, 
 	m_images[location] = descriptorSet;
 }
 
-std::vector<IBuffer*> Renderer::Vulkan::VulkanDescriptorSet::GetBuffers()
+std::vector<VulkanBuffer*> Renderer::Vulkan::VulkanDescriptorSet::GetBuffers()
 {
-	std::vector<IBuffer*> buffers;
+	std::vector<VulkanBuffer*> buffers;
 	for (auto& buffer : m_bufers)
 	{
 		buffers.push_back(buffer.second);

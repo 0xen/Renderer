@@ -1,14 +1,13 @@
 #pragma once
 
 #include <renderer/vulkan/VulkanBuffer.hpp>
-#include <renderer/IVertexBuffer.hpp>
 
 namespace Renderer
 {
 
 	namespace Vulkan
 	{
-		class VulkanVertexBuffer : public IVertexBuffer, public VulkanBuffer
+		class VulkanVertexBuffer : public VulkanBuffer
 		{
 		public:
 			VulkanVertexBuffer(VulkanDevice* device, void* dataPtr, unsigned int indexSize, unsigned int elementCount);

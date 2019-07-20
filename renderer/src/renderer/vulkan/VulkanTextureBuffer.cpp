@@ -8,9 +8,7 @@ using namespace Renderer::Vulkan;
 Renderer::Vulkan::VulkanTextureBuffer::VulkanTextureBuffer(VulkanDevice* device, void* dataPtr, DataFormat format, unsigned int width, unsigned int height):
 	VulkanBuffer(device, BufferChain::Single, dataPtr, GetFormatSize(format) * width * height, 1,
 		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT),
-	IBuffer(BufferChain::Single),
-	ITextureBuffer(BufferChain::Single)
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
 {
 	m_format = format;
 	m_width = width;
@@ -22,9 +20,7 @@ Renderer::Vulkan::VulkanTextureBuffer::VulkanTextureBuffer(VulkanDevice* device,
 Renderer::Vulkan::VulkanTextureBuffer::VulkanTextureBuffer(VulkanDevice * device, BufferChain level, void * dataPtr, DataFormat format, unsigned int width, unsigned int height):
 	VulkanBuffer(device, level, dataPtr, GetFormatSize(format) * width * height, 1,
 		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT),
-	IBuffer(level),
-	ITextureBuffer(level)
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
 {
 	m_format = format;
 	m_width = width;

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <renderer\IComputeProgram.hpp>
 #include <renderer\vulkan\VulkanStatus.hpp>
 
 namespace Renderer
@@ -8,17 +7,20 @@ namespace Renderer
 	namespace Vulkan
 	{
 		class VulkanDevice;
-		class VulkanComputeProgram : public IComputeProgram, public VulkanStatus
+		class VulkanComputePipeline;
+		class VulkanComputeProgram : public VulkanStatus
 		{
 		public:
 			VulkanComputeProgram(VulkanDevice * device);
-			virtual ~VulkanComputeProgram();
-			virtual void Build();
-			virtual void Run();
+			~VulkanComputeProgram();
+			void Build();
+			void Run();
+			void AttachPipeline(VulkanComputePipeline* pipeline);
 		private:
 			VulkanDevice * m_device;
 			VkFence m_fence;
 			VkCommandBuffer m_command_buffer;
+			std::vector<VulkanComputePipeline*> m_pipelines;
 		};
 	}
 }

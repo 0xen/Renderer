@@ -1,44 +1,41 @@
 #pragma once
 
-#include <renderer\IGraphicsPipeline.hpp>
 #include <renderer\vulkan\VulkanPipeline.hpp>
 #include <renderer\vulkan\VulkanStatus.hpp>
-#include <renderer/VertexBase.hpp>
 #include <renderer/DataFormat.hpp>
 
 #include <map>
 
 namespace Renderer
 {
+	class VertexBase;
 	namespace Vulkan
 	{
+		enum PrimitiveTopology
+		{
+			PointList,
+			TriangleList
+		};
 
 		class VulkanSwapchain;
 		class VulkanModelPool;
-		class VulkanGraphicsPipeline : public virtual IPipeline, public IGraphicsPipeline, public VulkanPipeline, public VulkanStatus
+		class VulkanGraphicsPipeline : public VulkanPipeline, public VulkanStatus
 		{
 		public:
-			VulkanGraphicsPipeline(VulkanDevice * device, VulkanSwapchain* swapchain, std::vector<std::pair<Renderer::ShaderStage, const char*>> paths);
+			VulkanGraphicsPipeline(VulkanDevice * device, VulkanSwapchain* swapchain, std::vector<std::pair<VkShaderStageFlagBits, const char*>> paths);
 			virtual ~VulkanGraphicsPipeline();
 			virtual bool Build();
 			virtual bool CreatePipeline();
 			virtual void DestroyPipeline();
 			virtual void AttachToCommandBuffer(VkCommandBuffer & command_buffer);
-			virtual void AttachModelPool(IModelPool* model_pool);
+			virtual void AttachModelPool(VulkanModelPool* model_pool);
 			virtual void AttachVertexBinding(VertexBase vertex_binding);
 			virtual void UseDepth(bool depth);
 			virtual void UseCulling(bool culling);
 			virtual void DefinePrimitiveTopology(PrimitiveTopology top);
 			bool HasChanged();
-		protected:
-			static VkShaderStageFlagBits GetShaderStageFlag(ShaderStage stage);
-			static VkFormat GetFormat(Renderer::DataFormat format);
-			static VkVertexInputRate GetVertexInputRate(Renderer::VertexInputRate input_rate);
 
 		private:
-			static std::map<Renderer::ShaderStage, VkShaderStageFlagBits> m_shader_stage_flags;
-			static std::map<Renderer::DataFormat, VkFormat> m_formats;
-			static std::map<Renderer::VertexInputRate, VkVertexInputRate> m_vertex_input_rates;
 
 
 			VulkanSwapchain * m_swapchain;

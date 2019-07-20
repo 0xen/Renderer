@@ -1,22 +1,21 @@
 #pragma once
 
 #include <renderer/vulkan/VulkanBuffer.hpp>
-#include <renderer/IIndexBuffer.hpp>
 
 namespace Renderer
 {
 
 	namespace Vulkan
 	{
-		class VulkanIndexBuffer : public IIndexBuffer, public VulkanBuffer
+		class VulkanIndexBuffer : public VulkanBuffer
 		{
 		public:
 			VulkanIndexBuffer(VulkanDevice* device, void* dataPtr, unsigned int indexSize, unsigned int elementCount);
 			virtual ~VulkanIndexBuffer();
 
-			virtual void SetData(BufferSlot slot);
-			virtual void SetData(BufferSlot slot, unsigned int count);
-			virtual void SetData(BufferSlot slot, unsigned int startIndex, unsigned int count);
+			void SetData(BufferSlot slot);
+			void SetData(BufferSlot slot, unsigned int count);
+			void SetData(BufferSlot slot, unsigned int startIndex, unsigned int count);
 
 		private:
 			void CreateStageingBuffer(BufferSlot slot);

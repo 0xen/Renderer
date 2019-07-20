@@ -10,7 +10,7 @@ using namespace Renderer;
 using namespace Renderer::Vulkan;
 
 
-Renderer::Vulkan::VulkanDescriptorPool::VulkanDescriptorPool(VulkanDevice * device, std::vector<IDescriptor*> descriptor)
+Renderer::Vulkan::VulkanDescriptorPool::VulkanDescriptorPool(VulkanDevice * device, std::vector<VulkanDescriptor*> descriptor)
 {
 	m_device = device;
 	m_descriptor = descriptor;
@@ -21,11 +21,10 @@ Renderer::Vulkan::VulkanDescriptorPool::VulkanDescriptorPool(VulkanDevice * devi
 	m_layout_bindings.clear();
 
 
-	for (IDescriptor* descriptor : m_descriptor)
+	for (VulkanDescriptor* descriptor : m_descriptor)
 	{
-		VulkanDescriptor* vulkan_descriptor = static_cast<VulkanDescriptor*>(descriptor);
-		m_descriptor_pool_sizes.push_back(VulkanInitializers::DescriptorPoolSize(vulkan_descriptor->GetVulkanDescriptorType(), descriptor->GetCount()));
-		m_layout_bindings.push_back(VulkanInitializers::DescriptorSetLayoutBinding(vulkan_descriptor->GetVulkanDescriptorType(), vulkan_descriptor->GetVulkanShaderStage(), vulkan_descriptor->GetBinding(), descriptor->GetCount()));
+		m_descriptor_pool_sizes.push_back(VulkanInitializers::DescriptorPoolSize(descriptor->GetVulkanDescriptorType(), descriptor->GetCount()));
+		m_layout_bindings.push_back(VulkanInitializers::DescriptorSetLayoutBinding(descriptor->GetVulkanDescriptorType(), descriptor->GetVulkanShaderStage(), descriptor->GetBinding(), descriptor->GetCount()));
 	}
 
 
@@ -81,7 +80,7 @@ VkDescriptorSetLayout Renderer::Vulkan::VulkanDescriptorPool::GetDescriptorSetLa
 	return m_descriptor_set_layout;
 }
 
-std::vector<IDescriptor*> Renderer::Vulkan::VulkanDescriptorPool::GetDescriptors()
+std::vector<VulkanDescriptor*> Renderer::Vulkan::VulkanDescriptorPool::GetDescriptors()
 {
 	return m_descriptor;
 }

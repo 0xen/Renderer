@@ -1,14 +1,12 @@
 #include <renderer/vulkan/VulkanIndexBuffer.hpp>
 #include <renderer\vulkan\VulkanCommon.hpp>
 
-const Renderer::BufferChain Renderer::Vulkan::VulkanIndexBuffer::m_level = BufferChain::Single;
+const Renderer::Vulkan::BufferChain Renderer::Vulkan::VulkanIndexBuffer::m_level = BufferChain::Single;
 
 Renderer::Vulkan::VulkanIndexBuffer::VulkanIndexBuffer(VulkanDevice * device, void * dataPtr, unsigned int indexSize, unsigned int elementCount) :
 	VulkanBuffer(device, m_level, dataPtr, indexSize, elementCount,
 		VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT),
-	IIndexBuffer(m_level),
-	IBuffer(m_level)
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
 {
 	VkDeviceSize offset = 0;
 	m_gpu_allocation[m_level].buffer_info =

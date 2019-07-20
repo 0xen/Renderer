@@ -1,4 +1,5 @@
 #include <renderer/vulkan/VulkanModelPool.hpp>
+#include <renderer/vulkan/VulkanBufferPool.hpp>
 #include <renderer/vulkan/VulkanUniformBuffer.hpp>
 #include <renderer/vulkan/VulkanModel.hpp>
 #include <renderer/vulkan/VulkanVertexBuffer.hpp>
@@ -7,30 +8,34 @@
 #include <renderer/vulkan/VulkanPipeline.hpp>
 #include <renderer/vulkan/VulkanPhysicalDevice.hpp>
 
-#include <renderer/IBufferPool.hpp>
 
 
 
 const unsigned int Renderer::Vulkan::VulkanModelPool::m_indirect_array_padding = 100;
 
-Renderer::Vulkan::VulkanModelPool::VulkanModelPool(VulkanDevice * device, IVertexBuffer * vertex_buffer, unsigned int vertex_offset, unsigned int vertex_size) :
-	IModelPool(vertex_buffer, vertex_offset,vertex_size)
+Renderer::Vulkan::VulkanModelPool::VulkanModelPool(VulkanDevice * device, VulkanVertexBuffer * vertex_buffer, unsigned int vertex_offset, unsigned int vertex_size) :
+	m_vertex_offset(vertex_offset), m_vertex_size(vertex_size)
 {
+	m_vertex_buffer = vertex_buffer;
 	m_device = device;
 	m_current_index = 0;
 	m_largest_index = 0;
 	m_change = false;
+	m_indexed = false;
 
 	ResizeIndirectArray(m_indirect_array_padding);
 }
 
-Renderer::Vulkan::VulkanModelPool::VulkanModelPool(VulkanDevice* device, IVertexBuffer * vertex_buffer, unsigned int vertex_offset, unsigned int vertex_size, IIndexBuffer * index_buffer, unsigned int index_offset, unsigned int index_size) :
-	IModelPool(vertex_buffer, vertex_offset, vertex_size, index_buffer, index_offset, index_size)
+Renderer::Vulkan::VulkanModelPool::VulkanModelPool(VulkanDevice* device, VulkanVertexBuffer * vertex_buffer, unsigned int vertex_offset, unsigned int vertex_size, VulkanIndexBuffer * index_buffer, unsigned int index_offset, unsigned int index_size) :
+	m_vertex_offset(vertex_offset), m_vertex_size(vertex_size), m_index_offset(index_offset), m_index_size(index_size)
 {
+	m_vertex_buffer = vertex_buffer;
+	m_index_buffer = index_buffer;
 	m_device = device;
 	m_current_index = 0;
 	m_largest_index = 0;
 	m_change = false;
+	m_indexed = true;
 
 	ResizeIndirectArray(m_indirect_array_padding);
 }
@@ -40,7 +45,12 @@ Renderer::Vulkan::VulkanModelPool::~VulkanModelPool()
 	delete m_indirect_draw_buffer;
 }
 
-Renderer::IModel * Renderer::Vulkan::VulkanModelPool::CreateModel()
+bool Renderer::Vulkan::VulkanModelPool::Indexed()
+{
+	return m_indexed;
+}
+
+Renderer::Vulkan::VulkanModel * Renderer::Vulkan::VulkanModelPool::CreateModel()
 {
 	unsigned int new_index = 0;
 	if (m_free_indexs.size() > 0)
@@ -78,12 +88,12 @@ Renderer::IModel * Renderer::Vulkan::VulkanModelPool::CreateModel()
 	return model;
 }
 
-Renderer::IModel* Renderer::Vulkan::VulkanModelPool::GetModel(int index)
+Renderer::Vulkan::VulkanModel* Renderer::Vulkan::VulkanModelPool::GetModel(int index)
 {
 	return m_models[index];
 }
 
-void Renderer::Vulkan::VulkanModelPool::RemoveModel(IModel * model)
+void Renderer::Vulkan::VulkanModelPool::RemoveModel(VulkanModel * model)
 {
 	unsigned int index = model->GetModelPoolIndex();
 	auto it = m_models.find(index);
@@ -141,7 +151,7 @@ void Renderer::Vulkan::VulkanModelPool::Update()
 }
 
 
-void Renderer::Vulkan::VulkanModelPool::AttachBufferPool(unsigned int index, IBufferPool * buffer)
+void Renderer::Vulkan::VulkanModelPool::AttachBufferPool(unsigned int index, VulkanBufferPool * buffer)
 {
 	m_buffers[index] = buffer;
 }
@@ -157,14 +167,14 @@ void Renderer::Vulkan::VulkanModelPool::UpdateModelBuffer(unsigned int index)
 	}
 }
 
-void Renderer::Vulkan::VulkanModelPool::AttachDescriptorSet(unsigned int index, IDescriptorSet * descriptor_set)
+void Renderer::Vulkan::VulkanModelPool::AttachDescriptorSet(unsigned int index, VulkanDescriptorSet * descriptor_set)
 {
-	m_descriptor_sets[index] = static_cast<VulkanDescriptorSet*>(descriptor_set);
+	m_descriptor_sets[index] = descriptor_set;
 }
 
-std::vector<Renderer::IDescriptorSet*> Renderer::Vulkan::VulkanModelPool::GetDescriptorSets()
+std::vector<Renderer::Vulkan::VulkanDescriptorSet*> Renderer::Vulkan::VulkanModelPool::GetDescriptorSets()
 {
-	std::vector<Renderer::IDescriptorSet*> sets;
+	std::vector<Renderer::Vulkan::VulkanDescriptorSet*> sets;
 	for (auto& set : m_descriptor_sets)
 	{
 		sets.push_back(set.second);
@@ -172,13 +182,73 @@ std::vector<Renderer::IDescriptorSet*> Renderer::Vulkan::VulkanModelPool::GetDes
 	return sets;
 }
 
-
 unsigned int Renderer::Vulkan::VulkanModelPool::GetLargestIndex()
 {
 	return m_largest_index;
 }
 
-unsigned int Renderer::Vulkan::VulkanModelPool::GetModelBufferOffset(IModel * model, unsigned int buffer)
+
+void Renderer::Vulkan::VulkanModelPool::SetVertexBuffer(VulkanVertexBuffer * vertex_buffer)
+{
+	m_vertex_buffer = vertex_buffer;
+}
+
+Renderer::Vulkan::VulkanVertexBuffer * Renderer::Vulkan::VulkanModelPool::GetVertexBuffer()
+{
+	return m_vertex_buffer;
+}
+
+Renderer::Vulkan::VulkanIndexBuffer * Renderer::Vulkan::VulkanModelPool::GetIndexBuffer()
+{
+	return m_index_buffer;
+}
+
+unsigned int Renderer::Vulkan::VulkanModelPool::GetVertexOffset()
+{
+	return m_vertex_offset;
+}
+
+unsigned int Renderer::Vulkan::VulkanModelPool::GetIndexOffset()
+{
+	return m_index_offset;
+}
+
+unsigned int Renderer::Vulkan::VulkanModelPool::GetVertexSize()
+{
+	return m_vertex_size;
+}
+
+unsigned int Renderer::Vulkan::VulkanModelPool::GetIndexSize()
+{
+	return m_index_size;
+}
+
+
+void Renderer::Vulkan::VulkanModelPool::SetVertexOffset(unsigned int offset)
+{
+	m_vertex_offset = offset;
+	m_vertex_index_change = true;
+}
+
+void Renderer::Vulkan::VulkanModelPool::SetIndexOffset(unsigned int offset)
+{
+	m_index_offset = offset;
+	m_vertex_index_change = true;
+}
+
+void Renderer::Vulkan::VulkanModelPool::SetVertexSize(unsigned int size)
+{
+	m_vertex_size = size;
+	m_vertex_index_change = true;
+}
+
+void Renderer::Vulkan::VulkanModelPool::SetIndexSize(unsigned int size)
+{
+	m_index_size = size;
+	m_vertex_index_change = true;
+}
+
+unsigned int Renderer::Vulkan::VulkanModelPool::GetModelBufferOffset(VulkanModel * model, unsigned int buffer)
 {
 	return m_model_buffer_mapping[model->GetModelPoolIndex()][buffer];
 }
@@ -188,7 +258,7 @@ std::map<unsigned int, Renderer::Vulkan::VulkanModel*>& Renderer::Vulkan::Vulkan
 	return m_models;
 }
 
-std::map<unsigned int, Renderer::IBufferPool*>& Renderer::Vulkan::VulkanModelPool::GetBufferPools()
+std::map<unsigned int, Renderer::Vulkan::VulkanBufferPool*>& Renderer::Vulkan::VulkanModelPool::GetBufferPools()
 {
 	return m_buffers;
 }

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <renderer\ShaderStage.hpp>
 
 #include <map>
 #include <vector>

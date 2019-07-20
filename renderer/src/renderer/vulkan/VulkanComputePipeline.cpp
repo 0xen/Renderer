@@ -8,11 +8,11 @@
 
 
 Renderer::Vulkan::VulkanComputePipeline::VulkanComputePipeline(VulkanDevice * device, const char * path, unsigned int x, unsigned int y, unsigned int z) :
-	IComputePipeline(path,x,y,z),
-	VulkanPipeline(device, { { ShaderStage::COMPUTE_SHADER, path } }),
-	IPipeline({ { ShaderStage::COMPUTE_SHADER, path } })
+	VulkanPipeline(device, { { VkShaderStageFlagBits::VK_SHADER_STAGE_COMPUTE_BIT, path } })
 {
-
+	m_x = x;
+	m_y = y;
+	m_z = z;
 }
 
 Renderer::Vulkan::VulkanComputePipeline::~VulkanComputePipeline()
@@ -131,4 +131,34 @@ void Renderer::Vulkan::VulkanComputePipeline::AttachToCommandBuffer(VkCommandBuf
 		GetY(),
 		GetZ()
 	);
+}
+
+unsigned int Renderer::Vulkan::VulkanComputePipeline::GetX()
+{
+	return m_x;
+}
+
+unsigned int Renderer::Vulkan::VulkanComputePipeline::GetY()
+{
+	return m_y;
+}
+
+unsigned int Renderer::Vulkan::VulkanComputePipeline::GetZ()
+{
+	return m_z;
+}
+
+void Renderer::Vulkan::VulkanComputePipeline::SetX(unsigned int x)
+{
+	m_x = x;
+}
+
+void Renderer::Vulkan::VulkanComputePipeline::SetY(unsigned int y)
+{
+	m_y = y;
+}
+
+void Renderer::Vulkan::VulkanComputePipeline::SetZ(unsigned int z)
+{
+	m_z = z;
 }

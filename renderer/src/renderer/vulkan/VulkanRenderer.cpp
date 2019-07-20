@@ -23,7 +23,7 @@
 
 using namespace Renderer;
 using namespace Renderer::Vulkan;
-VulkanRenderer::VulkanRenderer() : IRenderer()
+VulkanRenderer::VulkanRenderer()
 {
 }
 
@@ -110,79 +110,79 @@ void Renderer::Vulkan::VulkanRenderer::Rebuild()
 	m_swapchain->RebuildSwapchain();
 }
 
-IUniformBuffer * Renderer::Vulkan::VulkanRenderer::CreateUniformBuffer(void * dataPtr, BufferChain level, unsigned int indexSize, unsigned int elementCount, bool modifiable)
+VulkanUniformBuffer * Renderer::Vulkan::VulkanRenderer::CreateUniformBuffer(void * dataPtr, BufferChain level, unsigned int indexSize, unsigned int elementCount, bool modifiable)
 {
 	return new VulkanUniformBuffer(m_device, level, dataPtr, indexSize, elementCount, modifiable);
 }
 
-IVertexBuffer * Renderer::Vulkan::VulkanRenderer::CreateVertexBuffer(void * dataPtr, unsigned int indexSize, unsigned int elementCount)
+VulkanVertexBuffer * Renderer::Vulkan::VulkanRenderer::CreateVertexBuffer(void * dataPtr, unsigned int indexSize, unsigned int elementCount)
 {
 	return new VulkanVertexBuffer(m_device,  dataPtr, indexSize, elementCount);
 }
 
-IIndexBuffer * Renderer::Vulkan::VulkanRenderer::CreateIndexBuffer(void * dataPtr, unsigned int indexSize, unsigned int elementCount)
+VulkanIndexBuffer * Renderer::Vulkan::VulkanRenderer::CreateIndexBuffer(void * dataPtr, unsigned int indexSize, unsigned int elementCount)
 {
 	return new VulkanIndexBuffer(m_device, dataPtr, indexSize, elementCount);
 }
 
-IGraphicsPipeline * Renderer::Vulkan::VulkanRenderer::CreateGraphicsPipeline(std::vector<std::pair<Renderer::ShaderStage, const char*>> paths, bool priority)
+VulkanGraphicsPipeline * Renderer::Vulkan::VulkanRenderer::CreateGraphicsPipeline(std::vector<std::pair<VkShaderStageFlagBits, const char*>> paths, bool priority)
 {
 	VulkanGraphicsPipeline* graphics_pipeline = new VulkanGraphicsPipeline(m_device, m_swapchain, paths);
 	m_swapchain->AttachGraphicsPipeline(graphics_pipeline, priority);
 	return graphics_pipeline;
 }
 
-void Renderer::Vulkan::VulkanRenderer::RemoveGraphicsPipeline(IGraphicsPipeline * pipeline)
+void Renderer::Vulkan::VulkanRenderer::RemoveGraphicsPipeline(VulkanGraphicsPipeline * pipeline)
 {
 	m_swapchain->RemoveGraphicsPipeline(static_cast<VulkanGraphicsPipeline*>(pipeline));
 }
 
-IComputePipeline * Renderer::Vulkan::VulkanRenderer::CreateComputePipeline(const char * path, unsigned int x, unsigned int y, unsigned int z)
+VulkanComputePipeline * Renderer::Vulkan::VulkanRenderer::CreateComputePipeline(const char * path, unsigned int x, unsigned int y, unsigned int z)
 {
 	return new VulkanComputePipeline(m_device,path, x, y, z);
 }
 
-IComputeProgram * Renderer::Vulkan::VulkanRenderer::CreateComputeProgram()
+VulkanComputeProgram * Renderer::Vulkan::VulkanRenderer::CreateComputeProgram()
 {
 	return new VulkanComputeProgram(m_device);
 }
 
-IModelPool * Renderer::Vulkan::VulkanRenderer::CreateModelPool(IVertexBuffer * vertex_buffer, unsigned int vertex_offset, unsigned int vertex_size, IIndexBuffer * index_buffer, unsigned int index_offset, unsigned int index_size)
+VulkanModelPool * Renderer::Vulkan::VulkanRenderer::CreateModelPool(VulkanVertexBuffer * vertex_buffer, unsigned int vertex_offset, unsigned int vertex_size, VulkanIndexBuffer * index_buffer, unsigned int index_offset, unsigned int index_size)
 {
 	return new VulkanModelPool(m_device, vertex_buffer, vertex_offset,vertex_size, index_buffer, index_offset,index_size);
 }
 
-IModelPool * Renderer::Vulkan::VulkanRenderer::CreateModelPool(IVertexBuffer * vertex_buffer, unsigned int vertex_offset, unsigned int vertex_size)
+VulkanModelPool * Renderer::Vulkan::VulkanRenderer::CreateModelPool(VulkanVertexBuffer * vertex_buffer, unsigned int vertex_offset, unsigned int vertex_size)
 {
 	return new VulkanModelPool(m_device, vertex_buffer, vertex_offset,vertex_size);
 }
 
-ITextureBuffer * Renderer::Vulkan::VulkanRenderer::CreateTextureBuffer(void * dataPtr, DataFormat format, unsigned int width, unsigned int height)
+VulkanTextureBuffer * Renderer::Vulkan::VulkanRenderer::CreateTextureBuffer(void * dataPtr, DataFormat format, unsigned int width, unsigned int height)
 {
 	return new VulkanTextureBuffer(m_device, dataPtr, format, width, height);
 }
 
-ITextureBuffer * Renderer::Vulkan::VulkanRenderer::CreateTextureBuffer(void * dataPtr, BufferChain level, DataFormat format, unsigned int width, unsigned int height)
+VulkanTextureBuffer * Renderer::Vulkan::VulkanRenderer::CreateTextureBuffer(void * dataPtr, BufferChain level, DataFormat format, unsigned int width, unsigned int height)
 {
 	return new VulkanTextureBuffer(m_device, level,  dataPtr, format, width, height);
 }
 
-IDescriptor * Renderer::Vulkan::VulkanRenderer::CreateDescriptor(DescriptorType descriptor_type, ShaderStage shader_stage, unsigned int binding, unsigned int count)
+/*VulkanDescriptor * Renderer::Vulkan::VulkanRenderer::CreateDescriptor(DescriptorType descriptor_type, ShaderStage shader_stage, unsigned int binding, unsigned int count)
+{
+	return new VulkanDescriptor(descriptor_type, shader_stage, binding, count);
+}*/
+
+VulkanDescriptor * Renderer::Vulkan::VulkanRenderer::CreateDescriptor(VkDescriptorType descriptor_type, VkShaderStageFlags shader_stage, unsigned int binding, unsigned int count)
 {
 	return new VulkanDescriptor(descriptor_type, shader_stage, binding, count);
 }
 
-IDescriptor * Renderer::Vulkan::VulkanRenderer::CreateDescriptor(VkDescriptorType descriptor_type, VkShaderStageFlags shader_stage, unsigned int binding, unsigned int count)
-{
-	return new VulkanDescriptor(descriptor_type, shader_stage, binding, count);
-}
-
-IDescriptorPool * Renderer::Vulkan::VulkanRenderer::CreateDescriptorPool(std::vector<IDescriptor*> descriptors)
+VulkanDescriptorPool * Renderer::Vulkan::VulkanRenderer::CreateDescriptorPool(std::vector<VulkanDescriptor*> descriptors)
 {
 	return new VulkanDescriptorPool(m_device, descriptors);
 }
 
-VulkanRaytracePipeline * Renderer::Vulkan::VulkanRenderer::CreateRaytracePipeline(std::vector<std::pair<Renderer::ShaderStage, const char*>> paths, std::vector<std::map<ShaderStage, const char*>> hitgroups, bool priority)
+VulkanRaytracePipeline * Renderer::Vulkan::VulkanRenderer::CreateRaytracePipeline(std::vector<std::pair<VkShaderStageFlagBits, const char*>> paths, std::vector<std::map<VkShaderStageFlagBits, const char*>> hitgroups, bool priority)
 {
 	VulkanRaytracePipeline* graphics_pipeline = new VulkanRaytracePipeline(m_device, m_swapchain, paths, hitgroups);
 	m_swapchain->AttachGraphicsPipeline(graphics_pipeline, priority);
@@ -197,6 +197,11 @@ VulkanAcceleration * Renderer::Vulkan::VulkanRenderer::CreateAcceleration()
 VulkanSwapchain * Renderer::Vulkan::VulkanRenderer::GetSwapchain()
 {
 	return m_swapchain;
+}
+
+bool Renderer::Vulkan::VulkanRenderer::IsRunning()
+{
+	return m_running;
 }
 
 VkDescriptorType Renderer::Vulkan::VulkanRenderer::ToDescriptorType(DescriptorType descriptor_type)

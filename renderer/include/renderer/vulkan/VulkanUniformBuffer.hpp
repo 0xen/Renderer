@@ -1,14 +1,13 @@
 #pragma once
 
 #include <renderer/vulkan/VulkanBuffer.hpp>
-#include <renderer/IUniformBuffer.hpp>
 
 namespace Renderer
 {
 
 	namespace Vulkan
 	{
-		class VulkanUniformBuffer : public IUniformBuffer, public VulkanBuffer
+		class VulkanUniformBuffer : public VulkanBuffer
 		{
 		public:
 

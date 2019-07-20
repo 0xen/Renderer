@@ -1,7 +1,5 @@
 #pragma once
 
-#include <renderer/IModelPool.hpp>
-#include <renderer/vulkan/VulkanModel.hpp>
 #include <renderer/vulkan/VulkanUniformBuffer.hpp>
 
 #include <glm/glm.hpp>
@@ -13,27 +11,47 @@ namespace Renderer
 
 	namespace Vulkan
 	{
+		class VulkanModel;
 		class VulkanDevice;
 		class VulkanDescriptorSet;
 		class VulkanPipeline;
-		class VulkanModelPool : public IModelPool
+		class VulkanVertexBuffer;
+		class VulkanIndexBuffer;
+		class VulkanBufferPool;
+
+		class VulkanModelPool
 		{
 		public:
-			VulkanModelPool(VulkanDevice* device, IVertexBuffer* vertex_buffer, unsigned int vertex_offset, unsigned int vertex_size);
-			VulkanModelPool(VulkanDevice* device, IVertexBuffer* vertex_buffer, unsigned int vertex_offset, unsigned int vertex_size, IIndexBuffer* index_buffer, unsigned int index_offset, unsigned int index_size);
-			virtual ~VulkanModelPool();
-			virtual IModel * CreateModel();
-			virtual IModel* GetModel(int index);
-			virtual void RemoveModel(IModel* model);
-			virtual void Update();
-			virtual void AttachBufferPool(unsigned int index, IBufferPool * buffer);
-			virtual void UpdateModelBuffer(unsigned int index);
-			virtual void AttachDescriptorSet(unsigned int index, IDescriptorSet* descriptor_set);
-			virtual std::vector<IDescriptorSet*> GetDescriptorSets();
-			virtual unsigned int GetLargestIndex();
-			unsigned int GetModelBufferOffset(IModel* model,unsigned int buffer);
+			VulkanModelPool(VulkanDevice* device, VulkanVertexBuffer* vertex_buffer, unsigned int vertex_offset, unsigned int vertex_size);
+			VulkanModelPool(VulkanDevice* device, VulkanVertexBuffer* vertex_buffer, unsigned int vertex_offset, unsigned int vertex_size, VulkanIndexBuffer* index_buffer, unsigned int index_offset, unsigned int index_size);
+			~VulkanModelPool();
+			bool Indexed();
+			VulkanModel * CreateModel();
+			VulkanModel* GetModel(int index);
+			void RemoveModel(VulkanModel* model);
+			void Update();
+			void AttachBufferPool(unsigned int index, VulkanBufferPool * buffer);
+			void UpdateModelBuffer(unsigned int index);
+			void AttachDescriptorSet(unsigned int index, VulkanDescriptorSet* descriptor_set);
+			std::vector<VulkanDescriptorSet*> GetDescriptorSets();
+			unsigned int GetLargestIndex();
+
+
+			void SetVertexBuffer(VulkanVertexBuffer* vertex_buffer);
+			VulkanVertexBuffer * GetVertexBuffer();
+			VulkanIndexBuffer * GetIndexBuffer();
+			unsigned int GetVertexOffset();
+			unsigned int GetIndexOffset();
+			unsigned int GetVertexSize();
+			unsigned int GetIndexSize();
+			void SetVertexOffset(unsigned int offset);
+			void SetIndexOffset(unsigned int offset);
+			void SetVertexSize(unsigned int size);
+			void SetIndexSize(unsigned int size);
+
+			unsigned int GetModelBufferOffset(VulkanModel* model,unsigned int buffer);
 			std::map<unsigned int, VulkanModel*>& GetModels();
-			std::map<unsigned int, IBufferPool*>& GetBufferPools();
+			std::map<unsigned int, VulkanBufferPool*>& GetBufferPools();
 			void AttachToCommandBuffer(VkCommandBuffer & command_buffer, VulkanPipeline* pipeline);
 			bool HasChanged();
 		private:
@@ -44,12 +62,22 @@ namespace Renderer
 			std::vector<unsigned int> m_free_indexs;
 			VulkanDevice * m_device;
 			std::map<unsigned int, VulkanDescriptorSet*> m_descriptor_sets;
-			std::map<unsigned int, IBufferPool*> m_buffers;
+			std::map<unsigned int, VulkanBufferPool*> m_buffers;
 			std::map<unsigned int, VulkanModel*> m_models;
 			// Key: Model ID, Key2 BufferID, Value buffer offset
 			std::map<unsigned int, std::map<unsigned int, unsigned int>> m_model_buffer_mapping;
 			static const unsigned int m_indirect_array_padding;
 			VulkanBuffer* m_indirect_draw_buffer = nullptr;
+
+
+			bool m_indexed;
+			VulkanVertexBuffer * m_vertex_buffer;
+			VulkanIndexBuffer * m_index_buffer;
+			unsigned int m_vertex_offset;
+			unsigned int m_vertex_size;
+			unsigned int m_index_offset;
+			unsigned int m_index_size;
+			bool m_vertex_index_change = false;
 
 
 

@@ -7,11 +7,11 @@
 
 namespace Renderer
 {
+	class VertexBase;
 	namespace Vulkan
 	{
 
 		class VulkanSwapchain;
-
 		struct SBTEntry
 		{
 			SBTEntry(uint32_t groupIndex, std::vector<unsigned char> inlineData) : m_groupIndex(groupIndex), m_inlineData(inlineData){}
@@ -23,14 +23,14 @@ namespace Renderer
 		class VulkanRaytracePipeline : public VulkanGraphicsPipeline
 		{
 		public:
-			VulkanRaytracePipeline(VulkanDevice * device, VulkanSwapchain* swapchain, std::vector<std::pair<Renderer::ShaderStage, const char*>> paths, std::vector<std::map<ShaderStage, const char*>> hitgroups);
+			VulkanRaytracePipeline(VulkanDevice * device, VulkanSwapchain* swapchain, std::vector<std::pair<VkShaderStageFlagBits, const char*>> paths, std::vector<std::map<VkShaderStageFlagBits, const char*>> hitgroups);
 			virtual ~VulkanRaytracePipeline();
 
 			virtual bool Build();
 			virtual bool CreatePipeline();
 			virtual void DestroyPipeline();
 			virtual void AttachToCommandBuffer(VkCommandBuffer & command_buffer);
-			virtual void AttachModelPool(IModelPool* model_pool);
+			virtual void AttachModelPool(VulkanModelPool* model_pool);
 			virtual void AttachVertexBinding(VertexBase vertex_binding);
 			virtual void UseDepth(bool depth);
 			virtual void UseCulling(bool culling);
@@ -52,7 +52,7 @@ namespace Renderer
 			VkDeviceSize GetMissSectionSize();
 
 			VulkanDevice * m_device;
-			std::vector<std::map<ShaderStage, const char*>> m_hitgroups;
+			std::vector<std::map<VkShaderStageFlagBits, const char*>> m_hitgroups;
 			std::vector<VkRayTracingShaderGroupCreateInfoNV> m_shader_groups;
 			uint32_t m_shader_groupIndex = 0;
 			std::vector<VkPipelineShaderStageCreateInfo> m_shader_stages;

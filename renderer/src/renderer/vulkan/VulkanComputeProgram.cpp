@@ -53,3 +53,8 @@ void Renderer::Vulkan::VulkanComputeProgram::Run()
 		&m_fence
 	);
 }
+
+void Renderer::Vulkan::VulkanComputeProgram::AttachPipeline(VulkanComputePipeline * pipeline)
+{
+	m_pipelines.push_back(pipeline);
+}

@@ -10,6 +10,7 @@
 #include <renderer/ShaderStage.hpp>
 #include <renderer/DataFormat.hpp>
 #include <renderer/IModelPool.hpp>
+#include <renderer/VertexBase.hpp>
 
 #include <glm/glm.hpp>
 
@@ -18,39 +19,7 @@
 using namespace Renderer;
 using namespace Renderer::Vulkan;
 
-std::map<Renderer::ShaderStage, VkShaderStageFlagBits> Renderer::Vulkan::VulkanGraphicsPipeline::m_shader_stage_flags
-{
-{ Renderer::ShaderStage::COMPUTE_SHADER , VkShaderStageFlagBits::VK_SHADER_STAGE_COMPUTE_BIT },
-{ Renderer::ShaderStage::FRAGMENT_SHADER , VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT },
-{ Renderer::ShaderStage::VERTEX_SHADER , VkShaderStageFlagBits::VK_SHADER_STAGE_VERTEX_BIT },
-{ Renderer::ShaderStage::GEOMETRY_SHADER , VkShaderStageFlagBits::VK_SHADER_STAGE_GEOMETRY_BIT },
-
-
-{ Renderer::ShaderStage::RAY_GEN , VkShaderStageFlagBits::VK_SHADER_STAGE_RAYGEN_BIT_NV },
-{ Renderer::ShaderStage::MISS , VkShaderStageFlagBits::VK_SHADER_STAGE_MISS_BIT_NV },
-{ Renderer::ShaderStage::CLOSEST_HIT , VkShaderStageFlagBits::VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV },
-};
-
-
-std::map<Renderer::DataFormat, VkFormat> Renderer::Vulkan::VulkanGraphicsPipeline::m_formats
-{
-	{ Renderer::DataFormat::R32G32_FLOAT,VkFormat::VK_FORMAT_R32G32_SFLOAT },
-	{ Renderer::DataFormat::R32G32B32_FLOAT,VkFormat::VK_FORMAT_R32G32B32_SFLOAT },
-	{ Renderer::DataFormat::R32G32B32A32_FLOAT,VkFormat::VK_FORMAT_R32G32B32A32_SFLOAT },
-	{ Renderer::DataFormat::R8G8B8A8_UNORM,VkFormat::VK_FORMAT_R8G8B8A8_UNORM },
-	{ Renderer::DataFormat::R8_UINT,VkFormat::VK_FORMAT_R8_UINT },
-};
-
-
-std::map<Renderer::VertexInputRate, VkVertexInputRate> Renderer::Vulkan::VulkanGraphicsPipeline::m_vertex_input_rates
-{
-	{ Renderer::VertexInputRate::INPUT_RATE_INSTANCE,VkVertexInputRate::VK_VERTEX_INPUT_RATE_INSTANCE },
-	{ Renderer::VertexInputRate::INPUT_RATE_VERTEX,VkVertexInputRate::VK_VERTEX_INPUT_RATE_VERTEX },
-};
-
-Renderer::Vulkan::VulkanGraphicsPipeline::VulkanGraphicsPipeline(VulkanDevice * device, VulkanSwapchain* swapchain, std::vector<std::pair<Renderer::ShaderStage, const char*>> paths) :
-	IPipeline(paths),
-	IGraphicsPipeline(paths),
+Renderer::Vulkan::VulkanGraphicsPipeline::VulkanGraphicsPipeline(VulkanDevice * device, VulkanSwapchain* swapchain, std::vector<std::pair<VkShaderStageFlagBits, const char*>> paths) :
 	VulkanPipeline(device, paths)
 {
 	m_swapchain = swapchain;
@@ -117,14 +86,14 @@ bool Renderer::Vulkan::VulkanGraphicsPipeline::CreatePipeline()
 
 		auto shader_module = VulkanCommon::CreateShaderModule(m_device, shaderCode);
 
-		m_shader_stages.push_back(VulkanInitializers::PipelineShaderStageCreateInfo(shader_module, "main", GetShaderStageFlag(shader->first)));
+		m_shader_stages.push_back(VulkanInitializers::PipelineShaderStageCreateInfo(shader_module, "main", shader->first));
 	}
 
 	m_binding_descriptions.clear();
 
 	for (auto base : m_vertex_bases)
 	{
-		m_binding_descriptions.push_back(VulkanInitializers::VertexInputBinding(base.binding, base.size, GetVertexInputRate(base.vertex_input_rate)));
+		m_binding_descriptions.push_back(VulkanInitializers::VertexInputBinding(base.binding, base.size, base.vertex_input_rate));
 	}
 
 	//m_binding_descriptions.push_back(VulkanInitializers::VertexInputBinding(1, sizeof(glm::mat4), VK_VERTEX_INPUT_RATE_INSTANCE));
@@ -151,7 +120,7 @@ bool Renderer::Vulkan::VulkanGraphicsPipeline::CreatePipeline()
 			}
 				break;
 			default:
-				m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(0, vertex->GetLocation(), GetFormat(vertex->GetFormat()), vertex->GetOffset()));
+				m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(0, vertex->GetLocation(), vertex->GetFormat(), vertex->GetOffset()));
 				break;
 			}
 			
@@ -249,9 +218,9 @@ void Renderer::Vulkan::VulkanGraphicsPipeline::AttachToCommandBuffer(VkCommandBu
 	}
 }
 
-void Renderer::Vulkan::VulkanGraphicsPipeline::AttachModelPool(IModelPool * model_pool)
+void Renderer::Vulkan::VulkanGraphicsPipeline::AttachModelPool(VulkanModelPool * model_pool)
 {
-	m_model_pools.push_back(dynamic_cast<VulkanModelPool*>(model_pool));
+	m_model_pools.push_back(model_pool);
 }
 
 void Renderer::Vulkan::VulkanGraphicsPipeline::AttachVertexBinding(VertexBase vertex_binding)
@@ -299,19 +268,4 @@ bool Renderer::Vulkan::VulkanGraphicsPipeline::HasChanged()
 		if (pool->HasChanged())return true;
 	}
 	return false;
-}
-
-VkShaderStageFlagBits Renderer::Vulkan::VulkanGraphicsPipeline::GetShaderStageFlag(ShaderStage stage)
-{
-	return m_shader_stage_flags[stage];
-}
-
-VkFormat Renderer::Vulkan::VulkanGraphicsPipeline::GetFormat(Renderer::DataFormat format)
-{
-	return m_formats[format];
-}
-
-VkVertexInputRate Renderer::Vulkan::VulkanGraphicsPipeline::GetVertexInputRate(Renderer::VertexInputRate input_rate)
-{
-	return m_vertex_input_rates[input_rate];
 }
