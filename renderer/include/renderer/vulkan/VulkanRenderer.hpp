@@ -58,6 +58,8 @@ namespace Renderer
 
 			virtual ITextureBuffer* CreateTextureBuffer(void* dataPtr, DataFormat format, unsigned int width, unsigned int height);
 
+			virtual ITextureBuffer* CreateTextureBuffer(void* dataPtr, BufferChain level, DataFormat format, unsigned int width, unsigned int height);
+
 			virtual IDescriptor* CreateDescriptor(DescriptorType descriptor_type, ShaderStage shader_stage, unsigned int binding, unsigned int count = 1);
 
 			virtual IDescriptor* CreateDescriptor(VkDescriptorType descriptor_type, VkShaderStageFlags shader_stage, unsigned int binding,unsigned int count = 1);

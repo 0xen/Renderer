@@ -23,3 +23,5 @@ include_directories(third_party/glm)
 
 add_subdirectory(renderer)
 add_subdirectory(renderer-demo)
+add_subdirectory(renderer-demo-rasterizer)
+

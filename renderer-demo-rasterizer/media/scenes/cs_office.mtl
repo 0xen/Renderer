@@ -1,0 +1,2318 @@
+# Blender MTL File: 'None'
+# Material Count: 193
+
+newmtl texture_0
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_0.png
+map_Ka Amadeus maps\\cs_office_texture_0.png
+
+newmtl texture_1
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_1.png
+map_Ka Amadeus maps\\cs_office_texture_1.png
+
+newmtl texture_10
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_10.png
+map_Ka Amadeus maps\\cs_office_texture_10.png
+
+newmtl texture_100
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_100.png
+map_Ka Amadeus maps\\cs_office_texture_100.png
+
+newmtl texture_101
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_101.png
+map_Ka Amadeus maps\\cs_office_texture_101.png
+
+newmtl texture_102
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_102.png
+map_Ka Amadeus maps\\cs_office_texture_102.png
+
+newmtl texture_103
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_103.png
+map_Ka Amadeus maps\\cs_office_texture_103.png
+
+newmtl texture_104
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_104.png
+map_Ka Amadeus maps\\cs_office_texture_104.png
+
+newmtl texture_105
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_105.png
+map_Ka Amadeus maps\\cs_office_texture_105.png
+
+newmtl texture_106
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_106.png
+map_Ka Amadeus maps\\cs_office_texture_106.png
+
+newmtl texture_107
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_107.png
+map_Ka Amadeus maps\\cs_office_texture_107.png
+
+newmtl texture_108
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_108.png
+map_Ka Amadeus maps\\cs_office_texture_108.png
+
+newmtl texture_109
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_109.png
+map_Ka Amadeus maps\\cs_office_texture_109.png
+
+newmtl texture_11
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_11.png
+map_Ka Amadeus maps\\cs_office_texture_11.png
+
+newmtl texture_110
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_110.png
+map_Ka Amadeus maps\\cs_office_texture_110.png
+
+newmtl texture_111
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_111.png
+map_Ka Amadeus maps\\cs_office_texture_111.png
+
+newmtl texture_112
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_112.png
+map_Ka Amadeus maps\\cs_office_texture_112.png
+
+newmtl texture_113
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_113.png
+map_Ka Amadeus maps\\cs_office_texture_113.png
+
+newmtl texture_114
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_114.png
+map_Ka Amadeus maps\\cs_office_texture_114.png
+
+newmtl texture_115
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_115.png
+map_Ka Amadeus maps\\cs_office_texture_115.png
+
+newmtl texture_116
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_116.png
+map_Ka Amadeus maps\\cs_office_texture_116.png
+
+newmtl texture_117
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_117.png
+map_Ka Amadeus maps\\cs_office_texture_117.png
+
+newmtl texture_118
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_118.png
+map_Ka Amadeus maps\\cs_office_texture_118.png
+
+newmtl texture_119
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_119.png
+map_Ka Amadeus maps\\cs_office_texture_119.png
+
+newmtl texture_12
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_12.png
+map_Ka Amadeus maps\\cs_office_texture_12.png
+
+newmtl texture_120
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_120.png
+map_Ka Amadeus maps\\cs_office_texture_120.png
+
+newmtl texture_121
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_121.png
+map_Ka Amadeus maps\\cs_office_texture_121.png
+
+newmtl texture_122
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_122.png
+map_Ka Amadeus maps\\cs_office_texture_122.png
+
+newmtl texture_123
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_123.png
+map_Ka Amadeus maps\\cs_office_texture_123.png
+
+newmtl texture_124
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_124.png
+map_Ka Amadeus maps\\cs_office_texture_124.png
+
+newmtl texture_125
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_125.png
+map_Ka Amadeus maps\\cs_office_texture_125.png
+
+newmtl texture_126
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_126.png
+map_Ka Amadeus maps\\cs_office_texture_126.png
+
+newmtl texture_127
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_127.png
+map_Ka Amadeus maps\\cs_office_texture_127.png
+
+newmtl texture_128
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_128.png
+map_Ka Amadeus maps\\cs_office_texture_128.png
+
+newmtl texture_129
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_129.png
+map_Ka Amadeus maps\\cs_office_texture_129.png
+
+newmtl texture_13
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_13.png
+map_Ka Amadeus maps\\cs_office_texture_13.png
+
+newmtl texture_130
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_130.png
+map_Ka Amadeus maps\\cs_office_texture_130.png
+
+newmtl texture_131
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_131.png
+map_Ka Amadeus maps\\cs_office_texture_131.png
+
+newmtl texture_132
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_132.png
+map_Ka Amadeus maps\\cs_office_texture_132.png
+
+newmtl texture_133
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_133.png
+map_Ka Amadeus maps\\cs_office_texture_133.png
+
+newmtl texture_134
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_134.png
+map_Ka Amadeus maps\\cs_office_texture_134.png
+
+newmtl texture_135
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_135.png
+map_Ka Amadeus maps\\cs_office_texture_135.png
+
+newmtl texture_136
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_136.png
+map_Ka Amadeus maps\\cs_office_texture_136.png
+
+newmtl texture_137
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_137.png
+map_Ka Amadeus maps\\cs_office_texture_137.png
+
+newmtl texture_138
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_138.png
+map_Ka Amadeus maps\\cs_office_texture_138.png
+
+newmtl texture_139
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_139.png
+map_Ka Amadeus maps\\cs_office_texture_139.png
+
+newmtl texture_14
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_14.png
+map_Ka Amadeus maps\\cs_office_texture_14.png
+
+newmtl texture_140
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_140.png
+map_Ka Amadeus maps\\cs_office_texture_140.png
+
+newmtl texture_141
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_141.png
+map_Ka Amadeus maps\\cs_office_texture_141.png
+
+newmtl texture_142
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_142.png
+map_Ka Amadeus maps\\cs_office_texture_142.png
+
+newmtl texture_143
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_143.png
+map_Ka Amadeus maps\\cs_office_texture_143.png
+
+newmtl texture_144
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_144.png
+map_Ka Amadeus maps\\cs_office_texture_144.png
+
+newmtl texture_145
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_145.png
+map_Ka Amadeus maps\\cs_office_texture_145.png
+
+newmtl texture_146
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_146.png
+map_Ka Amadeus maps\\cs_office_texture_146.png
+
+newmtl texture_147
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_147.png
+map_Ka Amadeus maps\\cs_office_texture_147.png
+
+newmtl texture_148
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_148.png
+map_Ka Amadeus maps\\cs_office_texture_148.png
+
+newmtl texture_149
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_149.png
+map_Ka Amadeus maps\\cs_office_texture_149.png
+
+newmtl texture_15
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_15.png
+map_Ka Amadeus maps\\cs_office_texture_15.png
+
+newmtl texture_150
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_150.png
+map_Ka Amadeus maps\\cs_office_texture_150.png
+
+newmtl texture_151
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_151.png
+map_Ka Amadeus maps\\cs_office_texture_151.png
+
+newmtl texture_152
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_152.png
+map_Ka Amadeus maps\\cs_office_texture_152.png
+
+newmtl texture_153
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_153.png
+map_Ka Amadeus maps\\cs_office_texture_153.png
+
+newmtl texture_154
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_154.png
+map_Ka Amadeus maps\\cs_office_texture_154.png
+
+newmtl texture_155
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_155.png
+map_Ka Amadeus maps\\cs_office_texture_155.png
+
+newmtl texture_156
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_156.png
+map_Ka Amadeus maps\\cs_office_texture_156.png
+
+newmtl texture_157
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_157.png
+map_Ka Amadeus maps\\cs_office_texture_157.png
+
+newmtl texture_158
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_158.png
+map_Ka Amadeus maps\\cs_office_texture_158.png
+
+newmtl texture_159
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_159.png
+map_Ka Amadeus maps\\cs_office_texture_159.png
+
+newmtl texture_16
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_16.png
+map_Ka Amadeus maps\\cs_office_texture_16.png
+
+newmtl texture_160
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_160.png
+map_Ka Amadeus maps\\cs_office_texture_160.png
+
+newmtl texture_161
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_161.png
+map_Ka Amadeus maps\\cs_office_texture_161.png
+
+newmtl texture_162
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_162.png
+map_Ka Amadeus maps\\cs_office_texture_162.png
+
+newmtl texture_163
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_163.png
+map_Ka Amadeus maps\\cs_office_texture_163.png
+
+newmtl texture_164
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_164.png
+map_Ka Amadeus maps\\cs_office_texture_164.png
+
+newmtl texture_165
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_165.png
+map_Ka Amadeus maps\\cs_office_texture_165.png
+
+newmtl texture_166
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_166.png
+map_Ka Amadeus maps\\cs_office_texture_166.png
+
+newmtl texture_167
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_167.png
+map_Ka Amadeus maps\\cs_office_texture_167.png
+
+newmtl texture_168
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_168.png
+map_Ka Amadeus maps\\cs_office_texture_168.png
+
+newmtl texture_169
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_169.png
+map_Ka Amadeus maps\\cs_office_texture_169.png
+
+newmtl texture_17
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_17.png
+map_Ka Amadeus maps\\cs_office_texture_17.png
+
+newmtl texture_170
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_170.png
+map_Ka Amadeus maps\\cs_office_texture_170.png
+
+newmtl texture_171
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_171.png
+map_Ka Amadeus maps\\cs_office_texture_171.png
+
+newmtl texture_172
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_172.png
+map_Ka Amadeus maps\\cs_office_texture_172.png
+
+newmtl texture_173
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_173.png
+map_Ka Amadeus maps\\cs_office_texture_173.png
+
+newmtl texture_174
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_174.png
+map_Ka Amadeus maps\\cs_office_texture_174.png
+
+newmtl texture_175
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_175.png
+map_Ka Amadeus maps\\cs_office_texture_175.png
+
+newmtl texture_176
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_176.png
+map_Ka Amadeus maps\\cs_office_texture_176.png
+
+newmtl texture_177
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_177.png
+map_Ka Amadeus maps\\cs_office_texture_177.png
+
+newmtl texture_178
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_178.png
+map_Ka Amadeus maps\\cs_office_texture_178.png
+
+newmtl texture_179
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_179.png
+map_Ka Amadeus maps\\cs_office_texture_179.png
+
+newmtl texture_18
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_18.png
+map_Ka Amadeus maps\\cs_office_texture_18.png
+
+newmtl texture_180
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_180.png
+map_Ka Amadeus maps\\cs_office_texture_180.png
+
+newmtl texture_181
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_181.png
+map_Ka Amadeus maps\\cs_office_texture_181.png
+
+newmtl texture_182
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_182.png
+map_Ka Amadeus maps\\cs_office_texture_182.png
+
+newmtl texture_183
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_183.png
+map_Ka Amadeus maps\\cs_office_texture_183.png
+
+newmtl texture_184
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_184.png
+map_Ka Amadeus maps\\cs_office_texture_184.png
+
+newmtl texture_185
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_185.png
+map_Ka Amadeus maps\\cs_office_texture_185.png
+
+newmtl texture_186
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_186.png
+map_Ka Amadeus maps\\cs_office_texture_186.png
+
+newmtl texture_187
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_187.png
+map_Ka Amadeus maps\\cs_office_texture_187.png
+
+newmtl texture_188
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_188.png
+map_Ka Amadeus maps\\cs_office_texture_188.png
+
+newmtl texture_189
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_189.png
+map_Ka Amadeus maps\\cs_office_texture_189.png
+
+newmtl texture_19
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_19.png
+map_Ka Amadeus maps\\cs_office_texture_19.png
+
+newmtl texture_190
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_190.png
+map_Ka Amadeus maps\\cs_office_texture_190.png
+
+newmtl texture_191
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_191.png
+map_Ka Amadeus maps\\cs_office_texture_191.png
+
+newmtl texture_192
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_192.png
+map_Ka Amadeus maps\\cs_office_texture_192.png
+
+newmtl texture_2
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_2.png
+map_Ka Amadeus maps\\cs_office_texture_2.png
+
+newmtl texture_20
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_20.png
+map_Ka Amadeus maps\\cs_office_texture_20.png
+
+newmtl texture_21
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_21.png
+map_Ka Amadeus maps\\cs_office_texture_21.png
+
+newmtl texture_22
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_22.png
+map_Ka Amadeus maps\\cs_office_texture_22.png
+
+newmtl texture_23
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_23.png
+map_Ka Amadeus maps\\cs_office_texture_23.png
+
+newmtl texture_24
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_24.png
+map_Ka Amadeus maps\\cs_office_texture_24.png
+
+newmtl texture_25
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_25.png
+map_Ka Amadeus maps\\cs_office_texture_25.png
+
+newmtl texture_26
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_26.png
+map_Ka Amadeus maps\\cs_office_texture_26.png
+
+newmtl texture_27
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_27.png
+map_Ka Amadeus maps\\cs_office_texture_27.png
+
+newmtl texture_28
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_28.png
+map_Ka Amadeus maps\\cs_office_texture_28.png
+
+newmtl texture_29
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_29.png
+map_Ka Amadeus maps\\cs_office_texture_29.png
+
+newmtl texture_3
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_3.png
+map_Ka Amadeus maps\\cs_office_texture_3.png
+
+newmtl texture_30
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_30.png
+map_Ka Amadeus maps\\cs_office_texture_30.png
+
+newmtl texture_31
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_31.png
+map_Ka Amadeus maps\\cs_office_texture_31.png
+
+newmtl texture_32
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_32.png
+map_Ka Amadeus maps\\cs_office_texture_32.png
+
+newmtl texture_33
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_33.png
+map_Ka Amadeus maps\\cs_office_texture_33.png
+
+newmtl texture_34
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_34.png
+map_Ka Amadeus maps\\cs_office_texture_34.png
+
+newmtl texture_35
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_35.png
+map_Ka Amadeus maps\\cs_office_texture_35.png
+
+newmtl texture_36
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_36.png
+map_Ka Amadeus maps\\cs_office_texture_36.png
+
+newmtl texture_37
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_37.png
+map_Ka Amadeus maps\\cs_office_texture_37.png
+
+newmtl texture_38
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_38.png
+map_Ka Amadeus maps\\cs_office_texture_38.png
+
+newmtl texture_39
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_39.png
+map_Ka Amadeus maps\\cs_office_texture_39.png
+
+newmtl texture_4
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_4.png
+map_Ka Amadeus maps\\cs_office_texture_4.png
+
+newmtl texture_40
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_40.png
+map_Ka Amadeus maps\\cs_office_texture_40.png
+
+newmtl texture_41
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_41.png
+map_Ka Amadeus maps\\cs_office_texture_41.png
+
+newmtl texture_42
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_42.png
+map_Ka Amadeus maps\\cs_office_texture_42.png
+
+newmtl texture_43
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_43.png
+map_Ka Amadeus maps\\cs_office_texture_43.png
+
+newmtl texture_44
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_44.png
+map_Ka Amadeus maps\\cs_office_texture_44.png
+
+newmtl texture_45
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_45.png
+map_Ka Amadeus maps\\cs_office_texture_45.png
+
+newmtl texture_46
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_46.png
+map_Ka Amadeus maps\\cs_office_texture_46.png
+
+newmtl texture_47
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_47.png
+map_Ka Amadeus maps\\cs_office_texture_47.png
+
+newmtl texture_48
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_48.png
+map_Ka Amadeus maps\\cs_office_texture_48.png
+
+newmtl texture_49
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_49.png
+map_Ka Amadeus maps\\cs_office_texture_49.png
+
+newmtl texture_5
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_5.png
+map_Ka Amadeus maps\\cs_office_texture_5.png
+
+newmtl texture_50
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_50.png
+map_Ka Amadeus maps\\cs_office_texture_50.png
+
+newmtl texture_51
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_51.png
+map_Ka Amadeus maps\\cs_office_texture_51.png
+
+newmtl texture_52
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_52.png
+map_Ka Amadeus maps\\cs_office_texture_52.png
+
+newmtl texture_53
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_53.png
+map_Ka Amadeus maps\\cs_office_texture_53.png
+
+newmtl texture_54
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_54.png
+map_Ka Amadeus maps\\cs_office_texture_54.png
+
+newmtl texture_55
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_55.png
+map_Ka Amadeus maps\\cs_office_texture_55.png
+
+newmtl texture_56
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_56.png
+map_Ka Amadeus maps\\cs_office_texture_56.png
+
+newmtl texture_57
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_57.png
+map_Ka Amadeus maps\\cs_office_texture_57.png
+
+newmtl texture_58
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_58.png
+map_Ka Amadeus maps\\cs_office_texture_58.png
+
+newmtl texture_59
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_59.png
+map_Ka Amadeus maps\\cs_office_texture_59.png
+
+newmtl texture_6
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_6.png
+map_Ka Amadeus maps\\cs_office_texture_6.png
+
+newmtl texture_60
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_60.png
+map_Ka Amadeus maps\\cs_office_texture_60.png
+
+newmtl texture_61
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_61.png
+map_Ka Amadeus maps\\cs_office_texture_61.png
+
+newmtl texture_62
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_62.png
+map_Ka Amadeus maps\\cs_office_texture_62.png
+
+newmtl texture_63
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_63.png
+map_Ka Amadeus maps\\cs_office_texture_63.png
+
+newmtl texture_64
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_64.png
+map_Ka Amadeus maps\\cs_office_texture_64.png
+
+newmtl texture_65
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_65.png
+map_Ka Amadeus maps\\cs_office_texture_65.png
+
+newmtl texture_66
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_66.png
+map_Ka Amadeus maps\\cs_office_texture_66.png
+
+newmtl texture_67
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_67.png
+map_Ka Amadeus maps\\cs_office_texture_67.png
+
+newmtl texture_68
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_68.png
+map_Ka Amadeus maps\\cs_office_texture_68.png
+
+newmtl texture_69
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_69.png
+map_Ka Amadeus maps\\cs_office_texture_69.png
+
+newmtl texture_7
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_7.png
+map_Ka Amadeus maps\\cs_office_texture_7.png
+
+newmtl texture_70
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_70.png
+map_Ka Amadeus maps\\cs_office_texture_70.png
+
+newmtl texture_71
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_71.png
+map_Ka Amadeus maps\\cs_office_texture_71.png
+
+newmtl texture_72
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_72.png
+map_Ka Amadeus maps\\cs_office_texture_72.png
+
+newmtl texture_73
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_73.png
+map_Ka Amadeus maps\\cs_office_texture_73.png
+
+newmtl texture_74
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_74.png
+map_Ka Amadeus maps\\cs_office_texture_74.png
+
+newmtl texture_75
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_75.png
+map_Ka Amadeus maps\\cs_office_texture_75.png
+
+newmtl texture_76
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_76.png
+map_Ka Amadeus maps\\cs_office_texture_76.png
+
+newmtl texture_77
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_77.png
+map_Ka Amadeus maps\\cs_office_texture_77.png
+
+newmtl texture_78
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_78.png
+map_Ka Amadeus maps\\cs_office_texture_78.png
+
+newmtl texture_79
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_79.png
+map_Ka Amadeus maps\\cs_office_texture_79.png
+
+newmtl texture_8
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_8.png
+map_Ka Amadeus maps\\cs_office_texture_8.png
+
+newmtl texture_80
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_80.png
+map_Ka Amadeus maps\\cs_office_texture_80.png
+
+newmtl texture_81
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_81.png
+map_Ka Amadeus maps\\cs_office_texture_81.png
+
+newmtl texture_82
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_82.png
+map_Ka Amadeus maps\\cs_office_texture_82.png
+
+newmtl texture_83
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_83.png
+map_Ka Amadeus maps\\cs_office_texture_83.png
+
+newmtl texture_84
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_84.png
+map_Ka Amadeus maps\\cs_office_texture_84.png
+
+newmtl texture_85
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_85.png
+map_Ka Amadeus maps\\cs_office_texture_85.png
+
+newmtl texture_86
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_86.png
+map_Ka Amadeus maps\\cs_office_texture_86.png
+
+newmtl texture_87
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_87.png
+map_Ka Amadeus maps\\cs_office_texture_87.png
+
+newmtl texture_88
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_88.png
+map_Ka Amadeus maps\\cs_office_texture_88.png
+
+newmtl texture_89
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_89.png
+map_Ka Amadeus maps\\cs_office_texture_89.png
+
+newmtl texture_9
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_9.png
+map_Ka Amadeus maps\\cs_office_texture_9.png
+
+newmtl texture_90
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_90.png
+map_Ka Amadeus maps\\cs_office_texture_90.png
+
+newmtl texture_91
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_91.png
+map_Ka Amadeus maps\\cs_office_texture_91.png
+
+newmtl texture_92
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_92.png
+map_Ka Amadeus maps\\cs_office_texture_92.png
+
+newmtl texture_93
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_93.png
+map_Ka Amadeus maps\\cs_office_texture_93.png
+
+newmtl texture_94
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_94.png
+map_Ka Amadeus maps\\cs_office_texture_94.png
+
+newmtl texture_95
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_95.png
+map_Ka Amadeus maps\\cs_office_texture_95.png
+
+newmtl texture_96
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_96.png
+map_Ka Amadeus maps\\cs_office_texture_96.png
+
+newmtl texture_97
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_97.png
+map_Ka Amadeus maps\\cs_office_texture_97.png
+
+newmtl texture_98
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_98.png
+map_Ka Amadeus maps\\cs_office_texture_98.png
+
+newmtl texture_99
+Ns 29.411765
+Ka 0.550000 0.550000 0.550000
+Kd 0.550000 0.550000 0.550000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd Amadeus maps\cs_office_texture_99.png
+map_Ka Amadeus maps\\cs_office_texture_99.png

@@ -19,6 +19,25 @@ Renderer::Vulkan::VulkanTextureBuffer::VulkanTextureBuffer(VulkanDevice* device,
 	m_gpu_allocation[BufferChain::Single].image_info = VulkanInitializers::DescriptorImageInfo(m_sampler,m_view, m_image_layout);
 }
 
+Renderer::Vulkan::VulkanTextureBuffer::VulkanTextureBuffer(VulkanDevice * device, BufferChain level, void * dataPtr, DataFormat format, unsigned int width, unsigned int height):
+	VulkanBuffer(device, level, dataPtr, GetFormatSize(format) * width * height, 1,
+		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT),
+	IBuffer(level),
+	ITextureBuffer(level)
+{
+	m_format = format;
+	m_width = width;
+	m_height = height;
+	InitTexture();
+
+	VkDeviceSize offset = 0;
+	for (unsigned int slot = 0; slot <= (unsigned int)level; slot++)
+	{
+		m_gpu_allocation[slot].image_info = VulkanInitializers::DescriptorImageInfo(m_sampler, m_view, m_image_layout);
+	}
+}
+
 Renderer::Vulkan::VulkanTextureBuffer::~VulkanTextureBuffer()
 {
 	vkDestroyImage(
@@ -61,12 +80,9 @@ intptr_t Renderer::Vulkan::VulkanTextureBuffer::GetTextureID()
 
 void Renderer::Vulkan::VulkanTextureBuffer::InitTexture()
 {
-
 	VkFormat format = GetFormat(m_format);
 
 	VkFormatProperties format_properties = m_device->GetVulkanPhysicalDevice()->GetFormatProperties(format);
-
-
 	
 	uint32_t offset = 0;
 

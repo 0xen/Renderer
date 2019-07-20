@@ -162,6 +162,11 @@ ITextureBuffer * Renderer::Vulkan::VulkanRenderer::CreateTextureBuffer(void * da
 	return new VulkanTextureBuffer(m_device, dataPtr, format, width, height);
 }
 
+ITextureBuffer * Renderer::Vulkan::VulkanRenderer::CreateTextureBuffer(void * dataPtr, BufferChain level, DataFormat format, unsigned int width, unsigned int height)
+{
+	return new VulkanTextureBuffer(m_device, level,  dataPtr, format, width, height);
+}
+
 IDescriptor * Renderer::Vulkan::VulkanRenderer::CreateDescriptor(DescriptorType descriptor_type, ShaderStage shader_stage, unsigned int binding, unsigned int count)
 {
 	return new VulkanDescriptor(descriptor_type, shader_stage, binding, count);
