@@ -2,6 +2,8 @@
 
 #include <renderer\vulkan\VulkanStatus.hpp>
 
+#include <vector>
+
 namespace Renderer
 {
 	namespace Vulkan

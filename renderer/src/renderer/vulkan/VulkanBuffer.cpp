@@ -12,6 +12,8 @@ Renderer::Vulkan::VulkanBuffer::VulkanBuffer(VulkanDevice * device, BufferChain 
 	if (level>BufferChain::Single) m_usage |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
 	m_memory_propertys_flag = memory_propertys_flag;
 
+	m_local_allocation = new BufferLocalAllocation[(unsigned int)level + 1];
+
 	for (unsigned int slot = 0; slot <= (unsigned int)level; slot++)
 	{
 		// Setup local GPU data

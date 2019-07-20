@@ -284,7 +284,7 @@ void Renderer::Vulkan::VulkanModelPool::AttachToCommandBuffer(VkCommandBuffer & 
 		command_buffer,
 		0,
 		1,
-		&dynamic_cast<VulkanVertexBuffer*>(m_vertex_buffer)->GetBufferData(BufferSlot::Primary)->buffer,
+		&m_vertex_buffer->GetBufferData(BufferSlot::Primary)->buffer,
 		offsets
 	);
 
@@ -292,7 +292,7 @@ void Renderer::Vulkan::VulkanModelPool::AttachToCommandBuffer(VkCommandBuffer & 
 	{
 		vkCmdBindIndexBuffer(
 			command_buffer,
-			dynamic_cast<VulkanIndexBuffer*>(m_index_buffer)->GetBufferData(BufferSlot::Primary)->buffer,
+			m_index_buffer->GetBufferData(BufferSlot::Primary)->buffer,
 			GetIndexOffset() * m_index_buffer->GetIndexSize(BufferSlot::Primary),
 			VK_INDEX_TYPE_UINT32
 		);
@@ -315,7 +315,7 @@ void Renderer::Vulkan::VulkanModelPool::AttachToCommandBuffer(VkCommandBuffer & 
 				for (auto buffer = m_buffers.begin(); buffer != m_buffers.end(); buffer++)
 				{
 					buffer_offsets.push_back((m_model_buffer_mapping[j][buffer->first] + 0) * buffer->second->GetBuffer()->GetIndexSize(BufferSlot::Primary));
-					vertex_buffers.push_back(dynamic_cast<VulkanBuffer*>(buffer->second->GetBuffer())->GetBufferData(BufferSlot::Primary)->buffer);
+					vertex_buffers.push_back(buffer->second->GetBuffer()->GetBufferData(BufferSlot::Primary)->buffer);
 				}
 				vkCmdBindVertexBuffers(
 					command_buffer,
@@ -394,7 +394,7 @@ void Renderer::Vulkan::VulkanModelPool::AttachToCommandBuffer(VkCommandBuffer & 
 		command_buffer,
 		0,
 		1,
-		&dynamic_cast<VulkanVertexBuffer*>(m_vertex_buffer)->GetBufferData(BufferSlot::Primary)->buffer,
+		&m_vertex_buffer->GetBufferData(BufferSlot::Primary)->buffer,
 		offsets
 	);
 
@@ -402,7 +402,7 @@ void Renderer::Vulkan::VulkanModelPool::AttachToCommandBuffer(VkCommandBuffer & 
 	{
 		vkCmdBindIndexBuffer(
 			command_buffer,
-			dynamic_cast<VulkanIndexBuffer*>(m_index_buffer)->GetBufferData(BufferSlot::Primary)->buffer,
+			m_index_buffer->GetBufferData(BufferSlot::Primary)->buffer,
 			0,
 			VK_INDEX_TYPE_UINT16
 		);

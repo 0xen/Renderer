@@ -5,7 +5,7 @@
 using namespace Renderer;
 using namespace Renderer::Vulkan;
 
-Renderer::Vulkan::VulkanTextureBuffer::VulkanTextureBuffer(VulkanDevice* device, void* dataPtr, DataFormat format, unsigned int width, unsigned int height):
+Renderer::Vulkan::VulkanTextureBuffer::VulkanTextureBuffer(VulkanDevice* device, void* dataPtr, VkFormat format, unsigned int width, unsigned int height):
 	VulkanBuffer(device, BufferChain::Single, dataPtr, GetFormatSize(format) * width * height, 1,
 		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
@@ -17,7 +17,7 @@ Renderer::Vulkan::VulkanTextureBuffer::VulkanTextureBuffer(VulkanDevice* device,
 	m_gpu_allocation[BufferChain::Single].image_info = VulkanInitializers::DescriptorImageInfo(m_sampler,m_view, m_image_layout);
 }
 
-Renderer::Vulkan::VulkanTextureBuffer::VulkanTextureBuffer(VulkanDevice * device, BufferChain level, void * dataPtr, DataFormat format, unsigned int width, unsigned int height):
+Renderer::Vulkan::VulkanTextureBuffer::VulkanTextureBuffer(VulkanDevice * device, BufferChain level, void * dataPtr, VkFormat format, unsigned int width, unsigned int height):
 	VulkanBuffer(device, level, dataPtr, GetFormatSize(format) * width * height, 1,
 		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
@@ -76,9 +76,8 @@ intptr_t Renderer::Vulkan::VulkanTextureBuffer::GetTextureID()
 
 void Renderer::Vulkan::VulkanTextureBuffer::InitTexture()
 {
-	VkFormat format = GetFormat(m_format);
 
-	VkFormatProperties format_properties = m_device->GetVulkanPhysicalDevice()->GetFormatProperties(format);
+	VkFormatProperties format_properties = m_device->GetVulkanPhysicalDevice()->GetFormatProperties(m_format);
 	
 	uint32_t offset = 0;
 
@@ -100,7 +99,7 @@ void Renderer::Vulkan::VulkanTextureBuffer::InitTexture()
 	VkImageCreateInfo image_create_info = VulkanInitializers::ImageCreateInfo(
 		m_width,
 		m_height,
-		format,
+		m_format,
 		VK_IMAGE_TILING_OPTIMAL,
 		VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
 		m_mipLevels
@@ -186,7 +185,7 @@ void Renderer::Vulkan::VulkanTextureBuffer::InitTexture()
 		&m_sampler
 	));
 
-	VkImageViewCreateInfo view_info = VulkanInitializers::ImageViewCreate(m_image, format, VK_IMAGE_ASPECT_COLOR_BIT);
+	VkImageViewCreateInfo view_info = VulkanInitializers::ImageViewCreate(m_image, m_format, VK_IMAGE_ASPECT_COLOR_BIT);
 
 	view_info.components = { VK_COMPONENT_SWIZZLE_R, VK_COMPONENT_SWIZZLE_G, VK_COMPONENT_SWIZZLE_B, VK_COMPONENT_SWIZZLE_A };
 
@@ -270,33 +269,38 @@ void Renderer::Vulkan::VulkanTextureBuffer::MoveDataToImage()
 	m_device->FreeGraphicsCommand(&copy_cmd, 1);
 }
 
-unsigned int Renderer::Vulkan::VulkanTextureBuffer::GetFormatSize(DataFormat format)
+unsigned int Renderer::Vulkan::VulkanTextureBuffer::GetFormatSize(VkFormat format)
 {
+	
 	switch (format)
 	{
-	case R8G8_FLOAT:
-		return 2;
-		break;
-	case R8G8B8_FLOAT:
-		return 3;
-		break;
-	case R8G8B8A8_FLOAT:
-		return 4;
-		break;
+		case VkFormat::VK_FORMAT_R8G8_UNORM:
+		case VkFormat::VK_FORMAT_R8G8_SNORM:
+		case VkFormat::VK_FORMAT_R8G8_USCALED:
+		case VkFormat::VK_FORMAT_R8G8_SSCALED:
+		case VkFormat::VK_FORMAT_R8G8_UINT:
+		case VkFormat::VK_FORMAT_R8G8_SINT:
+		case VkFormat::VK_FORMAT_R8G8_SRGB:
+			return 2;
+			break;
+		case VkFormat::VK_FORMAT_R8G8B8_UNORM:
+		case VkFormat::VK_FORMAT_R8G8B8_SNORM:
+		case VkFormat::VK_FORMAT_R8G8B8_USCALED:
+		case VkFormat::VK_FORMAT_R8G8B8_SSCALED:
+		case VkFormat::VK_FORMAT_R8G8B8_UINT:
+		case VkFormat::VK_FORMAT_R8G8B8_SINT:
+		case VkFormat::VK_FORMAT_R8G8B8_SRGB:
+			return 3;
+			break;
+		case VkFormat::VK_FORMAT_R8G8B8A8_UNORM:
+		case VkFormat::VK_FORMAT_R8G8B8A8_SNORM:
+		case VkFormat::VK_FORMAT_R8G8B8A8_USCALED:
+		case VkFormat::VK_FORMAT_R8G8B8A8_SSCALED:
+		case VkFormat::VK_FORMAT_R8G8B8A8_UINT:
+		case VkFormat::VK_FORMAT_R8G8B8A8_SINT:
+		case VkFormat::VK_FORMAT_R8G8B8A8_SRGB:
+			return 4;
+			break;
 	}
 	return 0;
-}
-
-VkFormat Renderer::Vulkan::VulkanTextureBuffer::GetFormat(DataFormat format)
-{
-	switch (format)
-	{
-	case R8G8_FLOAT:
-		return VK_FORMAT_R8G8_UNORM;
-	case R8G8B8_FLOAT:
-		return VK_FORMAT_R8G8B8_UNORM;
-	case R8G8B8A8_FLOAT:
-		return VK_FORMAT_R8G8B8A8_UNORM;
-	}
-	return VK_FORMAT_R8G8B8A8_UNORM;
 }

@@ -7,9 +7,6 @@
 #include <renderer/vulkan/VulkanModelPool.hpp>
 #include <renderer/vulkan/VulkanDescriptorPool.hpp>
 #include <renderer/vulkan/VulkanDescriptorSet.hpp>
-#include <renderer/ShaderStage.hpp>
-#include <renderer/DataFormat.hpp>
-#include <renderer/IModelPool.hpp>
 #include <renderer/VertexBase.hpp>
 
 #include <glm/glm.hpp>
@@ -107,15 +104,14 @@ bool Renderer::Vulkan::VulkanGraphicsPipeline::CreatePipeline()
 		{
 			switch (vertex->GetFormat())
 			{
-			case DataFormat::MAT4_FLOAT:
+			case VkFormat::VK_FORMAT_R32G32B32A32_SFLOAT://DataFormat::MAT4_FLOAT:
 			{
-				VkFormat format = VK_FORMAT_R32G32B32A32_SFLOAT;
 				uint32_t location = vertex->GetLocation();
 				unsigned int size_of = sizeof(glm::vec4);
-				m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(1, location, format, vertex->GetOffset() + 0));
-				m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(1, location + 1, format, vertex->GetOffset() + size_of));
-				m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(1, location + 2, format, vertex->GetOffset() + (2 * size_of)));
-				m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(1, location + 3, format, vertex->GetOffset() + (3 * size_of)));
+				m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(1, location, vertex->GetFormat(), vertex->GetOffset() + 0));
+				m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(1, location + 1, vertex->GetFormat(), vertex->GetOffset() + size_of));
+				m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(1, location + 2, vertex->GetFormat(), vertex->GetOffset() + (2 * size_of)));
+				m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(1, location + 3, vertex->GetFormat(), vertex->GetOffset() + (3 * size_of)));
 				//m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(0, vertex->GetLocation(), GetFormat(vertex->GetFormat()), vertex->GetOffset()));
 			}
 				break;

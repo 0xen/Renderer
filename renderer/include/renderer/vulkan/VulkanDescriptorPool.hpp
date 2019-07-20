@@ -2,7 +2,6 @@
 
 #include <renderer\vulkan\VulkanHeader.hpp>
 #include <renderer\vulkan\VulkanStatus.hpp>
-#include <renderer\vulkan\VulkanDescriptor.hpp>
 
 #include <vector>
 
@@ -11,6 +10,8 @@ namespace Renderer
 	namespace Vulkan
 	{
 		class VulkanDevice;
+		class VulkanDescriptorSet;
+		class VulkanDescriptor;
 		class VulkanDescriptorPool : public VulkanStatus
 		{
 		public:
@@ -19,7 +20,7 @@ namespace Renderer
 			VkDescriptorPool GetDescriptorPool();
 			VkDescriptorSetLayout GetDescriptorSetLayout();
 			std::vector<VulkanDescriptor*> GetDescriptors();
-			IDescriptorSet * CreateDescriptorSet();
+			VulkanDescriptorSet * CreateDescriptorSet();
 		private:
 			VulkanDevice * m_device;
 			std::vector<VkDescriptorSetLayoutBinding> m_layout_bindings;

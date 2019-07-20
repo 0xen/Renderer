@@ -1,14 +1,14 @@
 #pragma once
 
 #include <renderer/vulkan/VulkanStatus.hpp>
-#include <renderer\DescriptorType.hpp>
-#include <renderer\ShaderStage.hpp>
 
-
+#include <vector>
+#include <map>
 #include <glm\glm.hpp>
 
 namespace Renderer
 {
+	class NativeWindowHandle;
 	namespace Vulkan
 	{
 		class VulkanInstance;
@@ -26,6 +26,9 @@ namespace Renderer
 		class VulkanAcceleration;
 		class VulkanComputePipeline;
 		class VulkanComputeProgram;
+		class VulkanModelPool;
+		class VulkanDescriptorPool;
+		enum BufferChain;
 
 		class VulkanRenderer : public VulkanStatus
 		{
@@ -58,11 +61,9 @@ namespace Renderer
 
 			VulkanModelPool* CreateModelPool(VulkanVertexBuffer* vertex_buffer, unsigned int vertex_offset, unsigned int vertex_size);
 
-			VulkanTextureBuffer* CreateTextureBuffer(void* dataPtr, DataFormat format, unsigned int width, unsigned int height);
+			VulkanTextureBuffer* CreateTextureBuffer(void* dataPtr, VkFormat format, unsigned int width, unsigned int height);
 
-			VulkanTextureBuffer* CreateTextureBuffer(void* dataPtr, BufferChain level, DataFormat format, unsigned int width, unsigned int height);
-
-			//VulkanDescriptor* CreateDescriptor(DescriptorType descriptor_type, ShaderStage shader_stage, unsigned int binding, unsigned int count = 1);
+			VulkanTextureBuffer* CreateTextureBuffer(void* dataPtr, BufferChain level, VkFormat format, unsigned int width, unsigned int height);
 
 			VulkanDescriptor* CreateDescriptor(VkDescriptorType descriptor_type, VkShaderStageFlags shader_stage, unsigned int binding,unsigned int count = 1);
 
@@ -75,10 +76,6 @@ namespace Renderer
 			VulkanSwapchain* GetSwapchain();
 
 			bool IsRunning();
-
-			static VkDescriptorType ToDescriptorType(DescriptorType descriptor_type);
-
-			static VkShaderStageFlagBits ToVulkanShader(ShaderStage stage);
 		private:
 			void CreateSurface(Renderer::NativeWindowHandle* window_handle);
 			Renderer::NativeWindowHandle* m_window_handle;

@@ -28,8 +28,7 @@ void Renderer::Vulkan::VulkanComputeProgram::Build()
 	m_command_buffer = VulkanCommon::BeginSimultaneousCommand(m_device, *m_device->GetComputeCommandPool());
 	for (auto cp : m_pipelines)
 	{
-		VulkanComputePipeline* vcp = dynamic_cast<VulkanComputePipeline*>(cp);
-		vcp->AttachToCommandBuffer(m_command_buffer);
+		cp->AttachToCommandBuffer(m_command_buffer);
 	}
 
 	ErrorCheck(vkEndCommandBuffer(

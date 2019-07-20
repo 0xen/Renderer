@@ -19,6 +19,8 @@
 #include <renderer\vulkan\VulkanRaytracePipeline.hpp>
 #include <renderer\vulkan\VulkanAcceleration.hpp>
 
+#include <renderer/NativeWindowHandle.hpp>
+
 #include <assert.h>
 
 using namespace Renderer;
@@ -134,7 +136,7 @@ VulkanGraphicsPipeline * Renderer::Vulkan::VulkanRenderer::CreateGraphicsPipelin
 
 void Renderer::Vulkan::VulkanRenderer::RemoveGraphicsPipeline(VulkanGraphicsPipeline * pipeline)
 {
-	m_swapchain->RemoveGraphicsPipeline(static_cast<VulkanGraphicsPipeline*>(pipeline));
+	m_swapchain->RemoveGraphicsPipeline(pipeline);
 }
 
 VulkanComputePipeline * Renderer::Vulkan::VulkanRenderer::CreateComputePipeline(const char * path, unsigned int x, unsigned int y, unsigned int z)
@@ -157,12 +159,12 @@ VulkanModelPool * Renderer::Vulkan::VulkanRenderer::CreateModelPool(VulkanVertex
 	return new VulkanModelPool(m_device, vertex_buffer, vertex_offset,vertex_size);
 }
 
-VulkanTextureBuffer * Renderer::Vulkan::VulkanRenderer::CreateTextureBuffer(void * dataPtr, DataFormat format, unsigned int width, unsigned int height)
+VulkanTextureBuffer * Renderer::Vulkan::VulkanRenderer::CreateTextureBuffer(void * dataPtr, VkFormat format, unsigned int width, unsigned int height)
 {
 	return new VulkanTextureBuffer(m_device, dataPtr, format, width, height);
 }
 
-VulkanTextureBuffer * Renderer::Vulkan::VulkanRenderer::CreateTextureBuffer(void * dataPtr, BufferChain level, DataFormat format, unsigned int width, unsigned int height)
+VulkanTextureBuffer * Renderer::Vulkan::VulkanRenderer::CreateTextureBuffer(void * dataPtr, BufferChain level, VkFormat format, unsigned int width, unsigned int height)
 {
 	return new VulkanTextureBuffer(m_device, level,  dataPtr, format, width, height);
 }
@@ -204,35 +206,6 @@ bool Renderer::Vulkan::VulkanRenderer::IsRunning()
 	return m_running;
 }
 
-VkDescriptorType Renderer::Vulkan::VulkanRenderer::ToDescriptorType(DescriptorType descriptor_type)
-{
-	switch (descriptor_type)
-	{
-	case UNIFORM:
-		return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	case STORAGE_BUFFER:
-		return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-	case IMAGE_SAMPLER:
-		return VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-	}
-	return VK_DESCRIPTOR_TYPE_MAX_ENUM;
-}
-
-VkShaderStageFlagBits Renderer::Vulkan::VulkanRenderer::ToVulkanShader(ShaderStage stage)
-{
-	switch(stage)
-	{
-		case VERTEX_SHADER:
-			return VK_SHADER_STAGE_VERTEX_BIT;
-		case FRAGMENT_SHADER:
-			return VK_SHADER_STAGE_FRAGMENT_BIT;
-		case COMPUTE_SHADER:
-			return VK_SHADER_STAGE_COMPUTE_BIT;
-		case GEOMETRY_SHADER:
-			return VK_SHADER_STAGE_GEOMETRY_BIT;
-	}
-	return VK_SHADER_STAGE_FLAG_BITS_MAX_ENUM;
-}
 
 void Renderer::Vulkan::VulkanRenderer::CreateSurface(Renderer::NativeWindowHandle* window_handle)
 {

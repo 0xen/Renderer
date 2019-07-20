@@ -1,10 +1,6 @@
 #pragma once
 
 #include <renderer\vulkan\VulkanHeader.hpp>
-#include <renderer\ShaderStage.hpp>
-#include <renderer\ITextureBuffer.hpp>
-
-#include <renderer\ShaderStage.hpp>
 
 #include <vector>
 #include <map>

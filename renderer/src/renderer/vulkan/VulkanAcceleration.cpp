@@ -7,6 +7,7 @@
 #include <renderer/vulkan/VulkanVertexBuffer.hpp>
 #include <renderer/vulkan/VulkanIndexBuffer.hpp>
 #include <renderer\vulkan\VulkanBufferData.hpp>
+#include <renderer\vulkan\VulkanModel.hpp>
 
 
 Renderer::Vulkan::VulkanAcceleration::VulkanAcceleration(VulkanDevice* device)
@@ -129,8 +130,8 @@ Renderer::Vulkan::AccelerationStructure Renderer::Vulkan::VulkanAcceleration::Cr
 
 	if (pool->Indexed())
 	{
-		VulkanVertexBuffer* vertexBuffer = static_cast<VulkanVertexBuffer*>(pool->GetVertexBuffer());
-		VulkanIndexBuffer* indexBuffer = static_cast<VulkanIndexBuffer*>(pool->GetIndexBuffer());
+		VulkanVertexBuffer* vertexBuffer = pool->GetVertexBuffer();
+		VulkanIndexBuffer* indexBuffer = pool->GetIndexBuffer();
 		VkGeometryNV geom = VulkanInitializers::CreateRayTraceGeometry(
 			vertexBuffer->GetBufferData(BufferSlot::Primary)->buffer,                   // buffer
 			pool->GetVertexOffset() *vertexBuffer->GetIndexSize(BufferSlot::Primary),  // Offset
@@ -146,7 +147,7 @@ Renderer::Vulkan::AccelerationStructure Renderer::Vulkan::VulkanAcceleration::Cr
 	}
 	else
 	{
-		VulkanVertexBuffer* vertexBuffer = static_cast<VulkanVertexBuffer*>(pool->GetVertexBuffer());
+		VulkanVertexBuffer* vertexBuffer = pool->GetVertexBuffer();
 		VkGeometryNV geom = VulkanInitializers::CreateRayTraceGeometry(
 			vertexBuffer->GetBufferData(BufferSlot::Primary)->buffer,                   // buffer
 			pool->GetVertexOffset() * vertexBuffer->GetIndexSize(BufferSlot::Primary),  // Offset

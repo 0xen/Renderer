@@ -2,8 +2,6 @@
 #include <renderer/vulkan/VulkanBuffer.hpp>
 #include <renderer/vulkan/VulkanInitializers.hpp>
 
-#include <renderer/ShaderStage.hpp>
-
 using namespace Renderer::Vulkan;
 
 Renderer::Vulkan::VulkanUniformBuffer::VulkanUniformBuffer(VulkanDevice * device, BufferChain level, void * dataPtr, unsigned int indexSize, unsigned int elementCount, bool modifiable) :

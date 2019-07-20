@@ -4,48 +4,15 @@ project(${project_name})
 set(HAVE_LIBC TRUE)
 
 set(common_src
-    src/renderer/IBuffer.cpp
-    src/renderer/IUniformBuffer.cpp
-    src/renderer/IPipeline.cpp
-    src/renderer/IComputePipeline.cpp
-    src/renderer/IComputeProgram.cpp
-    src/renderer/IVertexBuffer.cpp
     src/renderer/VertexBase.cpp
-    src/renderer/IIndexBuffer.cpp
-    src/renderer/IGraphicsPipeline.cpp
-    src/renderer/IModel.cpp
-    src/renderer/IModelPool.cpp
-    src/renderer/IDescriptor.cpp
-    src/renderer/IDescriptorPool.cpp
-    src/renderer/IDescriptorSet.cpp
-    src/renderer/IBufferPool.cpp
 )
 
 set(common_headers
     include/renderer/NativeWindowHandle.hpp
-    include/renderer/IBuffer.hpp
-    include/renderer/IUniformBuffer.hpp
     include/renderer/Status.hpp
-    include/renderer/APIs.hpp
-    include/renderer/ShaderStage.hpp
-    include/renderer/DescriptorType.hpp
-    include/renderer/IPipeline.hpp
-    include/renderer/IComputePipeline.hpp
-    include/renderer/IComputeProgram.hpp
-    include/renderer/IVertexBuffer.hpp
-    include/renderer/IIndexBuffer.hpp
-    include/renderer/IGraphicsPipeline.hpp
     include/renderer/VertexBase.hpp
     include/renderer/VertexBinding.hpp
-    include/renderer/DataFormat.hpp
-    include/renderer/IModel.hpp
-    include/renderer/IModelPool.hpp
     include/renderer/VertexInputRate.hpp
-    include/renderer/ITextureBuffer.hpp
-    include/renderer/IDescriptor.hpp
-    include/renderer/IDescriptorPool.hpp
-    include/renderer/IDescriptorSet.hpp
-    include/renderer/IBufferPool.hpp
 
 )
 

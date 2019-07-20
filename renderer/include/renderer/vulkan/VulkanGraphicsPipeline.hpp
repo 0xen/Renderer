@@ -2,7 +2,6 @@
 
 #include <renderer\vulkan\VulkanPipeline.hpp>
 #include <renderer\vulkan\VulkanStatus.hpp>
-#include <renderer/DataFormat.hpp>
 
 #include <map>
 

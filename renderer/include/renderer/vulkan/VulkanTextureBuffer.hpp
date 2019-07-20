@@ -2,7 +2,6 @@
 
 #include <renderer/vulkan/VulkanHeader.hpp>
 #include <renderer/vulkan/VulkanBuffer.hpp>
-#include <renderer/DataFormat.hpp>
 
 namespace Renderer
 {
@@ -12,8 +11,8 @@ namespace Renderer
 		class VulkanTextureBuffer : public VulkanBuffer, public VulkanStatus
 		{
 		public:
-			VulkanTextureBuffer(VulkanDevice* device, void* dataPtr, DataFormat format, unsigned int width, unsigned int height);
-			VulkanTextureBuffer(VulkanDevice* device, BufferChain level, void* dataPtr, DataFormat format, unsigned int width, unsigned int height);
+			VulkanTextureBuffer(VulkanDevice* device, void* dataPtr, VkFormat format, unsigned int width, unsigned int height);
+			VulkanTextureBuffer(VulkanDevice* device, BufferChain level, void* dataPtr, VkFormat format, unsigned int width, unsigned int height);
 			virtual ~VulkanTextureBuffer();
 			VkImage& GetImage();
 			virtual void SetData(BufferSlot slot);
@@ -22,10 +21,9 @@ namespace Renderer
 			void InitTexture();
 			void MoveDataToImage();
 
-			static unsigned int GetFormatSize(DataFormat format);
-			static VkFormat GetFormat(DataFormat format);
+			static unsigned int GetFormatSize(VkFormat format);
 
-			DataFormat m_format;
+			VkFormat m_format;
 			unsigned int m_width;
 			unsigned int m_height;
 			int m_mipLevels;

@@ -28,26 +28,26 @@ void Renderer::Vulkan::VulkanDescriptorSet::UpdateSet()
 		if (HasBufferAtLocation(descriptor->GetBinding()))
 		{
 			VulkanBuffer* buffer = m_bufers[descriptor->GetBinding()];
-			if (descriptor->GetVulkanDescriptorType() == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+			if (descriptor->GetDescriptorType() == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
 			{
-				m_write_descriptor_sets.push_back(VulkanInitializers::WriteDescriptorSet(m_descriptor_set, buffer->GetDescriptorImageInfo(BufferSlot::Primary), descriptor->GetVulkanDescriptorType(), descriptor->GetBinding()));
+				m_write_descriptor_sets.push_back(VulkanInitializers::WriteDescriptorSet(m_descriptor_set, buffer->GetDescriptorImageInfo(BufferSlot::Primary), descriptor->GetDescriptorType(), descriptor->GetBinding()));
 			}
 			else
 			{
-				m_write_descriptor_sets.push_back(VulkanInitializers::WriteDescriptorSet(m_descriptor_set, buffer->GetDescriptorBufferInfo(BufferSlot::Primary), descriptor->GetVulkanDescriptorType(), descriptor->GetBinding()));
+				m_write_descriptor_sets.push_back(VulkanInitializers::WriteDescriptorSet(m_descriptor_set, buffer->GetDescriptorBufferInfo(BufferSlot::Primary), descriptor->GetDescriptorType(), descriptor->GetBinding()));
 			}
 		}
 		else if (m_as_structs.find(descriptor->GetBinding()) != m_as_structs.end())
 		{
-			m_write_descriptor_sets.push_back(VulkanInitializers::WriteDescriptorSet(m_descriptor_set, m_as_structs[descriptor->GetBinding()], descriptor->GetVulkanDescriptorType(), descriptor->GetBinding()));
+			m_write_descriptor_sets.push_back(VulkanInitializers::WriteDescriptorSet(m_descriptor_set, m_as_structs[descriptor->GetBinding()], descriptor->GetDescriptorType(), descriptor->GetBinding()));
 		}
 		else if (m_images.find(descriptor->GetBinding()) != m_images.end())
 		{
-			m_write_descriptor_sets.push_back(VulkanInitializers::WriteDescriptorSet(m_descriptor_set, m_images[descriptor->GetBinding()], descriptor->GetVulkanDescriptorType(), descriptor->GetBinding()));
+			m_write_descriptor_sets.push_back(VulkanInitializers::WriteDescriptorSet(m_descriptor_set, m_images[descriptor->GetBinding()], descriptor->GetDescriptorType(), descriptor->GetBinding()));
 		}
 		else if (m_buffers_arrays.find(descriptor->GetBinding()) != m_buffers_arrays.end())
 		{
-			m_write_descriptor_sets.push_back(VulkanInitializers::WriteDescriptorSet(m_descriptor_set, m_buffers_arrays[descriptor->GetBinding()], descriptor->GetVulkanDescriptorType(), descriptor->GetBinding()));
+			m_write_descriptor_sets.push_back(VulkanInitializers::WriteDescriptorSet(m_descriptor_set, m_buffers_arrays[descriptor->GetBinding()], descriptor->GetDescriptorType(), descriptor->GetBinding()));
 		}
 	}
 	vkUpdateDescriptorSets(*m_device->GetVulkanDevice(), (uint32_t)m_write_descriptor_sets.size(), m_write_descriptor_sets.data(), 0, NULL);
@@ -55,7 +55,7 @@ void Renderer::Vulkan::VulkanDescriptorSet::UpdateSet()
 
 void Renderer::Vulkan::VulkanDescriptorSet::AttachBuffer(unsigned int location, VulkanBuffer * buffer)
 {
-	m_bufers[location] = dynamic_cast<VulkanBuffer*>(buffer);
+	m_bufers[location] = buffer;
 }
 
 void Renderer::Vulkan::VulkanDescriptorSet::AttachBuffer(unsigned int location, std::vector<VulkanBuffer*> descriptorSet)
@@ -63,7 +63,7 @@ void Renderer::Vulkan::VulkanDescriptorSet::AttachBuffer(unsigned int location, 
 	std::vector<VkDescriptorBufferInfo> buffers;
 	for (auto& buffer : descriptorSet)
 	{
-		buffers.push_back(dynamic_cast<VulkanBuffer*>(buffer)->GetDescriptorBufferInfo(BufferSlot::Primary));
+		buffers.push_back(buffer->GetDescriptorBufferInfo(BufferSlot::Primary));
 	}
 	m_buffers_arrays[location] = buffers;
 }

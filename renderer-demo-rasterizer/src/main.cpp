@@ -21,6 +21,13 @@
 #include <renderer/vulkan/VulkanRenderer.hpp>
 #include <renderer/vulkan/VulkanTextureBuffer.hpp>
 #include <renderer/vulkan/VulkanFlags.hpp>
+#include <renderer/vulkan/VulkanVertexBuffer.hpp>
+#include <renderer/vulkan/VulkanIndexBuffer.hpp>
+#include <renderer/vulkan/VulkanBufferPool.hpp>
+#include <renderer/vulkan/VulkanModel.hpp>
+#include <renderer/vulkan/VulkanDescriptorPool.hpp>
+
+
 #include <renderer\VertexBase.hpp>
 
 #include "obj_loader.h"
@@ -165,7 +172,7 @@ uint32_t all_indexs[index_max];
 
 VulkanVertexBuffer* vertexBuffer;
 VulkanIndexBuffer* indexBuffer;
-/*
+
 VulkanModelPool* LoadModel(std::string path)
 {
 	ObjLoader<Vertex> loader;
@@ -212,14 +219,14 @@ VulkanModelPool* LoadModel(std::string path)
 		unsigned error = lodepng::decode(image, width, height, ss.str());
 		if (error) std::cout << "decoder error " << error << ": " << lodepng_error_text(error) << std::endl;
 
-		VulkanTextureBuffer* texture = dynamic_cast<Vulkan::VulkanTextureBuffer*>(renderer->CreateTextureBuffer(image.data(), Renderer::DataFormat::R8G8B8A8_FLOAT, width, height));
+		VulkanTextureBuffer* texture = renderer->CreateTextureBuffer(image.data(), VkFormat::VK_FORMAT_R8G8B8A8_UNORM, width, height);
 		texture->SetData(BufferSlot::Primary);
 		textures.push_back(texture);
 		texture_descriptors.push_back(texture->GetDescriptorImageInfo(BufferSlot::Primary));
 	}
 
 	return renderer->CreateModelPool(vertexBuffer, vertexStart, m_nbVertices, indexBuffer, indexStart, m_nbIndices);
-}*/
+}
 
 
 int main(int argc, char **argv)
@@ -234,9 +241,7 @@ int main(int argc, char **argv)
 
 	renderer->Start(window_handle, VulkanFlags::Raytrace/* | VulkanFlags::ActiveCMDRebuild*/);
 
-
-
-	/*
+	
 
 	// Ray camera
 	glm::mat4 mPos = glm::mat4(1.0f);
@@ -265,10 +270,10 @@ int main(int argc, char **argv)
 	vertexBuffer = renderer->CreateVertexBuffer(all_vertexs, sizeof(Vertex), vertex_max);
 	indexBuffer = renderer->CreateIndexBuffer(all_indexs, sizeof(uint32_t), index_max);
 
-	IModelPool* model_pool1 = LoadModel("../../renderer-demo/media/scenes/Medieval_building.obj");
-	IModelPool* model_pool2 = LoadModel("../../renderer-demo/media/scenes/sphere.obj");
+	VulkanModelPool* model_pool1 = LoadModel("../../renderer-demo/media/scenes/Medieval_building.obj");
+	VulkanModelPool* model_pool2 = LoadModel("../../renderer-demo/media/scenes/sphere.obj");
 
-
+	
 
 
 	std::vector<Vertex> vertexData = {
@@ -299,7 +304,7 @@ int main(int argc, char **argv)
 		used_vertex++;
 	}
 
-	IModelPool* model_pool3 = renderer->CreateModelPool(vertexBuffer, vertexStart, vertexData.size(), indexBuffer, indexStart, indexData.size());
+	VulkanModelPool* model_pool3 = renderer->CreateModelPool(vertexBuffer, vertexStart, vertexData.size(), indexBuffer, indexStart, indexData.size());
 
 
 
@@ -312,16 +317,16 @@ int main(int argc, char **argv)
 
 
 	glm::mat4* model_position_array = new glm::mat4[1000];
-	IUniformBuffer* model_position_buffer1 = renderer->CreateUniformBuffer(model_position_array, BufferChain::Double, sizeof(glm::mat4), 1000, true);
+	VulkanUniformBuffer* model_position_buffer1 = renderer->CreateUniformBuffer(model_position_array, BufferChain::Double, sizeof(glm::mat4), 1000, true);
 
-	IBufferPool* position_buffer_pool = new IBufferPool(model_position_buffer1);
+	VulkanBufferPool* position_buffer_pool = new VulkanBufferPool(model_position_buffer1);
 
 	model_pool1->AttachBufferPool(POSITION_BUFFER, position_buffer_pool);
 	model_pool2->AttachBufferPool(POSITION_BUFFER, position_buffer_pool);
 	model_pool3->AttachBufferPool(POSITION_BUFFER, position_buffer_pool);
 
 
-	IModel* model1 = model_pool2->CreateModel();
+	VulkanModel* model1 = model_pool2->CreateModel();
 
 	glm::mat4 modelPosition = glm::mat4(1.0f);
 	modelPosition = glm::translate(modelPosition, glm::vec3(0, 0, -2));
@@ -333,7 +338,7 @@ int main(int argc, char **argv)
 
 
 	{
-		IModel* model = model_pool3->CreateModel();
+		VulkanModel* model = model_pool3->CreateModel();
 
 		glm::mat4 pos = glm::mat4(1.0f);
 		pos = glm::translate(pos, glm::vec3(0, 0, 0));
@@ -344,9 +349,9 @@ int main(int argc, char **argv)
 	}
 
 
-	IModel* model2;
-	IModel* model3;
-	IModel* model4;
+	VulkanModel* model2;
+	VulkanModel* model3;
+	VulkanModel* model4;
 	{
 
 
@@ -391,42 +396,43 @@ int main(int argc, char **argv)
 
 
 
-
+	
 
 
 
 
 
 	//RayCamera
-	IUniformBuffer* cameraInfo = renderer->CreateUniformBuffer(&rayCamera, BufferChain::Single, sizeof(RayCamera), 1, true);
+	VulkanUniformBuffer* cameraInfo = renderer->CreateUniformBuffer(&rayCamera, BufferChain::Single, sizeof(RayCamera), 1, true);
 	cameraInfo->SetData(BufferSlot::Primary);
 
 
 
 
-	IGraphicsPipeline* pipeline = renderer->CreateGraphicsPipeline({
-		{ ShaderStage::VERTEX_SHADER, "../../renderer-demo/Shaders/vert.spv" },
-		{ ShaderStage::FRAGMENT_SHADER, "../../renderer-demo/Shaders/frag.spv" }
+	VulkanGraphicsPipeline* pipeline = renderer->CreateGraphicsPipeline({
+		{ VkShaderStageFlagBits::VK_SHADER_STAGE_VERTEX_BIT, "../../renderer-demo/Shaders/vert.spv" },
+		{ VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT, "../../renderer-demo/Shaders/frag.spv" }
 		});
 
 
+
 	pipeline->AttachVertexBinding({
-		VertexInputRate::INPUT_RATE_VERTEX,
+		VkVertexInputRate::VK_VERTEX_INPUT_RATE_VERTEX,
 		{
-			{ 0, DataFormat::R32G32B32_FLOAT,offsetof(Vertex,pos) },
-		{ 1, DataFormat::R32G32B32_FLOAT,offsetof(Vertex,nrm) },
-		{ 2, DataFormat::R32G32B32_FLOAT,offsetof(Vertex,color) },
-		{ 3, DataFormat::R32G32_FLOAT,offsetof(Vertex,texCoord) },
-		{ 4, DataFormat::R8_UINT,offsetof(Vertex,matID) },
+			{ 0, VkFormat::VK_FORMAT_R32G32B32_SFLOAT,offsetof(Vertex,pos) },
+			{ 1, VkFormat::VK_FORMAT_R32G32B32_SFLOAT,offsetof(Vertex,nrm) },
+			{ 2, VkFormat::VK_FORMAT_R32G32B32_SFLOAT,offsetof(Vertex,color) },
+			{ 3, VkFormat::VK_FORMAT_R32G32_SFLOAT,offsetof(Vertex,texCoord) },
+			{ 4, VkFormat::VK_FORMAT_R32_UINT,offsetof(Vertex,matID) },
 		},
 		sizeof(Vertex),
 		0
 		});
 
 	pipeline->AttachVertexBinding({
-		VertexInputRate::INPUT_RATE_INSTANCE,
+		VkVertexInputRate::VK_VERTEX_INPUT_RATE_INSTANCE,
 		{
-			{ 5, DataFormat::MAT4_FLOAT,0 }
+			{ 5, VkFormat::VK_FORMAT_R32G32B32A32_SFLOAT,0 }
 		},
 		sizeof(PositionVertex),
 		1
@@ -435,20 +441,20 @@ int main(int argc, char **argv)
 
 
 	VulkanDescriptorPool* camera_pool = renderer->CreateDescriptorPool({
-		renderer->CreateDescriptor(Renderer::DescriptorType::UNIFORM, Renderer::ShaderStage::VERTEX_SHADER, 0),
+		renderer->CreateDescriptor(VkDescriptorType::VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VkShaderStageFlagBits::VK_SHADER_STAGE_VERTEX_BIT, 0),
 		});
 	pipeline->AttachDescriptorPool(camera_pool);
 
-	IDescriptorSet* camera_descriptor_set = camera_pool->CreateDescriptorSet();
+	VulkanDescriptorSet* camera_descriptor_set = camera_pool->CreateDescriptorSet();
 	camera_descriptor_set->AttachBuffer(0, cameraInfo);
 	camera_descriptor_set->UpdateSet();
 
 	pipeline->AttachDescriptorSet(0, camera_descriptor_set);
 
+	
 
-
-	IDescriptorPool* texture_pool = renderer->CreateDescriptorPool({
-		renderer->CreateDescriptor(Renderer::DescriptorType::IMAGE_SAMPLER, Renderer::ShaderStage::FRAGMENT_SHADER, 0),
+	VulkanDescriptorPool* texture_pool = renderer->CreateDescriptorPool({
+		renderer->CreateDescriptor(VkDescriptorType::VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT, 0),
 		});
 	pipeline->AttachDescriptorPool(texture_pool);
 
@@ -456,7 +462,7 @@ int main(int argc, char **argv)
 
 
 	pipeline->Build();
-
+	
 
 
 	std::vector<unsigned char> image; //the raw pixels
@@ -465,11 +471,11 @@ int main(int argc, char **argv)
 	unsigned error = lodepng::decode(image, width, height, "../../renderer-demo/Images/cobble.png");
 	if (error) std::cout << "decoder error " << error << ": " << lodepng_error_text(error) << std::endl;
 
-	ITextureBuffer* texture = renderer->CreateTextureBuffer(image.data(), Renderer::DataFormat::R8G8B8A8_FLOAT, width, height);
+	VulkanTextureBuffer* texture = renderer->CreateTextureBuffer(image.data(), VkFormat::VK_FORMAT_R8G8B8A8_UNORM, width, height);
 
 
 
-	IDescriptorSet* texture_descriptor_set1 = texture_pool->CreateDescriptorSet();
+	VulkanDescriptorSet* texture_descriptor_set1 = texture_pool->CreateDescriptorSet();
 	texture_descriptor_set1->AttachBuffer(0, texture);
 	texture_descriptor_set1->UpdateSet();
 
@@ -490,16 +496,16 @@ int main(int argc, char **argv)
 
 
 
-
+	
 	VulkanRaytracePipeline* ray_pipeline = renderer->CreateRaytracePipeline(
 		{
-			{ ShaderStage::RAY_GEN,		"../../renderer-demo/Shaders/Raytrace/Compleate/Gen/rgen.spv" },
-		{ ShaderStage::MISS,		"../../renderer-demo/Shaders/Raytrace/Compleate/Miss/rmiss.spv" },
-		{ ShaderStage::MISS,		"../../renderer-demo/Shaders/Raytrace/Compleate/Miss/ShadowMiss/rmiss.spv" },
+			{ VkShaderStageFlagBits::VK_SHADER_STAGE_RAYGEN_BIT_NV,		"../../renderer-demo/Shaders/Raytrace/Compleate/Gen/rgen.spv" },
+			{ VkShaderStageFlagBits::VK_SHADER_STAGE_MISS_BIT_NV,		"../../renderer-demo/Shaders/Raytrace/Compleate/Miss/rmiss.spv" },
+			{ VkShaderStageFlagBits::VK_SHADER_STAGE_MISS_BIT_NV,		"../../renderer-demo/Shaders/Raytrace/Compleate/Miss/ShadowMiss/rmiss.spv" },
 		},
 	{
 		{ // Involved 
-			{ ShaderStage::CLOSEST_HIT, "../../renderer-demo/Shaders/Raytrace/Compleate/Hitgroups/rchit.spv" },
+			{ VkShaderStageFlagBits::VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, "../../renderer-demo/Shaders/Raytrace/Compleate/Hitgroups/rchit.spv" },
 		},
 		{}, // Fall through hit group for shadow's, etc
 	});
@@ -516,13 +522,15 @@ int main(int argc, char **argv)
 
 	ray_pipeline->SetMaxRecursionDepth(10);
 
+
+
 	ray_pipeline->AttachVertexBinding({
-		VertexInputRate::INPUT_RATE_VERTEX,
+		VkVertexInputRate::VK_VERTEX_INPUT_RATE_VERTEX,
 		{
-			{ 0, DataFormat::R32G32B32_FLOAT,offsetof(MeshVertex,position) },
-		{ 1, DataFormat::R32G32_FLOAT,offsetof(MeshVertex,uv) },
-		{ 2, DataFormat::R32G32B32_FLOAT,offsetof(MeshVertex,normal) },
-		{ 3, DataFormat::R32G32B32_FLOAT,offsetof(MeshVertex,color) },
+			{ 0, VkFormat::VK_FORMAT_R32G32B32_SFLOAT,offsetof(MeshVertex,position) },
+			{ 1, VkFormat::VK_FORMAT_R32G32_SFLOAT,offsetof(MeshVertex,uv) },
+			{ 2, VkFormat::VK_FORMAT_R32G32B32_SFLOAT,offsetof(MeshVertex,normal) },
+			{ 3, VkFormat::VK_FORMAT_R32G32B32_SFLOAT,offsetof(MeshVertex,color) },
 		},
 		sizeof(MeshVertex),
 		0
@@ -544,7 +552,7 @@ int main(int argc, char **argv)
 
 
 	ModelOffsets* offset_allocation_array = new ModelOffsets[1000];
-	IUniformBuffer* offset_allocation_array_buffer = renderer->CreateUniformBuffer(offset_allocation_array, BufferChain::Single, sizeof(ModelOffsets), 1000, true);
+	VulkanUniformBuffer* offset_allocation_array_buffer = renderer->CreateUniformBuffer(offset_allocation_array, BufferChain::Single, sizeof(ModelOffsets), 1000, true);
 
 
 
@@ -566,7 +574,7 @@ int main(int argc, char **argv)
 
 
 
-	IUniformBuffer* materialbuffer = renderer->CreateUniformBuffer(materials.data(), BufferChain::Single, sizeof(MatrialObj), materials.size(), true);
+	VulkanUniformBuffer* materialbuffer = renderer->CreateUniformBuffer(materials.data(), BufferChain::Single, sizeof(MatrialObj), materials.size(), true);
 	materialbuffer->SetData(BufferSlot::Primary);
 
 	std::vector<Light> lights = {
@@ -574,14 +582,14 @@ int main(int argc, char **argv)
 	{ glm::vec4(-500, 400, 300,0), glm::vec4(1.0f,1.0f,1.0f,1.0f) }
 	};
 
-	IUniformBuffer* lightBuffer = renderer->CreateUniformBuffer(lights.data(), BufferChain::Single, sizeof(Light), lights.size(), true);
+	VulkanUniformBuffer* lightBuffer = renderer->CreateUniformBuffer(lights.data(), BufferChain::Single, sizeof(Light), lights.size(), true);
 	lightBuffer->SetData(BufferSlot::Primary);
 
 
 
 
 	{
-		IDescriptorPool* standardRTConfigPool = renderer->CreateDescriptorPool({
+		VulkanDescriptorPool* standardRTConfigPool = renderer->CreateDescriptorPool({
 			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV, VK_SHADER_STAGE_RAYGEN_BIT_NV | VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 0),
 			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_RAYGEN_BIT_NV, 1),
 			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_NV, 2),
@@ -600,7 +608,7 @@ int main(int argc, char **argv)
 
 
 	{
-		IDescriptorPool* RTModelPool = renderer->CreateDescriptorPool({
+		VulkanDescriptorPool* RTModelPool = renderer->CreateDescriptorPool({
 			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 0),
 			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 1),
 			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 2),
@@ -625,7 +633,7 @@ int main(int argc, char **argv)
 
 
 	{
-		IDescriptorPool* RTModelInstancePool = renderer->CreateDescriptorPool({
+		VulkanDescriptorPool* RTModelInstancePool = renderer->CreateDescriptorPool({
 			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 0),
 			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 1),
 			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 2),
@@ -656,13 +664,13 @@ int main(int argc, char **argv)
 
 
 
+	
 
 
 
 
 
-
-
+	
 
 	ray_pipeline->Build();
 
@@ -673,8 +681,6 @@ int main(int argc, char **argv)
 		s += 0.01f;
 
 		modelPosition = glm::translate(modelPosition, glm::vec3(0, 0, sin(s) * 0.01f));
-
-		//modelPosition = glm::rotate(modelPosition, 0.001f, glm::vec3(0, 1, 0));
 
 		model1->SetData(POSITION_BUFFER, modelPosition);
 
@@ -690,7 +696,7 @@ int main(int argc, char **argv)
 
 
 
-	DestroyWindow();*/
+	DestroyWindow();
 
 
 	delete renderer;
