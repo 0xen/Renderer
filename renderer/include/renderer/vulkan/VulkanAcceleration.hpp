@@ -55,11 +55,19 @@ namespace Renderer
 			uint64_t accelerationStructureHandle;
 		};
 
+
 		static_assert(sizeof(VkGeometryInstance) == 64,
 			"VkGeometryInstance structure compiles to incorrect size");
 
 		class VulkanDevice;
 		class VulkanModelPool;
+
+		struct GeometryInstanceConfig
+		{
+			VulkanModelPool* model_pool;
+
+			unsigned int hitGroupOffset;
+		};
 
 		class VulkanAcceleration
 		{
@@ -67,15 +75,15 @@ namespace Renderer
 			VulkanAcceleration(VulkanDevice* device);
 			~VulkanAcceleration();
 
-			void AttachModelPool(VulkanModelPool* pool);
+			void AttachModelPool(VulkanModelPool* pool, unsigned int hitGroupOffset = 0);
 
 			void Build();
 
 			void Update();
 
-			VkWriteDescriptorSetAccelerationStructureNV GetDescriptorAcceleration();
+			VkWriteDescriptorSetAccelerationStructureNV& GetDescriptorAcceleration();
 
-			std::vector<VulkanModelPool*>& GetModelPools();
+			std::vector<GeometryInstanceConfig>& GetModelPools();
 		private:
 			AccelerationStructure CreateBottomLevelAS(VkCommandBuffer commandBuffer, VulkanModelPool* pool);
 			void CreateTopLevelAS(VkCommandBuffer commandBuffer, std::vector<std::pair<VkAccelerationStructureNV, glm::mat4x4>>& instances);
@@ -90,7 +98,9 @@ namespace Renderer
 			AccelerationStructure m_top_level_as;
 			std::vector<ASInstance> m_as_instance;
 			std::vector<AccelerationStructure> m_bottom_level_as;
-			std::vector<VulkanModelPool*> m_model_pools;
+			std::vector<GeometryInstanceConfig> m_model_pools;
+
+			VkWriteDescriptorSetAccelerationStructureNV m_acceleration_structure_definition;
 		};
 
 	}

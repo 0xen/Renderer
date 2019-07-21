@@ -13,7 +13,7 @@ using namespace Renderer::Vulkan;
 Renderer::Vulkan::VulkanDescriptorPool::VulkanDescriptorPool(VulkanDevice * device, std::vector<VulkanDescriptor*> descriptor)
 {
 	m_device = device;
-	m_descriptor = descriptor;
+	m_descriptors = descriptor;
 
 
 
@@ -21,7 +21,7 @@ Renderer::Vulkan::VulkanDescriptorPool::VulkanDescriptorPool(VulkanDevice * devi
 	m_layout_bindings.clear();
 
 
-	for (VulkanDescriptor* descriptor : m_descriptor)
+	for (VulkanDescriptor* descriptor : m_descriptors)
 	{
 		m_descriptor_pool_sizes.push_back(VulkanInitializers::DescriptorPoolSize(descriptor->GetDescriptorType(), descriptor->GetCount()));
 		m_layout_bindings.push_back(VulkanInitializers::DescriptorSetLayoutBinding(descriptor->GetDescriptorType(), descriptor->GetShaderStage(), descriptor->GetBinding(), descriptor->GetCount()));
@@ -53,9 +53,9 @@ Renderer::Vulkan::VulkanDescriptorPool::VulkanDescriptorPool(VulkanDevice * devi
 
 Renderer::Vulkan::VulkanDescriptorPool::~VulkanDescriptorPool()
 {
-	for (int i = 0; i < m_descriptor.size(); i++)
+	for (int i = 0; i < m_descriptors.size(); i++)
 	{
-		delete m_descriptor[i];
+		delete m_descriptors[i];
 	}
 	vkDestroyDescriptorSetLayout(
 		*m_device->GetVulkanDevice(),
@@ -82,7 +82,7 @@ VkDescriptorSetLayout Renderer::Vulkan::VulkanDescriptorPool::GetDescriptorSetLa
 
 std::vector<VulkanDescriptor*> Renderer::Vulkan::VulkanDescriptorPool::GetDescriptors()
 {
-	return m_descriptor;
+	return m_descriptors;
 }
 
 VulkanDescriptorSet * Renderer::Vulkan::VulkanDescriptorPool::CreateDescriptorSet()

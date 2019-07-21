@@ -100,6 +100,8 @@ namespace Renderer
 
 			VkWriteDescriptorSet WriteDescriptorSet(VkDescriptorSet d_set, std::vector<VkWriteDescriptorSetAccelerationStructureNV>& buffer, VkDescriptorType type, int binding);
 
+			VkWriteDescriptorSet WriteDescriptorSet(VkDescriptorSet d_set, VkWriteDescriptorSetAccelerationStructureNV& buffer, VkDescriptorType type, int binding);
+
 			VkWriteDescriptorSet WriteDescriptorSet(VkDescriptorSet d_set, std::vector<VkDescriptorImageInfo>& buffer, VkDescriptorType type, int binding);
 
 			VkWriteDescriptorSet WriteDescriptorSet(VkDescriptorSet d_set, std::vector<VkDescriptorBufferInfo>& buffer, VkDescriptorType type, int binding);

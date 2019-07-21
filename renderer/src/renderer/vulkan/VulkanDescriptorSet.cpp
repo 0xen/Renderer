@@ -4,6 +4,8 @@
 #include <renderer/vulkan/VulkanDevice.hpp>
 #include <renderer/vulkan/VulkanDescriptor.hpp>
 
+#include <assert.h>
+
 using namespace Renderer;
 using namespace Renderer::Vulkan;
 
@@ -12,6 +14,8 @@ Renderer::Vulkan::VulkanDescriptorSet::VulkanDescriptorSet(VulkanDevice* device,
 	m_device = device;
 	m_descriptor_pool = descriptor_pool;
 	m_descriptor_set = set;
+	 // Set the size of the sets to the size of the pool
+	m_write_descriptor_sets.resize(m_descriptor_pool->GetDescriptors().size());
 }
 
 VkDescriptorSet & Renderer::Vulkan::VulkanDescriptorSet::GetDescriptorSet()
@@ -21,74 +25,53 @@ VkDescriptorSet & Renderer::Vulkan::VulkanDescriptorSet::GetDescriptorSet()
 
 void Renderer::Vulkan::VulkanDescriptorSet::UpdateSet()
 {
-	VkDeviceSize offset = 0;
-	m_write_descriptor_sets.clear();
-	for (VulkanDescriptor* descriptor : m_descriptor_pool->GetDescriptors())
-	{
-		if (HasBufferAtLocation(descriptor->GetBinding()))
-		{
-			VulkanBuffer* buffer = m_bufers[descriptor->GetBinding()];
-			if (descriptor->GetDescriptorType() == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
-			{
-				m_write_descriptor_sets.push_back(VulkanInitializers::WriteDescriptorSet(m_descriptor_set, buffer->GetDescriptorImageInfo(BufferSlot::Primary), descriptor->GetDescriptorType(), descriptor->GetBinding()));
-			}
-			else
-			{
-				m_write_descriptor_sets.push_back(VulkanInitializers::WriteDescriptorSet(m_descriptor_set, buffer->GetDescriptorBufferInfo(BufferSlot::Primary), descriptor->GetDescriptorType(), descriptor->GetBinding()));
-			}
-		}
-		else if (m_as_structs.find(descriptor->GetBinding()) != m_as_structs.end())
-		{
-			m_write_descriptor_sets.push_back(VulkanInitializers::WriteDescriptorSet(m_descriptor_set, m_as_structs[descriptor->GetBinding()], descriptor->GetDescriptorType(), descriptor->GetBinding()));
-		}
-		else if (m_images.find(descriptor->GetBinding()) != m_images.end())
-		{
-			m_write_descriptor_sets.push_back(VulkanInitializers::WriteDescriptorSet(m_descriptor_set, m_images[descriptor->GetBinding()], descriptor->GetDescriptorType(), descriptor->GetBinding()));
-		}
-		else if (m_buffers_arrays.find(descriptor->GetBinding()) != m_buffers_arrays.end())
-		{
-			m_write_descriptor_sets.push_back(VulkanInitializers::WriteDescriptorSet(m_descriptor_set, m_buffers_arrays[descriptor->GetBinding()], descriptor->GetDescriptorType(), descriptor->GetBinding()));
-		}
-	}
 	vkUpdateDescriptorSets(*m_device->GetVulkanDevice(), (uint32_t)m_write_descriptor_sets.size(), m_write_descriptor_sets.data(), 0, NULL);
 }
 
 void Renderer::Vulkan::VulkanDescriptorSet::AttachBuffer(unsigned int location, VulkanBuffer * buffer)
 {
-	m_bufers[location] = buffer;
-}
-
-void Renderer::Vulkan::VulkanDescriptorSet::AttachBuffer(unsigned int location, std::vector<VulkanBuffer*> descriptorSet)
-{
-	std::vector<VkDescriptorBufferInfo> buffers;
-	for (auto& buffer : descriptorSet)
+	VulkanDescriptor* descriptor = m_descriptor_pool->GetDescriptors()[location];
+	if (descriptor->GetDescriptorType() == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
 	{
-		buffers.push_back(buffer->GetDescriptorBufferInfo(BufferSlot::Primary));
+		AttachBuffer(location, { buffer->GetDescriptorImageInfo(BufferSlot::Primary) }); // Write as a single image buffer
 	}
-	m_buffers_arrays[location] = buffers;
-}
-
-void Renderer::Vulkan::VulkanDescriptorSet::AttachBuffer(unsigned int location, std::vector<VkWriteDescriptorSetAccelerationStructureNV> descriptorSet)
-{
-	m_as_structs[location] = descriptorSet;
-}
-
-void Renderer::Vulkan::VulkanDescriptorSet::AttachBuffer(unsigned int location, std::vector<VkDescriptorImageInfo> descriptorSet)
-{
-	m_images[location] = descriptorSet;
-}
-
-std::vector<VulkanBuffer*> Renderer::Vulkan::VulkanDescriptorSet::GetBuffers()
-{
-	std::vector<VulkanBuffer*> buffers;
-	for (auto& buffer : m_bufers)
+	else
 	{
-		buffers.push_back(buffer.second);
+		AttachBuffer(location, buffer->GetDescriptorBufferInfo(BufferSlot::Primary)); // Write as a single buffer
 	}
-	return buffers;
 }
 
-bool Renderer::Vulkan::VulkanDescriptorSet::HasBufferAtLocation(unsigned int location)
+void Renderer::Vulkan::VulkanDescriptorSet::AttachBuffer(unsigned int location, VkDescriptorBufferInfo& descriptorSet)
 {
-	return m_bufers.find(location) != m_bufers.end();
+	assert(m_write_descriptor_sets.size() > location && "Descriptor Set Location Out Of Bounds");
+	VulkanDescriptor* descriptor = m_descriptor_pool->GetDescriptors()[location];
+	m_write_descriptor_sets[location] = VulkanInitializers::WriteDescriptorSet(m_descriptor_set, descriptorSet, descriptor->GetDescriptorType(), location);
+}
+
+void Renderer::Vulkan::VulkanDescriptorSet::AttachBuffer(unsigned int location, std::vector<VkWriteDescriptorSetAccelerationStructureNV>& descriptorSet)
+{
+	assert(m_write_descriptor_sets.size() > location && "Descriptor Set Location Out Of Bounds");
+	VulkanDescriptor* descriptor = m_descriptor_pool->GetDescriptors()[location];
+	m_write_descriptor_sets[location] = VulkanInitializers::WriteDescriptorSet(m_descriptor_set, descriptorSet, descriptor->GetDescriptorType(), location);
+}
+
+void Renderer::Vulkan::VulkanDescriptorSet::AttachBuffer(unsigned int location, VkWriteDescriptorSetAccelerationStructureNV & descriptorSet)
+{
+	assert(m_write_descriptor_sets.size() > location && "Descriptor Set Location Out Of Bounds");
+	VulkanDescriptor* descriptor = m_descriptor_pool->GetDescriptors()[location];
+	m_write_descriptor_sets[location] = VulkanInitializers::WriteDescriptorSet(m_descriptor_set, descriptorSet, descriptor->GetDescriptorType(), location);
+}
+
+void Renderer::Vulkan::VulkanDescriptorSet::AttachBuffer(unsigned int location, VkDescriptorImageInfo& descriptorSet)
+{
+	assert(m_write_descriptor_sets.size() > location && "Descriptor Set Location Out Of Bounds");
+	VulkanDescriptor* descriptor = m_descriptor_pool->GetDescriptors()[location];
+	m_write_descriptor_sets[location] = VulkanInitializers::WriteDescriptorSet(m_descriptor_set, descriptorSet, descriptor->GetDescriptorType(), location);
+}
+
+void Renderer::Vulkan::VulkanDescriptorSet::AttachBuffer(unsigned int location, std::vector<VkDescriptorImageInfo>& descriptorSet)
+{
+	assert(m_write_descriptor_sets.size() > location && "Descriptor Set Location Out Of Bounds");
+	VulkanDescriptor* descriptor = m_descriptor_pool->GetDescriptors()[location];
+	m_write_descriptor_sets[location] = VulkanInitializers::WriteDescriptorSet(m_descriptor_set, descriptorSet, descriptor->GetDescriptorType(), location);
 }

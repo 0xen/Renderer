@@ -26,7 +26,7 @@ namespace Renderer
 			std::vector<VkDescriptorSetLayoutBinding> m_layout_bindings;
 			std::vector<VkDescriptorPoolSize> m_descriptor_pool_sizes;
 			std::vector<VkDescriptorSetLayout> m_descriptor_set_layouts;
-			std::vector<VulkanDescriptor*> m_descriptor;
+			std::vector<VulkanDescriptor*> m_descriptors;
 			VkDescriptorPool m_descriptor_pool;
 			VkDescriptorSetLayout m_descriptor_set_layout;
 		};

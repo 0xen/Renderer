@@ -550,7 +550,30 @@ VkWriteDescriptorSet Renderer::Vulkan::VulkanInitializers::WriteDescriptorSet(Vk
 	VkWriteDescriptorSetAccelerationStructureNV** data = reinterpret_cast<VkWriteDescriptorSetAccelerationStructureNV**>(reinterpret_cast<uint8_t*>(&descriptorWrite) + offset);
 
 	*data = buffer.data();
-	
+
+	return descriptorWrite;
+}
+
+VkWriteDescriptorSet Renderer::Vulkan::VulkanInitializers::WriteDescriptorSet(VkDescriptorSet d_set, VkWriteDescriptorSetAccelerationStructureNV& buffer, VkDescriptorType type, int binding)
+{
+	VkWriteDescriptorSet descriptorWrite = {};
+	descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	descriptorWrite.dstSet = d_set;
+	descriptorWrite.dstBinding = binding;
+	descriptorWrite.dstArrayElement = 0;
+	descriptorWrite.descriptorType = type;
+	descriptorWrite.descriptorCount = 1;
+	descriptorWrite.pBufferInfo = VK_NULL_HANDLE;
+	descriptorWrite.pImageInfo = VK_NULL_HANDLE;
+	descriptorWrite.pTexelBufferView = VK_NULL_HANDLE;
+	descriptorWrite.pNext = VK_NULL_HANDLE;
+
+	static const int offset = offsetof(VkWriteDescriptorSet, pNext);
+
+	VkWriteDescriptorSetAccelerationStructureNV** data = reinterpret_cast<VkWriteDescriptorSetAccelerationStructureNV**>(reinterpret_cast<uint8_t*>(&descriptorWrite) + offset);
+
+	*data = &buffer;
+
 	return descriptorWrite;
 }
 

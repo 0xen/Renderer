@@ -20,9 +20,9 @@ Renderer::Vulkan::VulkanAcceleration::~VulkanAcceleration()
 {
 }
 
-void Renderer::Vulkan::VulkanAcceleration::AttachModelPool(VulkanModelPool * pool)
+void Renderer::Vulkan::VulkanAcceleration::AttachModelPool(VulkanModelPool * pool, unsigned int hitGroupOffset)
 {
-	m_model_pools.push_back(pool);
+	m_model_pools.push_back({ pool ,hitGroupOffset });
 }
 
 void Renderer::Vulkan::VulkanAcceleration::Build()
@@ -46,9 +46,9 @@ void Renderer::Vulkan::VulkanAcceleration::Build()
 
 	for (int i = 0; i < m_model_pools.size(); i++)
 	{
-		m_bottom_level_as[i] = CreateBottomLevelAS(commandBuffer, m_model_pools[i]);
+		m_bottom_level_as[i] = CreateBottomLevelAS(commandBuffer, m_model_pools[i].model_pool);
 
-		for (auto& it : m_model_pools[i]->GetModels())
+		for (auto& it : m_model_pools[i].model_pool->GetModels())
 		{
 			//glm::mat4x4 mat = glm::mat4x4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1);
 			static const int position_buffer_index = 0;
@@ -72,22 +72,16 @@ void Renderer::Vulkan::VulkanAcceleration::Build()
 void Renderer::Vulkan::VulkanAcceleration::Update()
 {
 
-	std::vector<std::pair<VkAccelerationStructureNV, glm::mat4x4>> instances;
-	for (int i = 0; i < m_model_pools.size(); i++)
-	{
-		for (auto& it : m_model_pools[i]->GetModels())
-		{
-			static const int position_buffer_index = 0;
-			instances.push_back({ m_bottom_level_as[i].structure, it.second->GetData<glm::mat4>(position_buffer_index) });
-		}
-	}
-
 	m_as_instance.clear();
 
-	for (uint32_t i = 0; i < instances.size(); i++)
+	for (uint32_t i = 0; i < m_model_pools.size(); i++)
 	{
-		// we set the hit group to 2 * i as there are two types of rays being used in this example, shadow rays and camera rays.
-		m_as_instance.push_back({ instances[i].first,instances[i].second, i, i * 2 });
+		for (auto& it : m_model_pools[i].model_pool->GetModels())
+		{
+			static const int position_buffer_index = 0;
+			// we set the hit group to 2 * i as there are two types of rays being used in this example, shadow rays and camera rays.
+			m_as_instance.push_back({ m_bottom_level_as[i].structure,it.second->GetData<glm::mat4>(position_buffer_index), i, m_model_pools[i].hitGroupOffset });
+		}
 	}
 
 	{
@@ -112,12 +106,12 @@ void Renderer::Vulkan::VulkanAcceleration::Update()
 	}
 }
 
-VkWriteDescriptorSetAccelerationStructureNV Renderer::Vulkan::VulkanAcceleration::GetDescriptorAcceleration()
+VkWriteDescriptorSetAccelerationStructureNV& Renderer::Vulkan::VulkanAcceleration::GetDescriptorAcceleration()
 {
-	return VulkanInitializers::WriteDescriptorSetAccelerator(m_top_level_as.structure);
+	return m_acceleration_structure_definition;
 }
 
-std::vector<Renderer::Vulkan::VulkanModelPool*>& Renderer::Vulkan::VulkanAcceleration::GetModelPools()
+std::vector<Renderer::Vulkan::GeometryInstanceConfig>& Renderer::Vulkan::VulkanAcceleration::GetModelPools()
 {
 	return m_model_pools;
 }
@@ -273,7 +267,7 @@ void Renderer::Vulkan::VulkanAcceleration::CreateTopLevelAS(VkCommandBuffer comm
 	for (uint32_t i = 0; i < instances.size(); i++)
 	{
 		// we set the hit group to 2 * i as there are two types of rays being used in this example, shadow rays and camera rays.
-		m_as_instance.push_back({ instances[i].first,instances[i].second, i, i * 2 });
+		m_as_instance.push_back({ instances[i].first,instances[i].second, i, 0/*For now use hit group 0*/ });
 	}
 
 	VkBuildAccelerationStructureFlagsNV flags = VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_NV;
@@ -375,7 +369,7 @@ void Renderer::Vulkan::VulkanAcceleration::CreateTopLevelAS(VkCommandBuffer comm
 		}
 	}
 
-
+	m_acceleration_structure_definition = VulkanInitializers::WriteDescriptorSetAccelerator(m_top_level_as.structure);
 
 }
 
@@ -439,7 +433,7 @@ unsigned int Renderer::Vulkan::VulkanAcceleration::UpdateGeometryInstances()
 		gInst.mask = 0xff;
 		// Set the hit group index, that will be used to find the shader code to execute when hitting
 		// the geometry
-		gInst.instanceOffset = 0;// instance.hitGroupIndex;
+		gInst.instanceOffset = instance.hitGroupIndex;
 
 								 // Disable culling
 		gInst.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_CULL_DISABLE_BIT_NV;
