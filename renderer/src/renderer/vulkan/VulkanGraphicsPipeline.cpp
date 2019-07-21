@@ -22,7 +22,7 @@ Renderer::Vulkan::VulkanGraphicsPipeline::VulkanGraphicsPipeline(VulkanDevice * 
 	m_swapchain = swapchain;
 
 	m_change = false;
-	m_topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+	InitPipelineCreateInfo();
 }
 
 Renderer::Vulkan::VulkanGraphicsPipeline::~VulkanGraphicsPipeline()
@@ -112,7 +112,6 @@ bool Renderer::Vulkan::VulkanGraphicsPipeline::CreatePipeline()
 				m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(1, location + 1, vertex->GetFormat(), vertex->GetOffset() + size_of));
 				m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(1, location + 2, vertex->GetFormat(), vertex->GetOffset() + (2 * size_of)));
 				m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(1, location + 3, vertex->GetFormat(), vertex->GetOffset() + (3 * size_of)));
-				//m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(0, vertex->GetLocation(), GetFormat(vertex->GetFormat()), vertex->GetOffset()));
 			}
 				break;
 			default:
@@ -123,12 +122,6 @@ bool Renderer::Vulkan::VulkanGraphicsPipeline::CreatePipeline()
 		}
 	}
 
-	// Needs to be replaced with abstract camera in future
-	/*m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(1, 3, VK_FORMAT_R32G32B32A32_UINT, 0));
-	m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(1, 4, VK_FORMAT_R32G32B32A32_UINT, sizeof(glm::vec4)));
-	m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(1, 5, VK_FORMAT_R32G32B32A32_UINT, 2 * sizeof(glm::vec4)));
-	m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(1, 6, VK_FORMAT_R32G32B32A32_UINT, 3 * sizeof(glm::vec4)));*/
-
 	VkPipelineVertexInputStateCreateInfo vertex_input_info = VulkanInitializers::PipelineVertexInputStateCreateInfo(m_binding_descriptions, m_attribute_descriptions);
 
 	// Viewport state
@@ -137,36 +130,46 @@ bool Renderer::Vulkan::VulkanGraphicsPipeline::CreatePipeline()
 	// Rasteriser
 	// Needs to be abstracted
 	VkPipelineRasterizationStateCreateInfo rasterizer = VulkanInitializers::PipelineRasterizationStateCreateInfo(
-		m_use_culling? VkCullModeFlagBits::VK_CULL_MODE_BACK_BIT :VkCullModeFlagBits::VK_CULL_MODE_NONE,
-		VK_FRONT_FACE_COUNTER_CLOCKWISE,
-		VkPolygonMode::VK_POLYGON_MODE_FILL,
+		m_graphics_pipeline_config.culling,
+		m_graphics_pipeline_config.front_face,
+		m_graphics_pipeline_config.polygon_mode,
 		1.0f);
 
 	// Multi sampling
 	VkPipelineMultisampleStateCreateInfo multisampling = VulkanInitializers::PipelineMultisampleStateCreateInfo();
 
 	// Depth stencil
-	VkPipelineDepthStencilStateCreateInfo depth_stencil = VulkanInitializers::PipelineDepthStencilStateCreateInfo(m_use_depth_stencil);
+	VkPipelineDepthStencilStateCreateInfo depth_stencil = VulkanInitializers::PipelineDepthStencilStateCreateInfo(m_graphics_pipeline_config.use_depth_stencil);
+
+
+	
+	VkPipelineDynamicStateCreateInfo dynamic_states_info = VulkanInitializers::PipelineDynamicStateCreateInfo(m_graphics_pipeline_config.dynamic_states);
+
 
 	// Color blending
 	VkPipelineColorBlendAttachmentState color_blend_attachment = VulkanInitializers::PipelineColorBlendAttachmentState();
-
-	// Dynamic shader stages
-	std::vector<VkDynamicState> dynamic_states = {
-		VK_DYNAMIC_STATE_VIEWPORT,
-		VK_DYNAMIC_STATE_SCISSOR,
-		VK_DYNAMIC_STATE_LINE_WIDTH,
-	};
-
-	VkPipelineDynamicStateCreateInfo dynamic_states_info = VulkanInitializers::PipelineDynamicStateCreateInfo(dynamic_states);
-
 	VkPipelineColorBlendStateCreateInfo color_blending = VulkanInitializers::PipelineColorBlendStateCreateInfo(color_blend_attachment);
 
 	// Triangle pipeline
-	VkPipelineInputAssemblyStateCreateInfo input_assembly = VulkanInitializers::PipelineInputAssemblyStateCreateInfo(m_topology);
+	VkPipelineInputAssemblyStateCreateInfo input_assembly = VulkanInitializers::PipelineInputAssemblyStateCreateInfo(m_graphics_pipeline_config.topology);
 
 	VkGraphicsPipelineCreateInfo pipeline_info = VulkanInitializers::GraphicsPipelineCreateInfo(m_shader_stages, vertex_input_info, input_assembly,
 		viewport_state, rasterizer, multisampling, color_blending, depth_stencil, m_pipeline_layout, *m_swapchain->GetRenderPass(), dynamic_states_info);
+
+	// If we support it, define that this pipeline has derivatives
+	if (m_graphics_pipeline_config.allow_darivatives) 
+		pipeline_info.flags |= VK_PIPELINE_CREATE_ALLOW_DERIVATIVES_BIT;
+	// If we have a parent and that parent allows for derivatives, continue
+	if (m_graphics_pipeline_config.parent != nullptr)
+	{
+		assert(m_graphics_pipeline_config.parent->m_graphics_pipeline_config.allow_darivatives && "Parent dose not support derivatives");
+		pipeline_info.flags |= VK_PIPELINE_CREATE_DERIVATIVE_BIT;
+
+		pipeline_info.basePipelineHandle = m_graphics_pipeline_config.parent->m_pipeline;
+
+		// If VK_PIPELINE_CREATE_DERIVATIVE_BIT is set and we have a valid pipeline, basePipelineIndex must be -1 https://www.khronos.org/registry/vulkan/specs/1.1-extensions/man/html/VkGraphicsPipelineCreateInfo.html
+		pipeline_info.basePipelineIndex = -1;
+	}
 
 	ErrorCheck(vkCreateGraphicsPipelines(
 		*m_device->GetVulkanDevice(),
@@ -224,33 +227,6 @@ void Renderer::Vulkan::VulkanGraphicsPipeline::AttachVertexBinding(VertexBase ve
 	m_vertex_bases.push_back(vertex_binding);
 }
 
-void Renderer::Vulkan::VulkanGraphicsPipeline::UseDepth(bool depth)
-{
-	m_use_depth_stencil = depth;
-}
-
-void Renderer::Vulkan::VulkanGraphicsPipeline::UseCulling(bool culling)
-{
-	m_use_culling = culling;
-}
-
-void Renderer::Vulkan::VulkanGraphicsPipeline::DefinePrimitiveTopology(PrimitiveTopology top)
-{
-	switch (top)
-	{
-	case PointList:
-	{
-		m_topology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
-	}
-	break;
-	case TriangleList:
-	{
-		m_topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-	}
-	break;
-	}
-}
-
 bool Renderer::Vulkan::VulkanGraphicsPipeline::HasChanged()
 {
 	if (m_change)
@@ -264,4 +240,28 @@ bool Renderer::Vulkan::VulkanGraphicsPipeline::HasChanged()
 		if (pool->HasChanged())return true;
 	}
 	return false;
+}
+
+VulkanGraphicsPipelineConfig & Renderer::Vulkan::VulkanGraphicsPipeline::GetGraphicsPipelineConfig()
+{
+	return m_graphics_pipeline_config;
+}
+
+void Renderer::Vulkan::VulkanGraphicsPipeline::InitPipelineCreateInfo()
+{
+	// Dynamic shader stages
+	m_graphics_pipeline_config.dynamic_states = {
+		VK_DYNAMIC_STATE_VIEWPORT,
+		VK_DYNAMIC_STATE_SCISSOR,
+		VK_DYNAMIC_STATE_LINE_WIDTH,
+	};
+	m_graphics_pipeline_config.parent = nullptr;
+
+	m_graphics_pipeline_config.use_depth_stencil = true;
+	m_graphics_pipeline_config.allow_darivatives = false;
+
+	m_graphics_pipeline_config.culling = VK_CULL_MODE_BACK_BIT;
+	m_graphics_pipeline_config.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+	m_graphics_pipeline_config.front_face = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+	m_graphics_pipeline_config.polygon_mode = VK_POLYGON_MODE_FILL;
 }

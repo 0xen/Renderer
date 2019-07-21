@@ -34,7 +34,6 @@ namespace Renderer
 			virtual void AttachVertexBinding(VertexBase vertex_binding);
 			virtual void UseDepth(bool depth);
 			virtual void UseCulling(bool culling);
-			virtual void DefinePrimitiveTopology(PrimitiveTopology top);
 
 			void SetMaxRecursionDepth(uint32_t max_depth);
 

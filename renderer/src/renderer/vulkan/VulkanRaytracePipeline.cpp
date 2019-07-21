@@ -251,10 +251,6 @@ void Renderer::Vulkan::VulkanRaytracePipeline::UseCulling(bool culling)
 {
 }
 
-void Renderer::Vulkan::VulkanRaytracePipeline::DefinePrimitiveTopology(PrimitiveTopology top)
-{
-}
-
 void Renderer::Vulkan::VulkanRaytracePipeline::SetMaxRecursionDepth(uint32_t max_depth)
 {
 	m_max_depth = max_depth;

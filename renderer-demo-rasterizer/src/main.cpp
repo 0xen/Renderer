@@ -407,62 +407,99 @@ int main(int argc, char **argv)
 	VulkanUniformBuffer* cameraInfo = renderer->CreateUniformBuffer(&rayCamera, BufferChain::Single, sizeof(RayCamera), 1, true);
 	cameraInfo->SetData(BufferSlot::Primary);
 
+	VulkanGraphicsPipeline* base;
+	VulkanGraphicsPipeline* pipeline;
 
-
-
-	VulkanGraphicsPipeline* pipeline = renderer->CreateGraphicsPipeline({
-		{ VkShaderStageFlagBits::VK_SHADER_STAGE_VERTEX_BIT, "../../renderer-demo/Shaders/vert.spv" },
-		{ VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT, "../../renderer-demo/Shaders/frag.spv" }
-		});
-
-
-
-	pipeline->AttachVertexBinding({
+	VertexBase vertex_binding_vertex = {
 		VkVertexInputRate::VK_VERTEX_INPUT_RATE_VERTEX,
 		{
 			{ 0, VkFormat::VK_FORMAT_R32G32B32_SFLOAT,offsetof(Vertex,pos) },
-		{ 1, VkFormat::VK_FORMAT_R32G32B32_SFLOAT,offsetof(Vertex,nrm) },
-		{ 2, VkFormat::VK_FORMAT_R32G32B32_SFLOAT,offsetof(Vertex,color) },
-		{ 3, VkFormat::VK_FORMAT_R32G32_SFLOAT,offsetof(Vertex,texCoord) },
-		{ 4, VkFormat::VK_FORMAT_R32_UINT,offsetof(Vertex,matID) },
+			{ 1, VkFormat::VK_FORMAT_R32G32B32_SFLOAT,offsetof(Vertex,nrm) },
+			{ 2, VkFormat::VK_FORMAT_R32G32B32_SFLOAT,offsetof(Vertex,color) },
+			{ 3, VkFormat::VK_FORMAT_R32G32_SFLOAT,offsetof(Vertex,texCoord) },
+			{ 4, VkFormat::VK_FORMAT_R32_UINT,offsetof(Vertex,matID) },
 		},
 		sizeof(Vertex),
 		0
-		});
+	};
 
-	pipeline->AttachVertexBinding({
+	VertexBase vertex_binding_position = {
 		VkVertexInputRate::VK_VERTEX_INPUT_RATE_INSTANCE,
 		{
 			{ 5, VkFormat::VK_FORMAT_R32G32B32A32_SFLOAT,0 }
 		},
 		sizeof(PositionVertex),
 		1
-		});
-
-
+	};
 
 	VulkanDescriptorPool* camera_pool = renderer->CreateDescriptorPool({
 		renderer->CreateDescriptor(VkDescriptorType::VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VkShaderStageFlagBits::VK_SHADER_STAGE_VERTEX_BIT, 0),
-		});
-	pipeline->AttachDescriptorPool(camera_pool);
+	});
+
 
 	VulkanDescriptorSet* camera_descriptor_set = camera_pool->CreateDescriptorSet();
 	camera_descriptor_set->AttachBuffer(0, cameraInfo);
 	camera_descriptor_set->UpdateSet();
 
-	pipeline->AttachDescriptorSet(0, camera_descriptor_set);
-
-
 
 	VulkanDescriptorPool* texture_pool = renderer->CreateDescriptorPool({
 		renderer->CreateDescriptor(VkDescriptorType::VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT, 0),
-		});
-	pipeline->AttachDescriptorPool(texture_pool);
+	});
+
+	{
+		base = renderer->CreateGraphicsPipeline({
+			{ VkShaderStageFlagBits::VK_SHADER_STAGE_VERTEX_BIT, "../../renderer-demo/Shaders/vert.spv" },
+			{ VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT, "../../renderer-demo/Shaders/frag.spv" }
+			});
+
+		// Config base pipeline
+		{
+			VulkanGraphicsPipelineConfig& config = base->GetGraphicsPipelineConfig();
+			config.allow_darivatives = true;
+		}
+
+		base->AttachVertexBinding(vertex_binding_vertex);
+		base->AttachVertexBinding(vertex_binding_position);
+		base->AttachDescriptorPool(camera_pool);
+		base->AttachDescriptorSet(0, camera_descriptor_set);
+		base->AttachDescriptorPool(texture_pool);
+		base->Build();
+	}
+	{
+		pipeline = renderer->CreateGraphicsPipeline({
+			{ VkShaderStageFlagBits::VK_SHADER_STAGE_VERTEX_BIT, "../../renderer-demo/Shaders/vert.spv" },
+			{ VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT, "../../renderer-demo/Shaders/frag.spv" }
+			});
+
+
+		// Config base pipeline
+		{
+			VulkanGraphicsPipelineConfig& config = pipeline->GetGraphicsPipelineConfig();
+			config.allow_darivatives = true;
+			config.parent = base;
+		}
+
+		pipeline->AttachVertexBinding(vertex_binding_vertex);
+		pipeline->AttachVertexBinding(vertex_binding_position);
+		pipeline->AttachDescriptorPool(camera_pool);
+		pipeline->AttachDescriptorSet(0, camera_descriptor_set);
+		pipeline->AttachDescriptorPool(texture_pool);
+		pipeline->Build();
+	}
 
 
 
 
-	pipeline->Build();
+
+
+
+
+
+
+
+
+
+
 
 
 

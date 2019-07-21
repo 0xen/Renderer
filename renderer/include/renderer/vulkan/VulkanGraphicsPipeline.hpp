@@ -10,10 +10,18 @@ namespace Renderer
 	class VertexBase;
 	namespace Vulkan
 	{
-		enum PrimitiveTopology
+		class VulkanGraphicsPipeline;
+
+		struct VulkanGraphicsPipelineConfig
 		{
-			PointList,
-			TriangleList
+			VulkanGraphicsPipeline* parent;
+			std::vector<VkDynamicState> dynamic_states;
+			bool use_depth_stencil;
+			bool allow_darivatives;
+			VkCullModeFlagBits culling;
+			VkPrimitiveTopology topology;
+			VkFrontFace front_face;
+			VkPolygonMode polygon_mode;
 		};
 
 		class VulkanSwapchain;
@@ -29,24 +37,22 @@ namespace Renderer
 			virtual void AttachToCommandBuffer(VkCommandBuffer & command_buffer);
 			virtual void AttachModelPool(VulkanModelPool* model_pool);
 			virtual void AttachVertexBinding(VertexBase vertex_binding);
-			virtual void UseDepth(bool depth);
-			virtual void UseCulling(bool culling);
-			virtual void DefinePrimitiveTopology(PrimitiveTopology top);
 			bool HasChanged();
+			VulkanGraphicsPipelineConfig& GetGraphicsPipelineConfig();
 
 		private:
 
 
+			void InitPipelineCreateInfo();
+
+			VulkanGraphicsPipelineConfig m_graphics_pipeline_config;
 			VulkanSwapchain * m_swapchain;
 			std::vector<VkPipelineShaderStageCreateInfo> m_shader_stages;
 			std::vector<VkVertexInputBindingDescription> m_binding_descriptions;
 			std::vector<VkVertexInputAttributeDescription> m_attribute_descriptions;
 			std::vector<VulkanModelPool*> m_model_pools;
 			std::vector<VertexBase> m_vertex_bases;
-			VkPrimitiveTopology m_topology;
 			bool m_change;
-			bool m_use_depth_stencil = true;
-			bool m_use_culling = false;
 		};
 	}
 }
