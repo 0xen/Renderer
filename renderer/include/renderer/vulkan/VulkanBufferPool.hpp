@@ -1,5 +1,7 @@
 #pragma once
 
+#include <vector>
+
 namespace Renderer
 {
 	namespace Vulkan
@@ -17,13 +19,13 @@ namespace Renderer
 			void* GetRaw(unsigned int index);
 
 			unsigned int Allocate();
-			void UnAllocate(unsigned int);
+			void UnAllocate(unsigned int index);
 
 			VulkanBuffer* GetBuffer();
 		public:
 			unsigned int m_current_allocation_index;
 			VulkanBuffer* m_buffer;
-
+			std::vector<unsigned int> m_free_indexs;
 		};
 		template<typename T>
 		inline T * VulkanBufferPool::Get(unsigned int index)

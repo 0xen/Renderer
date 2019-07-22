@@ -276,39 +276,6 @@ int main(int argc, char **argv)
 
 
 
-	std::vector<Vertex> vertexData = {
-		{ glm::vec3(1.0f,1.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(1.0f,1.0f,0.0f), glm::vec2(0.0f,0.0f) ,-1 },
-		{ glm::vec3(1.0f,-1.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(0.0f,1.0f,0.0f), glm::vec2(0.0f,1.0f)  ,-1 },
-		{ glm::vec3(-1.0f,-1.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(.0f,1.0f,1.0f), glm::vec2(1.0f,1.0f)  ,-1 },
-		{ glm::vec3(-1.0f,1.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(1.0f,0.0f,1.0f), glm::vec2(1.0f,0.0f)  ,-1 }
-	};
-
-	std::vector<uint32_t> indexData{
-		0,1,2,
-		0,2,3
-	};
-
-	unsigned int vertexStart = used_vertex;
-	unsigned int indexStart = used_index;
-
-	for (uint32_t& index : indexData)
-	{
-		all_indexs[used_index] = index;
-		used_index++;
-	}
-
-	for (Vertex& vertex : vertexData)
-	{
-		vertex.matID += materials.size();
-		all_vertexs[used_vertex] = vertex;
-		used_vertex++;
-	}
-
-	VulkanModelPool* model_pool3 = renderer->CreateModelPool(vertexBuffer, vertexStart, vertexData.size(), indexBuffer, indexStart, indexData.size());
-
-
-
-
 
 	vertexBuffer->SetData(BufferSlot::Primary);
 	indexBuffer->SetData(BufferSlot::Primary);
@@ -323,7 +290,6 @@ int main(int argc, char **argv)
 
 	house_pool->AttachBufferPool(POSITION_BUFFER, position_buffer_pool);
 	sphere_pool->AttachBufferPool(POSITION_BUFFER, position_buffer_pool);
-	model_pool3->AttachBufferPool(POSITION_BUFFER, position_buffer_pool);
 
 
 	VulkanModel* sphere = sphere_pool->CreateModel();
@@ -337,18 +303,6 @@ int main(int argc, char **argv)
 	sphere->SetData(POSITION_BUFFER, modelPosition);
 
 
-	{
-		VulkanModel* model = model_pool3->CreateModel();
-
-		glm::mat4 pos = glm::mat4(1.0f);
-		pos = glm::translate(pos, glm::vec3(0, 0, 0));
-		float s = 1.0f;
-		pos = glm::scale(pos, glm::vec3(s, s, s));
-
-		model->SetData(POSITION_BUFFER, modelPosition);
-	}
-
-
 	VulkanModel* house1;
 	VulkanModel* house2;
 	VulkanModel* house3;
@@ -359,7 +313,7 @@ int main(int argc, char **argv)
 
 		glm::mat4 modelPos = glm::mat4(1.0f);
 		modelPos = glm::mat4(1.0f);
-		modelPos = glm::translate(modelPos, glm::vec3(0, 0, -2.5));
+		modelPos = glm::translate(modelPos, glm::vec3(-1, 0, 0));
 		modelPos = glm::scale(modelPos, glm::vec3(scale, scale, scale));
 
 		house1->SetData(POSITION_BUFFER, modelPos);
@@ -371,7 +325,7 @@ int main(int argc, char **argv)
 
 		glm::mat4 modelPos = glm::mat4(1.0f);
 		modelPos = glm::mat4(1.0f);
-		modelPos = glm::translate(modelPos, glm::vec3(-1, 0, 0));
+		modelPos = glm::translate(modelPos, glm::vec3(0, 0, -2.5));
 		modelPos = glm::scale(modelPos, glm::vec3(scale, scale, scale));
 
 		house2->SetData(POSITION_BUFFER, modelPos);
@@ -400,92 +354,10 @@ int main(int argc, char **argv)
 
 
 
-
-
 	//RayCamera
 	VulkanUniformBuffer* cameraInfo = renderer->CreateUniformBuffer(&rayCamera, BufferChain::Single, sizeof(RayCamera), 1, true);
 	cameraInfo->SetData(BufferSlot::Primary);
 
-
-
-	/*
-	VulkanGraphicsPipeline* pipeline = renderer->CreateGraphicsPipeline({
-		{ VkShaderStageFlagBits::VK_SHADER_STAGE_VERTEX_BIT, "../../renderer-demo/Shaders/vert.spv" },
-		{ VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT, "../../renderer-demo/Shaders/frag.spv" }
-		});
-
-
-
-	pipeline->AttachVertexBinding({
-		VkVertexInputRate::VK_VERTEX_INPUT_RATE_VERTEX,
-		{
-			{ 0, VkFormat::VK_FORMAT_R32G32B32_SFLOAT,offsetof(Vertex,pos) },
-		{ 1, VkFormat::VK_FORMAT_R32G32B32_SFLOAT,offsetof(Vertex,nrm) },
-		{ 2, VkFormat::VK_FORMAT_R32G32B32_SFLOAT,offsetof(Vertex,color) },
-		{ 3, VkFormat::VK_FORMAT_R32G32_SFLOAT,offsetof(Vertex,texCoord) },
-		{ 4, VkFormat::VK_FORMAT_R32_UINT,offsetof(Vertex,matID) },
-		},
-		sizeof(Vertex),
-		0
-		});
-
-	pipeline->AttachVertexBinding({
-		VkVertexInputRate::VK_VERTEX_INPUT_RATE_INSTANCE,
-		{
-			{ 5, VkFormat::VK_FORMAT_R32G32B32A32_SFLOAT,0 }
-		},
-		sizeof(PositionVertex),
-		1
-		});
-
-
-
-	VulkanDescriptorPool* camera_pool = renderer->CreateDescriptorPool({
-		renderer->CreateDescriptor(VkDescriptorType::VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VkShaderStageFlagBits::VK_SHADER_STAGE_VERTEX_BIT, 0),
-		});
-	pipeline->AttachDescriptorPool(camera_pool);
-
-	VulkanDescriptorSet* camera_descriptor_set = camera_pool->CreateDescriptorSet();
-	camera_descriptor_set->AttachBuffer(0, cameraInfo);
-	camera_descriptor_set->UpdateSet();
-
-	pipeline->AttachDescriptorSet(0, camera_descriptor_set);
-
-
-
-	VulkanDescriptorPool* texture_pool = renderer->CreateDescriptorPool({
-		renderer->CreateDescriptor(VkDescriptorType::VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT, 0),
-		});
-	pipeline->AttachDescriptorPool(texture_pool);
-
-
-
-
-	pipeline->Build();
-
-
-
-	std::vector<unsigned char> image; //the raw pixels
-	unsigned width;
-	unsigned height;
-	unsigned error = lodepng::decode(image, width, height, "../../renderer-demo/Images/cobble.png");
-	if (error) std::cout << "decoder error " << error << ": " << lodepng_error_text(error) << std::endl;
-
-	VulkanTextureBuffer* texture = renderer->CreateTextureBuffer(image.data(), VkFormat::VK_FORMAT_R8G8B8A8_UNORM, width, height);
-
-
-
-	VulkanDescriptorSet* texture_descriptor_set1 = texture_pool->CreateDescriptorSet();
-	texture_descriptor_set1->AttachBuffer(0, texture);
-	texture_descriptor_set1->UpdateSet();
-
-	model_pool3->AttachDescriptorSet(1, texture_descriptor_set1);
-
-
-
-
-	pipeline->AttachModelPool(model_pool3);
-	*/
 
 
 	VulkanRaytracePipeline* ray_pipeline = renderer->CreateRaytracePipeline(
@@ -562,10 +434,13 @@ int main(int argc, char **argv)
 
 
 	VulkanAcceleration* acceleration = renderer->CreateAcceleration();
+	//acceleration->AttachModelPool(house_pool, texturedLightingID);
+	//acceleration->AttachModelPool(sphere_pool, reflectiveID);
+	acceleration->Build();
+
 	acceleration->AttachModelPool(house_pool, texturedLightingID);
 	acceleration->AttachModelPool(sphere_pool, reflectiveID);
 	acceleration->Build();
-
 
 	struct ModelOffsets
 	{
@@ -689,7 +564,7 @@ int main(int argc, char **argv)
 
 
 
-		house2->SetData(POSITION_BUFFER, glm::rotate(house2->GetData<glm::mat4>(POSITION_BUFFER), 0.001f, glm::vec3(0, 1, 0)));
+		house1->SetData(POSITION_BUFFER, glm::rotate(house1->GetData<glm::mat4>(POSITION_BUFFER), 0.001f, glm::vec3(0, 1, 0)));
 
 
 

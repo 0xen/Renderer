@@ -234,21 +234,9 @@ void Renderer::Vulkan::VulkanRaytracePipeline::AttachToCommandBuffer(VkCommandBu
 		m_swapchain->GetNativeWindowHandle()->height, 1);
 }
 
-void Renderer::Vulkan::VulkanRaytracePipeline::AttachModelPool(VulkanModelPool * model_pool)
-{
-}
-
 void Renderer::Vulkan::VulkanRaytracePipeline::AttachVertexBinding(VertexBase vertex_binding)
 {
 	m_vertex_bases.push_back(vertex_binding);
-}
-
-void Renderer::Vulkan::VulkanRaytracePipeline::UseDepth(bool depth)
-{
-}
-
-void Renderer::Vulkan::VulkanRaytracePipeline::UseCulling(bool culling)
-{
 }
 
 void Renderer::Vulkan::VulkanRaytracePipeline::SetMaxRecursionDepth(uint32_t max_depth)

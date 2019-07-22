@@ -30,10 +30,8 @@ namespace Renderer
 			virtual bool CreatePipeline();
 			virtual void DestroyPipeline();
 			virtual void AttachToCommandBuffer(VkCommandBuffer & command_buffer);
-			virtual void AttachModelPool(VulkanModelPool* model_pool);
 			virtual void AttachVertexBinding(VertexBase vertex_binding);
-			virtual void UseDepth(bool depth);
-			virtual void UseCulling(bool culling);
+
 
 			void SetMaxRecursionDepth(uint32_t max_depth);
 

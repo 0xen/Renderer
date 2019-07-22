@@ -103,6 +103,16 @@ void Renderer::Vulkan::VulkanModelPool::RemoveModel(VulkanModel * model)
 
 		model->ShouldRender(false);
 
+
+
+		for (auto buffer = m_buffers.begin(); buffer != m_buffers.end(); buffer++)
+		{
+			buffer->second->UnAllocate(m_model_buffer_mapping[index][buffer->first]);
+		}
+
+		m_model_buffer_mapping.erase(m_model_buffer_mapping.find(index));
+
+
 		// Remove local model record
 		m_models.erase(it);
 
