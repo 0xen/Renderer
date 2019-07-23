@@ -151,8 +151,10 @@ struct Vertex
 
 struct Light
 {
-	glm::vec4 position;
-	glm::vec4 color;
+	glm::vec3 position;
+	float intensity;
+	glm::vec3 color;
+	float padding;
 };
 
 std::vector<VulkanTextureBuffer*> textures;
@@ -172,6 +174,23 @@ uint32_t all_indexs[index_max];
 
 VulkanVertexBuffer* vertexBuffer;
 VulkanIndexBuffer* indexBuffer;
+
+void LoadTexture(std::string path)
+{
+	std::vector<unsigned char> image; //the raw pixels
+	unsigned width;
+	unsigned height;
+	unsigned error = lodepng::decode(image, width, height, path);
+	if (error)
+	{
+		std::cout << "decoder error " << error << ": " << lodepng_error_text(error) << std::endl;
+		return;
+	}
+	VulkanTextureBuffer* texture = renderer->CreateTextureBuffer(image.data(), VkFormat::VK_FORMAT_R8G8B8A8_UNORM, width, height);
+	texture->SetData(BufferSlot::Primary);
+	textures.push_back(texture);
+	texture_descriptors.push_back(texture->GetDescriptorImageInfo(BufferSlot::Primary));
+}
 
 VulkanModelPool* LoadModel(std::string path)
 {
@@ -202,27 +221,31 @@ VulkanModelPool* LoadModel(std::string path)
 	unsigned int offset = texture_descriptors.size();
 	for (auto& material : loader.m_materials)
 	{
-		if (material.textureID >= 0) material.textureID += offset;
+		if (material.textureID >= 0)
+			material.textureID += offset;
+		else
+			material.textureID = 0; // Set to default texture
+
+		if (material.metalicTextureID >= 0)
+			material.metalicTextureID += offset;
+		else
+			material.metalicTextureID = 0; // Set to default texture
+
+		if (material.roughnessTextureID >= 0)
+			material.roughnessTextureID += offset;
+		else
+			material.roughnessTextureID = 0; // Set to default texture
+
 		materials.push_back(material);
 	}
 
 	for (auto& texturePath : loader.m_textures)
 	{
 		std::stringstream ss;
+
 		ss << "../../renderer-demo/media/scenes/" << texturePath;
 
-		std::vector<unsigned char> image; //the raw pixels
-		unsigned width;
-		unsigned height;
-
-
-		unsigned error = lodepng::decode(image, width, height, ss.str());
-		if (error) std::cout << "decoder error " << error << ": " << lodepng_error_text(error) << std::endl;
-
-		VulkanTextureBuffer* texture = renderer->CreateTextureBuffer(image.data(), VkFormat::VK_FORMAT_R8G8B8A8_UNORM, width, height);
-		texture->SetData(BufferSlot::Primary);
-		textures.push_back(texture);
-		texture_descriptors.push_back(texture->GetDescriptorImageInfo(BufferSlot::Primary));
+		LoadTexture(ss.str());
 	}
 
 	return renderer->CreateModelPool(vertexBuffer, vertexStart, m_nbVertices, indexBuffer, indexStart, m_nbIndices);
@@ -250,7 +273,7 @@ int main(int argc, char **argv)
 
 	rayCamera.view = glm::mat4(1.0f);
 	rayCamera.view = glm::scale(rayCamera.view, glm::vec3(1.0f, 1.0f, 1.0f));
-	rayCamera.view = glm::translate(rayCamera.view, glm::vec3(0.0f, 0.0f, -1.5f));
+	rayCamera.view = glm::translate(rayCamera.view, glm::vec3(0.0f, 0.0f, -1.0f));
 	float aspectRatio = ((float)1080) / ((float)720);
 	rayCamera.proj = glm::perspective(glm::radians(65.0f), aspectRatio, 0.1f, 1000.0f);
 
@@ -270,8 +293,13 @@ int main(int argc, char **argv)
 	vertexBuffer = renderer->CreateVertexBuffer(all_vertexs, sizeof(Vertex), vertex_max);
 	indexBuffer = renderer->CreateIndexBuffer(all_indexs, sizeof(uint32_t), index_max);
 
-	VulkanModelPool* house_pool = LoadModel("../../renderer-demo/media/scenes/Medieval_building.obj");
-	VulkanModelPool* sphere_pool = LoadModel("../../renderer-demo/media/scenes/sphere.obj");
+	// Define a default texture
+	LoadTexture("../../renderer-demo/media/scenes/white.png");
+
+
+	VulkanModelPool* sphere_pool = LoadModel("../../renderer-demo/media/scenes/Medieval_building.obj");
+	//VulkanModelPool* sphere_pool = LoadModel("../../renderer-demo/media/scenes/CubePBR/cube.obj");
+	//VulkanModelPool* sphere_pool = LoadModel("../../renderer-demo/media/scenes/SpherePBR/sphere.obj");
 
 
 
@@ -288,60 +316,22 @@ int main(int argc, char **argv)
 
 	VulkanBufferPool* position_buffer_pool = new VulkanBufferPool(model_position_buffer1);
 
-	house_pool->AttachBufferPool(POSITION_BUFFER, position_buffer_pool);
 	sphere_pool->AttachBufferPool(POSITION_BUFFER, position_buffer_pool);
 
 
-	VulkanModel* sphere = sphere_pool->CreateModel();
+	VulkanModel* cube = sphere_pool->CreateModel();
 
+
+	
 	glm::mat4 modelPosition = glm::mat4(1.0f);
-	modelPosition = glm::translate(modelPosition, glm::vec3(0, 0, -2));
+	modelPosition = glm::translate(modelPosition, glm::vec3(0, 0, 0));
 	float scale = 0.2;
 	modelPosition = glm::scale(modelPosition, glm::vec3(scale, scale, scale));
 	scale = 0.25f;
 
-	sphere->SetData(POSITION_BUFFER, modelPosition);
+	cube->SetData(POSITION_BUFFER, modelPosition);
+	
 
-
-	VulkanModel* house1;
-	VulkanModel* house2;
-	VulkanModel* house3;
-	{
-
-
-		house1 = house_pool->CreateModel();
-
-		glm::mat4 modelPos = glm::mat4(1.0f);
-		modelPos = glm::mat4(1.0f);
-		modelPos = glm::translate(modelPos, glm::vec3(-1, 0, 0));
-		modelPos = glm::scale(modelPos, glm::vec3(scale, scale, scale));
-
-		house1->SetData(POSITION_BUFFER, modelPos);
-	}
-	{
-
-
-		house2 = house_pool->CreateModel();
-
-		glm::mat4 modelPos = glm::mat4(1.0f);
-		modelPos = glm::mat4(1.0f);
-		modelPos = glm::translate(modelPos, glm::vec3(0, 0, -2.5));
-		modelPos = glm::scale(modelPos, glm::vec3(scale, scale, scale));
-
-		house2->SetData(POSITION_BUFFER, modelPos);
-	}
-	{
-
-
-		house3 = house_pool->CreateModel();
-
-		glm::mat4 modelPos = glm::mat4(1.0f);
-		modelPos = glm::mat4(1.0f);
-		modelPos = glm::translate(modelPos, glm::vec3(1, 0, 0));
-		modelPos = glm::scale(modelPos, glm::vec3(scale, scale, scale));
-
-		house3->SetData(POSITION_BUFFER, modelPos);
-	}
 
 
 	model_position_buffer1->SetData(BufferSlot::Secondery);
@@ -362,19 +352,13 @@ int main(int argc, char **argv)
 
 	VulkanRaytracePipeline* ray_pipeline = renderer->CreateRaytracePipeline(
 		{
-			{ VkShaderStageFlagBits::VK_SHADER_STAGE_RAYGEN_BIT_NV,		"../../renderer-demo/Shaders/Raytrace/Gen/rgen.spv" },
-			{ VkShaderStageFlagBits::VK_SHADER_STAGE_MISS_BIT_NV,		"../../renderer-demo/Shaders/Raytrace/Miss/rmiss.spv" },
-			{ VkShaderStageFlagBits::VK_SHADER_STAGE_MISS_BIT_NV,		"../../renderer-demo/Shaders/Raytrace/Miss/ShadowMiss/rmiss.spv" },
+			{ VkShaderStageFlagBits::VK_SHADER_STAGE_RAYGEN_BIT_NV,		"../../renderer-demo/Shaders/Raytrace/PBR/Gen/rgen.spv" },
+			{ VkShaderStageFlagBits::VK_SHADER_STAGE_MISS_BIT_NV,		"../../renderer-demo/Shaders/Raytrace/PBR/Miss/rmiss.spv" },
+			{ VkShaderStageFlagBits::VK_SHADER_STAGE_MISS_BIT_NV,		"../../renderer-demo/Shaders/Raytrace/PBR/Miss/ShadowMiss/rmiss.spv" },
 		},
 	{
 		{ // Involved 
-			{ VkShaderStageFlagBits::VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, "../../renderer-demo/Shaders/Raytrace/Hitgroups/Reflective/rchit.spv" },
-		},
-		{ // Involved 
-			{ VkShaderStageFlagBits::VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, "../../renderer-demo/Shaders/Raytrace/Hitgroups/Textured/rchit.spv" },
-		},
-		{ // Involved 
-			{ VkShaderStageFlagBits::VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, "../../renderer-demo/Shaders/Raytrace/Hitgroups/TexturedLighting/rchit.spv" },
+			{ VkShaderStageFlagBits::VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, "../../renderer-demo/Shaders/Raytrace/PBR/Hitgroups/rchit.spv" },
 		},
 		{}, // Fall through hit group for lighting shadows
 	});
@@ -392,19 +376,10 @@ int main(int argc, char **argv)
 		ray_pipeline->AddMissProgram(groupID++, {});
 	}
 
-	unsigned int reflectiveID;
-	unsigned int texturedID;
 	unsigned int texturedLightingID;
 	{
 		unsigned int lastID = groupID;
 
-		// Reflective
-		reflectiveID = groupID - lastID;
-		ray_pipeline->AddHitGroup(groupID++, {});
-
-		// Textured
-		texturedID = groupID - lastID;
-		ray_pipeline->AddHitGroup(groupID++, {});
 
 		// Textured Lighting
 		texturedLightingID = groupID - lastID;
@@ -415,7 +390,7 @@ int main(int argc, char **argv)
 	}
 
 
-	ray_pipeline->SetMaxRecursionDepth(10);
+	ray_pipeline->SetMaxRecursionDepth(5);
 	
 
 
@@ -434,12 +409,9 @@ int main(int argc, char **argv)
 
 
 	VulkanAcceleration* acceleration = renderer->CreateAcceleration();
-	//acceleration->AttachModelPool(house_pool, texturedLightingID);
-	//acceleration->AttachModelPool(sphere_pool, reflectiveID);
 	acceleration->Build();
 
-	acceleration->AttachModelPool(house_pool, texturedLightingID);
-	acceleration->AttachModelPool(sphere_pool, reflectiveID);
+	acceleration->AttachModelPool(sphere_pool, texturedLightingID);
 	acceleration->Build();
 
 	struct ModelOffsets
@@ -477,8 +449,9 @@ int main(int argc, char **argv)
 	materialbuffer->SetData(BufferSlot::Primary);
 
 	std::vector<Light> lights = {
-		{ glm::vec4(500, 400, 300,0), glm::vec4(1.0f,1.0f,1.0f,1.0f) },
-		{ glm::vec4(-500, 400, 300,0), glm::vec4(1.0f,1.0f,1.0f,1.0f) }
+		{ glm::vec3(60.0f, 200.0f, -20.0f), 32000, glm::vec3(1.0f, 0.9f, 0.8f) },
+		{ glm::vec3(8.0f, 1.0f, 0.0f), 20, glm::vec3(1.0f, 1.0f, 0.0f) },
+		{ glm::vec3(-10.0f, 5.0f, 0.0f), 20, glm::vec3(0.0f, 1.0f, 1.0f) }
 	};
 
 	VulkanUniformBuffer* lightBuffer = renderer->CreateUniformBuffer(lights.data(), BufferChain::Single, sizeof(Light), lights.size(), true);
@@ -552,20 +525,19 @@ int main(int argc, char **argv)
 
 	ray_pipeline->Build();
 
-	float s = 0.0f;
+	float orbit = 4.0f;
+
+	float rotate = 0.0f;
 
 	while (renderer->IsRunning())
 	{
-		s += 0.003f;
+		rotate += 0.001f;
 
-		modelPosition = glm::translate(modelPosition, glm::vec3(0, 0, sin(s) * 0.014f));
+		lights[1].position = glm::vec3(cos(rotate)*orbit,0.0f,sin(rotate)*orbit);
+		lightBuffer->SetData(BufferSlot::Primary);
 
-		sphere->SetData(POSITION_BUFFER, modelPosition);
-
-
-
-		house1->SetData(POSITION_BUFFER, glm::rotate(house1->GetData<glm::mat4>(POSITION_BUFFER), 0.001f, glm::vec3(0, 1, 0)));
-
+		//cube->SetData(POSITION_BUFFER, glm::translate(modelPosition, glm::vec3(0, sin(rotate)*3, 0)));
+		cube->SetData(POSITION_BUFFER, glm::rotate(cube->GetData<glm::mat4>(POSITION_BUFFER), 0.001f, glm::vec3(0, 1, 0)));
 
 
 		model_position_buffer1->SetData(BufferSlot::Primary);
