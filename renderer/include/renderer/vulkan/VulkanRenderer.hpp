@@ -50,7 +50,7 @@ namespace Renderer
 
 			VulkanIndexBuffer* CreateIndexBuffer(void* dataPtr, unsigned int indexSize, unsigned int elementCount);
 
-			VulkanGraphicsPipeline* CreateGraphicsPipeline(std::vector<std::pair<VkShaderStageFlagBits, const char*>> paths, bool priority = false);
+			VulkanGraphicsPipeline* CreateGraphicsPipeline(std::vector<std::pair<VkShaderStageFlagBits, const char*>> paths);
 
 			void RemoveGraphicsPipeline(VulkanGraphicsPipeline* pipeline);
 

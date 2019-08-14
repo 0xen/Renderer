@@ -201,6 +201,7 @@ void Renderer::Vulkan::VulkanGraphicsPipeline::DestroyPipeline()
 
 void Renderer::Vulkan::VulkanGraphicsPipeline::AttachToCommandBuffer(VkCommandBuffer & command_buffer)
 {
+	if (m_model_pools.size() == 0)return;
 	vkCmdBindPipeline(
 		command_buffer,
 		VK_PIPELINE_BIND_POINT_GRAPHICS,

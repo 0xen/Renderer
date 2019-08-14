@@ -127,10 +127,9 @@ VulkanIndexBuffer * Renderer::Vulkan::VulkanRenderer::CreateIndexBuffer(void * d
 	return new VulkanIndexBuffer(m_device, dataPtr, indexSize, elementCount);
 }
 
-VulkanGraphicsPipeline * Renderer::Vulkan::VulkanRenderer::CreateGraphicsPipeline(std::vector<std::pair<VkShaderStageFlagBits, const char*>> paths, bool priority)
+VulkanGraphicsPipeline * Renderer::Vulkan::VulkanRenderer::CreateGraphicsPipeline(std::vector<std::pair<VkShaderStageFlagBits, const char*>> paths)
 {
 	VulkanGraphicsPipeline* graphics_pipeline = new VulkanGraphicsPipeline(m_device, m_swapchain, paths);
-	m_swapchain->AttachGraphicsPipeline(graphics_pipeline, priority);
 	return graphics_pipeline;
 }
 
@@ -184,10 +183,9 @@ VulkanDescriptorPool * Renderer::Vulkan::VulkanRenderer::CreateDescriptorPool(st
 	return new VulkanDescriptorPool(m_device, descriptors);
 }
 
-VulkanRaytracePipeline * Renderer::Vulkan::VulkanRenderer::CreateRaytracePipeline(std::vector<std::pair<VkShaderStageFlagBits, const char*>> paths, std::vector<std::map<VkShaderStageFlagBits, const char*>> hitgroups, bool priority)
+VulkanRaytracePipeline * Renderer::Vulkan::VulkanRenderer::CreateRaytracePipeline(std::vector<std::pair<VkShaderStageFlagBits, const char*>> paths, std::vector<std::map<VkShaderStageFlagBits, const char*>> hitgroups)
 {
 	VulkanRaytracePipeline* graphics_pipeline = new VulkanRaytracePipeline(m_device, m_swapchain, paths, hitgroups);
-	m_swapchain->AttachGraphicsPipeline(graphics_pipeline, priority);
 	return graphics_pipeline;
 }
 

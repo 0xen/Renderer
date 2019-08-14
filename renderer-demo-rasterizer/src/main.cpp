@@ -59,6 +59,7 @@ NativeWindowHandle* window_handle;
 VulkanRenderer* renderer;
 RayCamera rayCamera;
 VulkanDescriptorSet* standardRTConfigSet = nullptr;
+VulkanSwapchain* swapchain;
 
 class MeshVertex
 {
@@ -243,6 +244,8 @@ int main(int argc, char **argv)
 	renderer->Start(window_handle);
 
 
+	swapchain = renderer->GetSwapchain();
+
 
 	// Ray camera
 	glm::mat4 mPos = glm::mat4(1.0f);
@@ -307,10 +310,6 @@ int main(int argc, char **argv)
 		used_vertex++;
 	}
 
-	//VulkanModelPool* model_pool3 = renderer->CreateModelPool(vertexBuffer, 5, vertexData.size()-5, indexBuffer, 15, 6, ModelPoolUsage::SingleMesh);
-
-	VulkanModelPool* model_pool3 = renderer->CreateModelPool(vertexBuffer, vertexStart, 0, indexBuffer, indexStart, indexData.size(), ModelPoolUsage::MultiMesh);
-
 
 
 
@@ -321,38 +320,29 @@ int main(int argc, char **argv)
 
 
 
+
+	VulkanModelPool* model_pool1 = renderer->CreateModelPool(vertexBuffer, vertexStart, 0, indexBuffer, indexStart, indexData.size(), ModelPoolUsage::MultiMesh);
+	VulkanModelPool* model_pool2PP = renderer->CreateModelPool(vertexBuffer, vertexStart, 0, indexBuffer, indexStart, indexData.size(), ModelPoolUsage::MultiMesh);
+
+
 	glm::mat4* model_position_array = new glm::mat4[1000];
 	VulkanUniformBuffer* model_position_buffer1 = renderer->CreateUniformBuffer(model_position_array, BufferChain::Double, sizeof(glm::mat4), 1000, true);
 
 	VulkanBufferPool* position_buffer_pool = new VulkanBufferPool(model_position_buffer1);
 
-	//model_pool1->AttachBufferPool(POSITION_BUFFER, position_buffer_pool);
-	//model_pool2->AttachBufferPool(POSITION_BUFFER, position_buffer_pool);
-	model_pool3->AttachBufferPool(POSITION_BUFFER, position_buffer_pool);
-
-
-
+	model_pool1->AttachBufferPool(POSITION_BUFFER, position_buffer_pool);
 
 	{
-		//VulkanModel* model = model_pool3->CreateModel();
-		{
-			VulkanModel* model = model_pool3->CreateModel();
-			glm::mat4 pos = glm::mat4(1.0f);
-			pos = glm::translate(pos, glm::vec3(0, 0, -2));
-			float scale = 0.2;
-			pos = glm::scale(pos, glm::vec3(scale, scale, scale));
-			model->SetData(POSITION_BUFFER, pos);
-		}
-		/*{
-			VulkanModel* model = model_pool3->CreateModel(4, 3, 3);
-			glm::mat4 pos = glm::mat4(1.0f);
-			pos = glm::translate(pos, glm::vec3(0, 0, -2));
-			float scale = 0.2;
-			pos = glm::scale(pos, glm::vec3(scale, scale, scale));
-			model->SetData(POSITION_BUFFER, pos);
-		}*/
-
-
+		VulkanModel* model = model_pool1->CreateModel();
+		glm::mat4 pos = glm::mat4(1.0f);
+		pos = glm::translate(pos, glm::vec3(0, 0, -2));
+		float scale = 0.2;
+		pos = glm::scale(pos, glm::vec3(scale, scale, scale));
+		model->SetData(POSITION_BUFFER, pos);
+	}
+	// PP Model
+	{
+		VulkanModel* model = model_pool2PP->CreateModel();
 	}
 
 	model_position_buffer1->SetData(BufferSlot::Secondery);
@@ -427,7 +417,7 @@ int main(int argc, char **argv)
 	texture_descriptor_set1->AttachBuffer(0, texture);
 	texture_descriptor_set1->UpdateSet();
 
-	model_pool3->AttachDescriptorSet(1, texture_descriptor_set1);
+	model_pool1->AttachDescriptorSet(1, texture_descriptor_set1);
 
 	{
 		base = renderer->CreateGraphicsPipeline({
@@ -448,6 +438,8 @@ int main(int argc, char **argv)
 		base->AttachDescriptorPool(texture_pool);
 		base->Build();
 	}
+
+
 	{
 		sceneRenderPassPipeline = renderer->CreateGraphicsPipeline({
 			{ VkShaderStageFlagBits::VK_SHADER_STAGE_VERTEX_BIT, "../../renderer-demo/Shaders/vert.spv" },
@@ -470,8 +462,9 @@ int main(int argc, char **argv)
 		sceneRenderPassPipeline->Build();
 	}
 
-	sceneRenderPassPipeline->AttachModelPool(model_pool3);
+	sceneRenderPassPipeline->AttachModelPool(model_pool1);
 
+	swapchain->AttachGraphicsPipeline(sceneRenderPassPipeline);
 
 
 
@@ -486,6 +479,7 @@ int main(int argc, char **argv)
 		{
 			VulkanGraphicsPipelineConfig& config = postProcessTintPipeline->GetGraphicsPipelineConfig();
 			config.allow_darivatives = true;
+			config.culling = VkCullModeFlagBits::VK_CULL_MODE_NONE;
 			config.parent = base;
 		}
 
@@ -495,11 +489,12 @@ int main(int argc, char **argv)
 		postProcessTintPipeline->Build();
 	}
 
-	
+
+	postProcessTintPipeline->AttachModelPool(model_pool2PP);
 
 
 
-
+	swapchain->AttachGraphicsPipeline(postProcessTintPipeline);
 
 	
 
