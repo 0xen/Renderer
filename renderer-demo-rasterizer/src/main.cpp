@@ -271,8 +271,8 @@ int main(int argc, char **argv)
 	vertexBuffer = renderer->CreateVertexBuffer(all_vertexs, sizeof(Vertex), vertex_max);
 	indexBuffer = renderer->CreateIndexBuffer(all_indexs, sizeof(uint32_t), index_max);
 
-	VulkanModelPool* model_pool1 = LoadModel("../../renderer-demo/media/scenes/Medieval_building.obj");
-	VulkanModelPool* model_pool2 = LoadModel("../../renderer-demo/media/scenes/sphere.obj");
+	//VulkanModelPool* model_pool1 = LoadModel("../../renderer-demo/media/scenes/Medieval_building.obj");
+	//VulkanModelPool* model_pool2 = LoadModel("../../renderer-demo/media/scenes/sphere.obj");
 
 
 
@@ -281,12 +281,9 @@ int main(int argc, char **argv)
 		{ glm::vec3(1.0f,1.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(1.0f,1.0f,0.0f), glm::vec2(0.0f,0.0f) ,-1 },
 		{ glm::vec3(1.0f,-1.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(0.0f,1.0f,0.0f), glm::vec2(0.0f,1.0f)  ,-1 },
 		{ glm::vec3(-1.0f,-1.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(.0f,1.0f,1.0f), glm::vec2(1.0f,1.0f)  ,-1 },
-		{ glm::vec3(0,0,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(1.0f,0.0f,1.0f), glm::vec2(1.0f,0.0f)  ,-1 },
+	{ glm::vec3(-1.0f,1.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(1.0f,0.0f,1.0f), glm::vec2(1.0f,0.0f)  ,-1 },
 
-		{ glm::vec3(1.0f,1.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(1.0f,1.0f,0.0f), glm::vec2(0.0f,0.0f) ,-1 },
-		{ glm::vec3(0,0,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(0.0f,1.0f,0.0f), glm::vec2(0.0f,1.0f)  ,-1 },
-		{ glm::vec3(-1.0f,-1.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(.0f,1.0f,1.0f), glm::vec2(1.0f,1.0f)  ,-1 },
-		{ glm::vec3(-1.0f,1.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(1.0f,0.0f,1.0f), glm::vec2(1.0f,0.0f)  ,-1 },
+
 	};
 
 	std::vector<uint32_t> indexData{
@@ -312,7 +309,7 @@ int main(int argc, char **argv)
 
 	//VulkanModelPool* model_pool3 = renderer->CreateModelPool(vertexBuffer, 5, vertexData.size()-5, indexBuffer, 15, 6, ModelPoolUsage::SingleMesh);
 
-	VulkanModelPool* model_pool3 = renderer->CreateModelPool(vertexBuffer, vertexStart, 0, indexBuffer, indexStart, 0, ModelPoolUsage::MultiMesh);
+	VulkanModelPool* model_pool3 = renderer->CreateModelPool(vertexBuffer, vertexStart, 0, indexBuffer, indexStart, indexData.size(), ModelPoolUsage::MultiMesh);
 
 
 
@@ -339,21 +336,21 @@ int main(int argc, char **argv)
 	{
 		//VulkanModel* model = model_pool3->CreateModel();
 		{
-			VulkanModel* model = model_pool3->CreateModel(0, 0, 3);
+			VulkanModel* model = model_pool3->CreateModel();
 			glm::mat4 pos = glm::mat4(1.0f);
 			pos = glm::translate(pos, glm::vec3(0, 0, -2));
 			float scale = 0.2;
 			pos = glm::scale(pos, glm::vec3(scale, scale, scale));
 			model->SetData(POSITION_BUFFER, pos);
 		}
-		{
+		/*{
 			VulkanModel* model = model_pool3->CreateModel(4, 3, 3);
 			glm::mat4 pos = glm::mat4(1.0f);
 			pos = glm::translate(pos, glm::vec3(0, 0, -2));
 			float scale = 0.2;
 			pos = glm::scale(pos, glm::vec3(scale, scale, scale));
 			model->SetData(POSITION_BUFFER, pos);
-		}
+		}*/
 
 
 	}
@@ -368,14 +365,13 @@ int main(int argc, char **argv)
 
 
 
-
-
 	//RayCamera
 	VulkanUniformBuffer* cameraInfo = renderer->CreateUniformBuffer(&rayCamera, BufferChain::Single, sizeof(RayCamera), 1, true);
 	cameraInfo->SetData(BufferSlot::Primary);
 
 	VulkanGraphicsPipeline* base;
-	VulkanGraphicsPipeline* pipeline;
+	VulkanGraphicsPipeline* sceneRenderPassPipeline;
+	VulkanGraphicsPipeline* postProcessTintPipeline;
 
 	VertexBase vertex_binding_vertex = {
 		VkVertexInputRate::VK_VERTEX_INPUT_RATE_VERTEX,
@@ -415,6 +411,24 @@ int main(int argc, char **argv)
 		renderer->CreateDescriptor(VkDescriptorType::VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT, 0),
 	});
 
+
+
+	std::vector<unsigned char> image; //the raw pixels
+	unsigned width;
+	unsigned height;
+	unsigned error = lodepng::decode(image, width, height, "../../renderer-demo/Images/cobble.png");
+	if (error) std::cout << "decoder error " << error << ": " << lodepng_error_text(error) << std::endl;
+
+	VulkanTextureBuffer* texture = renderer->CreateTextureBuffer(image.data(), VkFormat::VK_FORMAT_R8G8B8A8_UNORM, width, height);
+
+
+
+	VulkanDescriptorSet* texture_descriptor_set1 = texture_pool->CreateDescriptorSet();
+	texture_descriptor_set1->AttachBuffer(0, texture);
+	texture_descriptor_set1->UpdateSet();
+
+	model_pool3->AttachDescriptorSet(1, texture_descriptor_set1);
+
 	{
 		base = renderer->CreateGraphicsPipeline({
 			{ VkShaderStageFlagBits::VK_SHADER_STAGE_VERTEX_BIT, "../../renderer-demo/Shaders/vert.spv" },
@@ -435,7 +449,7 @@ int main(int argc, char **argv)
 		base->Build();
 	}
 	{
-		pipeline = renderer->CreateGraphicsPipeline({
+		sceneRenderPassPipeline = renderer->CreateGraphicsPipeline({
 			{ VkShaderStageFlagBits::VK_SHADER_STAGE_VERTEX_BIT, "../../renderer-demo/Shaders/vert.spv" },
 			{ VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT, "../../renderer-demo/Shaders/frag.spv" }
 			});
@@ -443,18 +457,49 @@ int main(int argc, char **argv)
 
 		// Config base pipeline
 		{
-			VulkanGraphicsPipelineConfig& config = pipeline->GetGraphicsPipelineConfig();
+			VulkanGraphicsPipelineConfig& config = sceneRenderPassPipeline->GetGraphicsPipelineConfig();
 			config.allow_darivatives = true;
 			config.parent = base;
 		}
 
-		pipeline->AttachVertexBinding(vertex_binding_vertex);
-		pipeline->AttachVertexBinding(vertex_binding_position);
-		pipeline->AttachDescriptorPool(camera_pool);
-		pipeline->AttachDescriptorSet(0, camera_descriptor_set);
-		pipeline->AttachDescriptorPool(texture_pool);
-		pipeline->Build();
+		sceneRenderPassPipeline->AttachVertexBinding(vertex_binding_vertex);
+		sceneRenderPassPipeline->AttachVertexBinding(vertex_binding_position);
+		sceneRenderPassPipeline->AttachDescriptorPool(camera_pool);
+		sceneRenderPassPipeline->AttachDescriptorSet(0, camera_descriptor_set);
+		sceneRenderPassPipeline->AttachDescriptorPool(texture_pool);
+		sceneRenderPassPipeline->Build();
 	}
+
+	sceneRenderPassPipeline->AttachModelPool(model_pool3);
+
+
+
+
+	{
+		postProcessTintPipeline = renderer->CreateGraphicsPipeline({
+			{ VkShaderStageFlagBits::VK_SHADER_STAGE_VERTEX_BIT, "../../renderer-demo/Shaders/PP/Tint/vert.spv" },
+			{ VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT, "../../renderer-demo/Shaders/PP/Tint/frag.spv" }
+			});
+
+
+		// Config base pipeline
+		{
+			VulkanGraphicsPipelineConfig& config = postProcessTintPipeline->GetGraphicsPipelineConfig();
+			config.allow_darivatives = true;
+			config.parent = base;
+		}
+
+		postProcessTintPipeline->AttachVertexBinding(vertex_binding_vertex);
+		postProcessTintPipeline->AttachDescriptorPool(texture_pool);
+		postProcessTintPipeline->AttachDescriptorSet(0, texture_descriptor_set1);
+		postProcessTintPipeline->Build();
+	}
+
+	
+
+
+
+
 
 	
 
@@ -468,30 +513,6 @@ int main(int argc, char **argv)
 
 
 
-
-
-
-
-	std::vector<unsigned char> image; //the raw pixels
-	unsigned width;
-	unsigned height;
-	unsigned error = lodepng::decode(image, width, height, "../../renderer-demo/Images/cobble.png");
-	if (error) std::cout << "decoder error " << error << ": " << lodepng_error_text(error) << std::endl;
-
-	VulkanTextureBuffer* texture = renderer->CreateTextureBuffer(image.data(), VkFormat::VK_FORMAT_R8G8B8A8_UNORM, width, height);
-
-
-
-	VulkanDescriptorSet* texture_descriptor_set1 = texture_pool->CreateDescriptorSet();
-	texture_descriptor_set1->AttachBuffer(0, texture);
-	texture_descriptor_set1->UpdateSet();
-
-	model_pool3->AttachDescriptorSet(1, texture_descriptor_set1);
-
-
-
-
-	pipeline->AttachModelPool(model_pool3);
 
 
 

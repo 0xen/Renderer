@@ -84,6 +84,7 @@ Renderer::Vulkan::VulkanModel * Renderer::Vulkan::VulkanModelPool::CreateModel()
 
 	Render(new_index, true);
 
+	SetModelOffsets(new_index, GetVertexOffset(), GetIndexOffset(), GetIndexSize());
 
 	return model;
 }

@@ -248,7 +248,7 @@ VulkanModelPool* LoadModel(std::string path)
 		LoadTexture(ss.str());
 	}
 
-	return renderer->CreateModelPool(vertexBuffer, vertexStart, m_nbVertices, indexBuffer, indexStart, m_nbIndices);
+	return renderer->CreateModelPool(vertexBuffer, vertexStart, m_nbVertices, indexBuffer, indexStart, m_nbIndices, ModelPoolUsage::MultiMesh);
 }
 
 
