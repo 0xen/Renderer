@@ -226,7 +226,7 @@ VulkanModelPool* LoadModel(std::string path)
 		texture_descriptors.push_back(texture->GetDescriptorImageInfo(BufferSlot::Primary));
 	}
 
-	return renderer->CreateModelPool(vertexBuffer, vertexStart, m_nbVertices, indexBuffer, indexStart, m_nbIndices);
+	return renderer->CreateModelPool(vertexBuffer, vertexStart, m_nbVertices, indexBuffer, indexStart, m_nbIndices, ModelPoolUsage::SingleMesh);
 }
 
 
@@ -279,14 +279,19 @@ int main(int argc, char **argv)
 
 	std::vector<Vertex> vertexData = {
 		{ glm::vec3(1.0f,1.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(1.0f,1.0f,0.0f), glm::vec2(0.0f,0.0f) ,-1 },
-	{ glm::vec3(1.0f,-1.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(0.0f,1.0f,0.0f), glm::vec2(0.0f,1.0f)  ,-1 },
-	{ glm::vec3(-1.0f,-1.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(.0f,1.0f,1.0f), glm::vec2(1.0f,1.0f)  ,-1 },
-	{ glm::vec3(-1.0f,1.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(1.0f,0.0f,1.0f), glm::vec2(1.0f,0.0f)  ,-1 }
+		{ glm::vec3(1.0f,-1.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(0.0f,1.0f,0.0f), glm::vec2(0.0f,1.0f)  ,-1 },
+		{ glm::vec3(-1.0f,-1.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(.0f,1.0f,1.0f), glm::vec2(1.0f,1.0f)  ,-1 },
+		{ glm::vec3(0,0,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(1.0f,0.0f,1.0f), glm::vec2(1.0f,0.0f)  ,-1 },
+
+		{ glm::vec3(1.0f,1.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(1.0f,1.0f,0.0f), glm::vec2(0.0f,0.0f) ,-1 },
+		{ glm::vec3(0,0,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(0.0f,1.0f,0.0f), glm::vec2(0.0f,1.0f)  ,-1 },
+		{ glm::vec3(-1.0f,-1.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(.0f,1.0f,1.0f), glm::vec2(1.0f,1.0f)  ,-1 },
+		{ glm::vec3(-1.0f,1.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(1.0f,0.0f,1.0f), glm::vec2(1.0f,0.0f)  ,-1 },
 	};
 
 	std::vector<uint32_t> indexData{
 		0,1,2,
-		0,2,3
+		0,2,3,
 	};
 
 	unsigned int vertexStart = used_vertex;
@@ -305,7 +310,9 @@ int main(int argc, char **argv)
 		used_vertex++;
 	}
 
-	VulkanModelPool* model_pool3 = renderer->CreateModelPool(vertexBuffer, vertexStart, vertexData.size(), indexBuffer, indexStart, indexData.size());
+	//VulkanModelPool* model_pool3 = renderer->CreateModelPool(vertexBuffer, 5, vertexData.size()-5, indexBuffer, 15, 6, ModelPoolUsage::SingleMesh);
+
+	VulkanModelPool* model_pool3 = renderer->CreateModelPool(vertexBuffer, vertexStart, 0, indexBuffer, indexStart, 0, ModelPoolUsage::MultiMesh);
 
 
 
@@ -322,74 +329,34 @@ int main(int argc, char **argv)
 
 	VulkanBufferPool* position_buffer_pool = new VulkanBufferPool(model_position_buffer1);
 
-	model_pool1->AttachBufferPool(POSITION_BUFFER, position_buffer_pool);
-	model_pool2->AttachBufferPool(POSITION_BUFFER, position_buffer_pool);
+	//model_pool1->AttachBufferPool(POSITION_BUFFER, position_buffer_pool);
+	//model_pool2->AttachBufferPool(POSITION_BUFFER, position_buffer_pool);
 	model_pool3->AttachBufferPool(POSITION_BUFFER, position_buffer_pool);
 
 
-	VulkanModel* model1 = model_pool2->CreateModel();
-
-	glm::mat4 modelPosition = glm::mat4(1.0f);
-	modelPosition = glm::translate(modelPosition, glm::vec3(0, 0, -2));
-	float scale = 0.2;
-	modelPosition = glm::scale(modelPosition, glm::vec3(scale, scale, scale));
-	scale = 0.25f;
-
-	model1->SetData(POSITION_BUFFER, modelPosition);
 
 
 	{
-		VulkanModel* model = model_pool3->CreateModel();
+		//VulkanModel* model = model_pool3->CreateModel();
+		{
+			VulkanModel* model = model_pool3->CreateModel(0, 0, 3);
+			glm::mat4 pos = glm::mat4(1.0f);
+			pos = glm::translate(pos, glm::vec3(0, 0, -2));
+			float scale = 0.2;
+			pos = glm::scale(pos, glm::vec3(scale, scale, scale));
+			model->SetData(POSITION_BUFFER, pos);
+		}
+		{
+			VulkanModel* model = model_pool3->CreateModel(4, 3, 3);
+			glm::mat4 pos = glm::mat4(1.0f);
+			pos = glm::translate(pos, glm::vec3(0, 0, -2));
+			float scale = 0.2;
+			pos = glm::scale(pos, glm::vec3(scale, scale, scale));
+			model->SetData(POSITION_BUFFER, pos);
+		}
 
-		glm::mat4 pos = glm::mat4(1.0f);
-		pos = glm::translate(pos, glm::vec3(0, 0, 0));
-		float s = 1.0f;
-		pos = glm::scale(pos, glm::vec3(s, s, s));
 
-		model->SetData(POSITION_BUFFER, modelPosition);
 	}
-
-
-	VulkanModel* model2;
-	VulkanModel* model3;
-	VulkanModel* model4;
-	{
-
-
-		model2 = model_pool1->CreateModel();
-
-		glm::mat4 modelPos = glm::mat4(1.0f);
-		modelPos = glm::mat4(1.0f);
-		modelPos = glm::translate(modelPos, glm::vec3(0, 1, 0));
-		modelPos = glm::scale(modelPos, glm::vec3(scale, scale, scale));
-
-		model2->SetData(POSITION_BUFFER, modelPos);
-	}
-	{
-
-
-		model3 = model_pool1->CreateModel();
-
-		glm::mat4 modelPos = glm::mat4(1.0f);
-		modelPos = glm::mat4(1.0f);
-		modelPos = glm::translate(modelPos, glm::vec3(-1, 0, 0));
-		modelPos = glm::scale(modelPos, glm::vec3(scale, scale, scale));
-
-		model3->SetData(POSITION_BUFFER, modelPos);
-	}
-	{
-
-
-		model4 = model_pool1->CreateModel();
-
-		glm::mat4 modelPos = glm::mat4(1.0f);
-		modelPos = glm::mat4(1.0f);
-		modelPos = glm::translate(modelPos, glm::vec3(1, 0, 0));
-		modelPos = glm::scale(modelPos, glm::vec3(scale, scale, scale));
-
-		model4->SetData(POSITION_BUFFER, modelPos);
-	}
-
 
 	model_position_buffer1->SetData(BufferSlot::Secondery);
 	model_position_buffer1->Transfer(BufferSlot::Primary, BufferSlot::Secondery);
@@ -422,6 +389,8 @@ int main(int argc, char **argv)
 		sizeof(Vertex),
 		0
 	};
+
+	
 
 	VertexBase vertex_binding_position = {
 		VkVertexInputRate::VK_VERTEX_INPUT_RATE_INSTANCE,
@@ -532,10 +501,6 @@ int main(int argc, char **argv)
 	while (renderer->IsRunning())
 	{
 		s += 0.01f;
-
-		modelPosition = glm::translate(modelPosition, glm::vec3(0, 0, sin(s) * 0.01f));
-
-		model1->SetData(POSITION_BUFFER, modelPosition);
 
 		model_position_buffer1->SetData(BufferSlot::Primary);
 

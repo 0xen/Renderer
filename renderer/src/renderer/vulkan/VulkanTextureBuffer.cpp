@@ -74,6 +74,16 @@ intptr_t Renderer::Vulkan::VulkanTextureBuffer::GetTextureID()
 	return (intptr_t)m_image;
 }
 
+unsigned int Renderer::Vulkan::VulkanTextureBuffer::GetWidth()
+{
+	return m_width;
+}
+
+unsigned int Renderer::Vulkan::VulkanTextureBuffer::GetHeight()
+{
+	return m_height;
+}
+
 void Renderer::Vulkan::VulkanTextureBuffer::InitTexture()
 {
 

@@ -17,6 +17,8 @@ namespace Renderer
 			VkImage& GetImage();
 			virtual void SetData(BufferSlot slot);
 			virtual intptr_t GetTextureID();
+			unsigned int GetWidth();
+			unsigned int GetHeight();
 		private:
 			void InitTexture();
 			void MoveDataToImage();

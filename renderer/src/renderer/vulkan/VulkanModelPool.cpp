@@ -13,8 +13,8 @@
 
 const unsigned int Renderer::Vulkan::VulkanModelPool::m_indirect_array_padding = 100;
 
-Renderer::Vulkan::VulkanModelPool::VulkanModelPool(VulkanDevice * device, VulkanVertexBuffer * vertex_buffer, unsigned int vertex_offset, unsigned int vertex_size) :
-	m_vertex_offset(vertex_offset), m_vertex_size(vertex_size)
+Renderer::Vulkan::VulkanModelPool::VulkanModelPool(VulkanDevice * device, VulkanVertexBuffer * vertex_buffer, unsigned int vertex_offset, unsigned int vertex_size, ModelPoolUsage usage) :
+	m_vertex_offset(vertex_offset), m_vertex_size(vertex_size), m_model_pool_usage(usage)
 {
 	m_vertex_buffer = vertex_buffer;
 	m_device = device;
@@ -26,8 +26,8 @@ Renderer::Vulkan::VulkanModelPool::VulkanModelPool(VulkanDevice * device, Vulkan
 	ResizeIndirectArray(m_indirect_array_padding);
 }
 
-Renderer::Vulkan::VulkanModelPool::VulkanModelPool(VulkanDevice* device, VulkanVertexBuffer * vertex_buffer, unsigned int vertex_offset, unsigned int vertex_size, VulkanIndexBuffer * index_buffer, unsigned int index_offset, unsigned int index_size) :
-	m_vertex_offset(vertex_offset), m_vertex_size(vertex_size), m_index_offset(index_offset), m_index_size(index_size)
+Renderer::Vulkan::VulkanModelPool::VulkanModelPool(VulkanDevice* device, VulkanVertexBuffer * vertex_buffer, unsigned int vertex_offset, unsigned int vertex_size, VulkanIndexBuffer * index_buffer, unsigned int index_offset, unsigned int index_size, ModelPoolUsage usage) :
+	m_vertex_offset(vertex_offset), m_vertex_size(vertex_size), m_index_offset(index_offset), m_index_size(index_size), m_model_pool_usage(usage)
 {
 	m_vertex_buffer = vertex_buffer;
 	m_index_buffer = index_buffer;
@@ -69,7 +69,7 @@ Renderer::Vulkan::VulkanModel * Renderer::Vulkan::VulkanModelPool::CreateModel()
 
 
 
-	VulkanModel* model = new VulkanModel(this, new_index);
+	VulkanModel* model = new VulkanModel(this, new_index, GetVertexOffset(), GetIndexOffset(), GetIndexSize());
 	m_models[new_index] = model;
 
 	for (auto buffer = m_buffers.begin(); buffer != m_buffers.end(); buffer++)
@@ -84,6 +84,45 @@ Renderer::Vulkan::VulkanModel * Renderer::Vulkan::VulkanModelPool::CreateModel()
 
 	Render(new_index, true);
 
+
+	return model;
+}
+
+Renderer::Vulkan::VulkanModel * Renderer::Vulkan::VulkanModelPool::CreateModel(unsigned int vertexOffset, unsigned int indexOffset, unsigned int indexSize)
+{
+	unsigned int new_index = 0;
+	if (m_free_indexs.size() > 0)
+	{
+		// Get a index from the free array
+		new_index = m_free_indexs[0];
+		// Remove the index from the free array
+		m_free_indexs.erase(m_free_indexs.begin());
+	}
+	else
+	{
+		new_index = m_current_index;
+		m_current_index++;
+		m_largest_index = m_current_index;
+	}
+
+
+
+	VulkanModel* model = new VulkanModel(this, new_index, vertexOffset, indexOffset, indexSize);
+	m_models[new_index] = model;
+
+	for (auto buffer = m_buffers.begin(); buffer != m_buffers.end(); buffer++)
+	{
+		unsigned int bufferPoolOffset = buffer->second->Allocate();
+		void* data = buffer->second->GetRaw(bufferPoolOffset);
+		model->SetDataPointer(buffer->first, data);
+
+		m_model_buffer_mapping[new_index][buffer->first] = bufferPoolOffset;
+	}
+	m_change = true;
+
+	Render(new_index, true);
+
+	SetModelOffsets(new_index,vertexOffset, indexOffset, indexSize);
 
 	return model;
 }
@@ -110,7 +149,13 @@ void Renderer::Vulkan::VulkanModelPool::RemoveModel(VulkanModel * model)
 			buffer->second->UnAllocate(m_model_buffer_mapping[index][buffer->first]);
 		}
 
-		m_model_buffer_mapping.erase(m_model_buffer_mapping.find(index));
+		// If this model pool had any mapped buffers, remove there mapping
+		auto buffer_it = m_model_buffer_mapping.find(index);
+		if (buffer_it != m_model_buffer_mapping.end())
+		{
+			m_model_buffer_mapping.erase(buffer_it);
+		}
+
 
 
 		// Remove local model record
@@ -137,12 +182,31 @@ void Renderer::Vulkan::VulkanModelPool::Update()
 
 		if (Indexed())
 		{
-			for (int i = 0; i < m_indexed_indirect_command.size(); i++)
+
+
+			if (m_model_pool_usage == ModelPoolUsage::SingleMesh)
 			{
-				VkDrawIndexedIndirectCommand& indexed_indirect_command = m_indexed_indirect_command[i];
-				indexed_indirect_command.indexCount = GetIndexSize();
-				indexed_indirect_command.vertexOffset = GetVertexOffset();
+				for (int i = 0; i < m_indexed_indirect_command.size(); i++)
+				{
+					VkDrawIndexedIndirectCommand& indexed_indirect_command = m_indexed_indirect_command[i];
+					indexed_indirect_command.indexCount = GetIndexSize();
+					indexed_indirect_command.vertexOffset = GetVertexOffset();
+					// Since we are in global view, we do not need to offset the offset as it is done in the command buffer creation
+					//indexed_indirect_command.firstIndex = 0;
+				}
 			}
+			else if (m_model_pool_usage == ModelPoolUsage::MultiMesh)
+			{
+				for (auto& it : m_models)
+				{
+					VulkanModel* model = it.second;
+					VkDrawIndexedIndirectCommand& indexed_indirect_command = m_indexed_indirect_command[it.first];
+					indexed_indirect_command.indexCount = model->GetIndexSize();
+					indexed_indirect_command.vertexOffset = model->GetVertexOffset();
+					indexed_indirect_command.firstIndex = model->GetIndexOffset();
+				}
+			}
+
 		}
 		else
 		{
@@ -211,6 +275,11 @@ Renderer::Vulkan::VulkanVertexBuffer * Renderer::Vulkan::VulkanModelPool::GetVer
 Renderer::Vulkan::VulkanIndexBuffer * Renderer::Vulkan::VulkanModelPool::GetIndexBuffer()
 {
 	return m_index_buffer;
+}
+
+Renderer::Vulkan::VulkanBuffer * Renderer::Vulkan::VulkanModelPool::GetIndirectDrawBuffer()
+{
+	return m_indirect_draw_buffer;
 }
 
 unsigned int Renderer::Vulkan::VulkanModelPool::GetVertexOffset()
@@ -336,16 +405,6 @@ void Renderer::Vulkan::VulkanModelPool::AttachToCommandBuffer(VkCommandBuffer & 
 				);
 			}
 
-
-			/*vkCmdDrawIndexed(
-				command_buffer,
-				GetIndexSize(),
-				1,
-				0,
-				GetVertexOffset(),
-				0
-			);*/
-
 			vkCmdDrawIndexedIndirect(
 				command_buffer,
 				m_indirect_draw_buffer->GetBufferData(BufferSlot::Primary)->buffer,
@@ -382,116 +441,6 @@ void Renderer::Vulkan::VulkanModelPool::AttachToCommandBuffer(VkCommandBuffer & 
 			);
 		}
 	}
-
-
-	/*
-	VkDeviceSize offsets[] = { 0 };
-	for(auto it = m_descriptor_sets.begin(); it!= m_descriptor_sets.end(); it++)
-	{
-		vkCmdBindDescriptorSets(
-			command_buffer,
-			VK_PIPELINE_BIND_POINT_GRAPHICS,
-			pipeline->GetPipelineLayout(),
-			it->first,
-			1,
-			&it->second->GetDescriptorSet(),
-			0,
-			NULL
-		);
-	}
-
-	vkCmdBindVertexBuffers(
-		command_buffer,
-		0,
-		1,
-		&m_vertex_buffer->GetBufferData(BufferSlot::Primary)->buffer,
-		offsets
-	);
-
-	if (Indexed())
-	{
-		vkCmdBindIndexBuffer(
-			command_buffer,
-			m_index_buffer->GetBufferData(BufferSlot::Primary)->buffer,
-			0,
-			VK_INDEX_TYPE_UINT16
-		);
-	}
-
-
-	if (m_buffers.size() > 0)
-	{
-		std::vector<VkBuffer> vertex_buffers;
-		for (auto buffer = m_buffers.begin(); buffer != m_buffers.end(); buffer++)
-		{
-			vertex_buffers.push_back(buffer->second->GetBufferData(BufferSlot::Primary)->buffer);
-		}
-		vkCmdBindVertexBuffers(
-			command_buffer,
-			1,
-			(uint32_t)vertex_buffers.size(),
-			vertex_buffers.data(),
-			offsets
-		);
-	}
-	
-
-	// Check to see if we can render all models in one draw pass
-	if (m_device->GetVulkanPhysicalDevice()->GetDeviceFeatures()->multiDrawIndirect &&
-		m_device->GetVulkanPhysicalDevice()->GetPhysicalDeviceProperties()->limits.maxDrawIndirectCount >= m_current_index)
-	{
-		// Render using a index buffer if one was provided
-		if (Indexed())
-		{
-			vkCmdDrawIndexedIndirect(
-				command_buffer,
-				m_indirect_draw_buffer->GetBufferData(BufferSlot::Primary)->buffer,
-				0,
-				m_current_index,
-				sizeof(VkDrawIndexedIndirectCommand)
-			);
-		}
-		else
-		{
-			vkCmdDrawIndirect(
-				command_buffer,
-				m_indirect_draw_buffer->GetBufferData(BufferSlot::Primary)->buffer,
-				0,
-				m_current_index,
-				sizeof(VkDrawIndirectCommand)
-			);
-		}
-	}
-	else // If we cant, loop through for each draw
-	{
-		if (Indexed())
-		{
-			for (unsigned int j = 0; j < m_current_index; j++)
-			{
-				vkCmdDrawIndexedIndirect(
-					command_buffer,
-					m_indirect_draw_buffer->GetBufferData(BufferSlot::Primary)->buffer,
-					j * sizeof(VkDrawIndexedIndirectCommand), 
-					1, 
-					sizeof(VkDrawIndexedIndirectCommand));
-			}
-		}
-		else
-		{
-			for (unsigned int j = 0; j < m_current_index; j++)
-			{
-				vkCmdDrawIndirect(
-					command_buffer,
-					m_indirect_draw_buffer->GetBufferData(BufferSlot::Primary)->buffer,
-					j * sizeof(VkDrawIndirectCommand),
-					1,
-					sizeof(VkDrawIndirectCommand)
-				);
-			}
-		}
-	}
-
-	*/
 	
 }
 
@@ -503,6 +452,30 @@ bool Renderer::Vulkan::VulkanModelPool::HasChanged()
 		return true;
 	}
 	return false;
+}
+
+void Renderer::Vulkan::VulkanModelPool::SetModelOffsets(unsigned int index, unsigned int vertexOffset, unsigned int indexOffset, unsigned int indexSize)
+{
+	if (index + 1 >= m_indirect_draw_buffer->GetElementCount(BufferSlot::Primary))
+	{
+		ResizeIndirectArray(index + m_indirect_array_padding);
+	}
+	auto& it = m_models.find(index);
+	if (it == m_models.end())return;
+	if (Indexed())
+	{
+		VkDrawIndexedIndirectCommand& indexed_indirect_command = m_indexed_indirect_command[index];
+		indexed_indirect_command.indexCount = it->second->GetIndexSize();
+		indexed_indirect_command.firstIndex = it->second->GetIndexOffset();
+		indexed_indirect_command.vertexOffset = it->second->GetVertexOffset() + GetVertexOffset();
+	}
+	else
+	{
+		VkDrawIndirectCommand& vertex_indirect_command = m_vertex_indirect_command[index];
+		vertex_indirect_command.firstVertex = it->second->GetVertexOffset() + GetVertexOffset();
+	}
+
+	m_indirect_draw_buffer->SetData(BufferSlot::Primary, index, 1);
 }
 
 void Renderer::Vulkan::VulkanModelPool::ResizeIndirectArray(unsigned int size)
@@ -527,19 +500,35 @@ void Renderer::Vulkan::VulkanModelPool::ResizeIndirectArray(unsigned int size)
 	{
 		if (Indexed())
 		{
-
-			// Set the data for the model pool
-			for (unsigned int i = 0; i < size; i++)
+			if (m_model_pool_usage == ModelPoolUsage::SingleMesh)
 			{
-
-
-				VkDrawIndexedIndirectCommand& indexed_indirect_command = m_indexed_indirect_command[i];
-				indexed_indirect_command.indexCount = GetIndexSize();
-				indexed_indirect_command.instanceCount = 0;
-				indexed_indirect_command.firstIndex = 0;
-				indexed_indirect_command.vertexOffset = GetVertexOffset();
-				indexed_indirect_command.firstInstance = 0;
+				// Set the data for the model pool
+				for (unsigned int i = 0; i < size; i++)
+				{
+					VkDrawIndexedIndirectCommand& indexed_indirect_command = m_indexed_indirect_command[i];
+					indexed_indirect_command.indexCount = GetIndexSize();
+					indexed_indirect_command.instanceCount = 0;
+					indexed_indirect_command.firstIndex = 0;
+					indexed_indirect_command.vertexOffset = GetVertexOffset();
+					indexed_indirect_command.firstInstance = 0;
+				}
 			}
+			else if (m_model_pool_usage == ModelPoolUsage::MultiMesh)
+			{
+				for (auto& it : m_models)
+				{
+					unsigned int index = it.first;
+					// Set the data for the model
+					VkDrawIndexedIndirectCommand& indexed_indirect_command = m_indexed_indirect_command[index];
+					indexed_indirect_command.indexCount = it.second->GetIndexSize();
+					indexed_indirect_command.instanceCount = 0;
+					indexed_indirect_command.firstIndex = it.second->GetIndexOffset();
+					indexed_indirect_command.vertexOffset = it.second->GetVertexOffset() + GetVertexOffset();
+					indexed_indirect_command.firstInstance = 0;
+				}
+			}
+
+
 			// Create the vulkan buffer
 			m_indirect_draw_buffer = new VulkanBuffer(m_device, BufferChain::Single, m_indexed_indirect_command.data(), instance_size, size,
 				VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
@@ -549,14 +538,29 @@ void Renderer::Vulkan::VulkanModelPool::ResizeIndirectArray(unsigned int size)
 		}
 		else
 		{
-			// Set the data for the model pool
-			for (unsigned int i = 0; i < size; i++)
+			if (m_model_pool_usage == ModelPoolUsage::SingleMesh)
 			{
-				VkDrawIndirectCommand& vertex_indirect_command = m_vertex_indirect_command[i];
-				vertex_indirect_command.firstInstance = i;
-				vertex_indirect_command.firstVertex = GetVertexOffset();
-				vertex_indirect_command.instanceCount = 0;
-				vertex_indirect_command.vertexCount = GetVertexBuffer()->GetElementCount(BufferSlot::Primary);
+				// Set the data for the model pool
+				for (unsigned int i = 0; i < size; i++)
+				{
+					VkDrawIndirectCommand& vertex_indirect_command = m_vertex_indirect_command[i];
+					vertex_indirect_command.firstInstance = i;
+					vertex_indirect_command.firstVertex = GetVertexOffset();
+					vertex_indirect_command.instanceCount = 0;
+					vertex_indirect_command.vertexCount = GetVertexBuffer()->GetElementCount(BufferSlot::Primary);
+				}
+			}
+			else if (m_model_pool_usage == ModelPoolUsage::MultiMesh)
+			{
+				// Set the data for the model pool
+				for (unsigned int i = 0; i < size; i++)
+				{
+					VkDrawIndirectCommand& vertex_indirect_command = m_vertex_indirect_command[i];
+					vertex_indirect_command.firstInstance = i;
+					vertex_indirect_command.firstVertex = GetVertexOffset();
+					vertex_indirect_command.instanceCount = 0;
+					vertex_indirect_command.vertexCount = GetVertexBuffer()->GetElementCount(BufferSlot::Primary);
+				}
 			}
 			// Create the vulkan buffer
 			m_indirect_draw_buffer = new VulkanBuffer(m_device, BufferChain::Single, m_vertex_indirect_command.data(), instance_size, size,
@@ -571,26 +575,33 @@ void Renderer::Vulkan::VulkanModelPool::ResizeIndirectArray(unsigned int size)
 	{
 		if (Indexed())
 		{
-			for (unsigned int i = old_size; i < size; i++)
+			if (m_model_pool_usage == ModelPoolUsage::SingleMesh)
 			{
-				VkDrawIndexedIndirectCommand& indexed_indirect_command = m_indexed_indirect_command[i];
-				indexed_indirect_command.indexCount = GetIndexSize();
-				indexed_indirect_command.instanceCount = 0;
-				indexed_indirect_command.firstIndex = GetIndexOffset();
-				indexed_indirect_command.vertexOffset = GetVertexOffset();
-				indexed_indirect_command.firstInstance = i;
+				// Set the data for the model pool
+				for (unsigned int i = old_size; i < size; i++)
+				{
+					VkDrawIndexedIndirectCommand& indexed_indirect_command = m_indexed_indirect_command[i];
+					indexed_indirect_command.indexCount = GetIndexSize();
+					indexed_indirect_command.instanceCount = 0;
+					indexed_indirect_command.firstIndex = 0;
+					indexed_indirect_command.vertexOffset = GetVertexOffset();
+					indexed_indirect_command.firstInstance = i;
+				}
 			}
 			m_indirect_draw_buffer->Resize(BufferSlot::Primary, m_indexed_indirect_command.data(), size);
 		}
 		else
 		{
-			for (unsigned int i = old_size; i < size; i++)
+			if (m_model_pool_usage == ModelPoolUsage::SingleMesh)
 			{
-				VkDrawIndirectCommand& vertex_indirect_command = m_vertex_indirect_command[i];
-				vertex_indirect_command.firstInstance = i;
-				vertex_indirect_command.firstVertex = GetVertexOffset();
-				vertex_indirect_command.instanceCount = 0;
-				vertex_indirect_command.vertexCount = GetVertexBuffer()->GetElementCount(BufferSlot::Primary);
+				for (unsigned int i = old_size; i < size; i++)
+				{
+					VkDrawIndirectCommand& vertex_indirect_command = m_vertex_indirect_command[i];
+					vertex_indirect_command.firstInstance = i;
+					vertex_indirect_command.firstVertex = GetVertexOffset();
+					vertex_indirect_command.instanceCount = 0;
+					vertex_indirect_command.vertexCount = GetVertexBuffer()->GetElementCount(BufferSlot::Primary);
+				}
 			}
 			m_indirect_draw_buffer->Resize(BufferSlot::Primary, m_vertex_indirect_command.data(), size);
 		}

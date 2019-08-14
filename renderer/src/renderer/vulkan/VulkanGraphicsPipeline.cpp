@@ -108,14 +108,22 @@ bool Renderer::Vulkan::VulkanGraphicsPipeline::CreatePipeline()
 			{
 				uint32_t location = vertex->GetLocation();
 				unsigned int size_of = sizeof(glm::vec4);
-				m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(1, location, vertex->GetFormat(), vertex->GetOffset() + 0));
-				m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(1, location + 1, vertex->GetFormat(), vertex->GetOffset() + size_of));
-				m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(1, location + 2, vertex->GetFormat(), vertex->GetOffset() + (2 * size_of)));
-				m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(1, location + 3, vertex->GetFormat(), vertex->GetOffset() + (3 * size_of)));
+				m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(base.binding, location, vertex->GetFormat(), vertex->GetOffset() + 0));
+				m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(base.binding, location + 1, vertex->GetFormat(), vertex->GetOffset() + size_of));
+				m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(base.binding, location + 2, vertex->GetFormat(), vertex->GetOffset() + (2 * size_of)));
+				m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(base.binding, location + 3, vertex->GetFormat(), vertex->GetOffset() + (3 * size_of)));
 			}
-				break;
+			break;
+			case VkFormat::VK_FORMAT_R32_SINT:
+			{
+				uint32_t location = vertex->GetLocation();
+				unsigned int size_of = sizeof(short);
+				m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(base.binding, location, VK_FORMAT_R16_SINT, vertex->GetOffset() + 0));
+				m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(base.binding, location + 1, VK_FORMAT_R16_SINT, vertex->GetOffset() + size_of));
+			}
+			break;
 			default:
-				m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(0, vertex->GetLocation(), vertex->GetFormat(), vertex->GetOffset()));
+				m_attribute_descriptions.push_back(VulkanInitializers::VertexInputAttributeDescription(base.binding, vertex->GetLocation(), vertex->GetFormat(), vertex->GetOffset()));
 				break;
 			}
 			

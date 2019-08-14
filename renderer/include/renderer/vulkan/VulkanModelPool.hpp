@@ -19,14 +19,21 @@ namespace Renderer
 		class VulkanIndexBuffer;
 		class VulkanBufferPool;
 
+		enum ModelPoolUsage
+		{
+			SingleMesh,
+			MultiMesh
+		};
+
 		class VulkanModelPool
 		{
 		public:
-			VulkanModelPool(VulkanDevice* device, VulkanVertexBuffer* vertex_buffer, unsigned int vertex_offset, unsigned int vertex_size);
-			VulkanModelPool(VulkanDevice* device, VulkanVertexBuffer* vertex_buffer, unsigned int vertex_offset, unsigned int vertex_size, VulkanIndexBuffer* index_buffer, unsigned int index_offset, unsigned int index_size);
+			VulkanModelPool(VulkanDevice* device, VulkanVertexBuffer* vertex_buffer, unsigned int vertex_offset, unsigned int vertex_size, ModelPoolUsage usage = SingleMesh);
+			VulkanModelPool(VulkanDevice* device, VulkanVertexBuffer* vertex_buffer, unsigned int vertex_offset, unsigned int vertex_size, VulkanIndexBuffer* index_buffer, unsigned int index_offset, unsigned int index_size, ModelPoolUsage usage = SingleMesh);
 			~VulkanModelPool();
 			bool Indexed();
 			VulkanModel * CreateModel();
+			VulkanModel * CreateModel(unsigned int vertexOffset, unsigned int indexOffset, unsigned int indexSize);
 			VulkanModel* GetModel(int index);
 			void RemoveModel(VulkanModel* model);
 			void Update();
@@ -40,6 +47,7 @@ namespace Renderer
 			void SetVertexBuffer(VulkanVertexBuffer* vertex_buffer);
 			VulkanVertexBuffer * GetVertexBuffer();
 			VulkanIndexBuffer * GetIndexBuffer();
+			VulkanBuffer* GetIndirectDrawBuffer();
 			unsigned int GetVertexOffset();
 			unsigned int GetIndexOffset();
 			unsigned int GetVertexSize();
@@ -55,6 +63,7 @@ namespace Renderer
 			void AttachToCommandBuffer(VkCommandBuffer & command_buffer, VulkanPipeline* pipeline);
 			bool HasChanged();
 		private:
+			void SetModelOffsets(unsigned int id, unsigned int vertexOffset, unsigned int indexOffset, unsigned int indexSize);
 			void ResizeIndirectArray(unsigned int size);
 			void Render(unsigned int index, bool should_render);
 			unsigned int m_current_index;
@@ -78,7 +87,7 @@ namespace Renderer
 			unsigned int m_index_offset;
 			unsigned int m_index_size;
 			bool m_vertex_index_change = false;
-
+			ModelPoolUsage m_model_pool_usage;
 
 
 			std::vector<VkDrawIndirectCommand> m_vertex_indirect_command;

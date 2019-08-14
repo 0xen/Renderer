@@ -53,8 +53,6 @@ Renderer::Vulkan::VulkanPhysicalDevice::VulkanPhysicalDevice(VkPhysicalDevice de
 		&m_device_features
 	);
 
-
-	
 	
 	// Get the GPU's memory props
 	vkGetPhysicalDeviceMemoryProperties(

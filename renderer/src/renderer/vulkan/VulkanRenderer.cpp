@@ -149,14 +149,14 @@ VulkanComputeProgram * Renderer::Vulkan::VulkanRenderer::CreateComputeProgram()
 	return new VulkanComputeProgram(m_device);
 }
 
-VulkanModelPool * Renderer::Vulkan::VulkanRenderer::CreateModelPool(VulkanVertexBuffer * vertex_buffer, unsigned int vertex_offset, unsigned int vertex_size, VulkanIndexBuffer * index_buffer, unsigned int index_offset, unsigned int index_size)
+VulkanModelPool * Renderer::Vulkan::VulkanRenderer::CreateModelPool(VulkanVertexBuffer * vertex_buffer, unsigned int vertex_offset, unsigned int vertex_size, VulkanIndexBuffer * index_buffer, unsigned int index_offset, unsigned int index_size, ModelPoolUsage usage)
 {
-	return new VulkanModelPool(m_device, vertex_buffer, vertex_offset,vertex_size, index_buffer, index_offset,index_size);
+	return new VulkanModelPool(m_device, vertex_buffer, vertex_offset, vertex_size, index_buffer, index_offset, index_size, usage);
 }
 
-VulkanModelPool * Renderer::Vulkan::VulkanRenderer::CreateModelPool(VulkanVertexBuffer * vertex_buffer, unsigned int vertex_offset, unsigned int vertex_size)
+VulkanModelPool * Renderer::Vulkan::VulkanRenderer::CreateModelPool(VulkanVertexBuffer * vertex_buffer, unsigned int vertex_offset, unsigned int vertex_size, ModelPoolUsage usage = SingleMesh)
 {
-	return new VulkanModelPool(m_device, vertex_buffer, vertex_offset,vertex_size);
+	return new VulkanModelPool(m_device, vertex_buffer, vertex_offset, vertex_size, usage);
 }
 
 VulkanTextureBuffer * Renderer::Vulkan::VulkanRenderer::CreateTextureBuffer(void * dataPtr, VkFormat format, unsigned int width, unsigned int height)

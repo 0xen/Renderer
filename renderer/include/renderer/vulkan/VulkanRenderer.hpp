@@ -13,6 +13,7 @@ namespace Renderer
 	{
 		class VulkanInstance;
 		enum VulkanFlags;
+		enum ModelPoolUsage;
 		class VulkanPhysicalDevice;
 		class VulkanDevice;
 		class VulkanSwapchain;
@@ -57,9 +58,9 @@ namespace Renderer
 
 			VulkanComputeProgram* CreateComputeProgram();
 
-			VulkanModelPool* CreateModelPool(VulkanVertexBuffer* vertex_buffer, unsigned int vertex_offset, unsigned int vertex_size, VulkanIndexBuffer* index_buffer, unsigned int index_offset, unsigned int index_size);
+			VulkanModelPool* CreateModelPool(VulkanVertexBuffer* vertex_buffer, unsigned int vertex_offset, unsigned int vertex_size, VulkanIndexBuffer* index_buffer, unsigned int index_offset, unsigned int index_size, ModelPoolUsage usage);
 
-			VulkanModelPool* CreateModelPool(VulkanVertexBuffer* vertex_buffer, unsigned int vertex_offset, unsigned int vertex_size);
+			VulkanModelPool* CreateModelPool(VulkanVertexBuffer* vertex_buffer, unsigned int vertex_offset, unsigned int vertex_size,ModelPoolUsage usage);
 
 			VulkanTextureBuffer* CreateTextureBuffer(void* dataPtr, VkFormat format, unsigned int width, unsigned int height);
 

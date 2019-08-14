@@ -12,6 +12,7 @@ namespace Renderer
 		{
 		public:
 			VulkanModel(VulkanModelPool* pool, unsigned int model_pool_index);
+			VulkanModel(VulkanModelPool* pool, unsigned int model_pool_index, unsigned int vertexOffset, unsigned int indexOffset, unsigned int indexSize);
 
 
 			void SetDataPointer(unsigned int index, void* data);
@@ -22,13 +23,20 @@ namespace Renderer
 			T& GetData(unsigned int index);
 			unsigned int GetModelPoolIndex();
 			void Remove();
-
-
-			virtual void ShouldRender(bool render);
-			virtual bool Rendering();
-			virtual VulkanModelPool* GetModelPool();
+			void ShouldRender(bool render);
+			bool Rendering();
+			VulkanModelPool* GetModelPool();
+			unsigned int GetVertexOffset();
+			unsigned int GetIndexOffset();
+			unsigned int GetIndexSize();
+			void SetVertexOffset(unsigned int offset);
+			void SetIndexOffset(unsigned int offset);
+			void SetIndexSize(unsigned int size);
 		private:
 			unsigned int m_model_pool_index;
+			unsigned int m_vertexOffset;
+			unsigned int m_indexOffset;
+			unsigned int m_indexSize;
 			std::map<unsigned int, void*> m_data_pointers;
 			VulkanModelPool * m_pool;
 			bool m_rendering;
