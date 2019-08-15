@@ -82,13 +82,13 @@ namespace Renderer
 			// Attachments
 			struct Attachments
 			{
-				FrameBufferAttachment color, depth;
+				FrameBufferAttachment color1, color2, depth;
 			};
 			std::vector<Attachments> m_attachments;
 
 			VulkanDescriptorPool* m_input_attachments_read_pool;
 			// Define the various attachments that will be passed throughout the sub passes
-			std::vector<VulkanDescriptorSet*> m_input_attachments_read_sets;
+			std::vector<std::array<VulkanDescriptorSet*,2>> m_input_attachments_read_sets;
 
 
 			// Render pass
