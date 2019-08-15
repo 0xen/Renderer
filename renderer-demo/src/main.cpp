@@ -26,6 +26,7 @@
 #include <renderer/vulkan/VulkanBufferPool.hpp>
 #include <renderer/vulkan/VulkanModel.hpp>
 #include <renderer/vulkan/VulkanDescriptorPool.hpp>
+#include <renderer/vulkan/VulkanRenderPass.hpp>
 
 
 #include <renderer\VertexBase.hpp>
@@ -56,8 +57,14 @@ struct RayCamera
 SDL_Window* window;
 NativeWindowHandle* window_handle;
 VulkanRenderer* renderer;
+VulkanRenderPass* render_pass;
+VulkanSwapchain* swapchain;
 RayCamera rayCamera;
 VulkanDescriptorSet* standardRTConfigSet = nullptr;
+
+
+VulkanGraphicsPipeline* postProcessTintPipeline1;
+VulkanGraphicsPipeline* postProcessTintPipeline2;
 
 class MeshVertex
 {
@@ -121,7 +128,7 @@ void PollWindow()
 				standardRTConfigSet->AttachBuffer(1, { renderer->GetSwapchain()->GetRayTraceStagingBuffer() });
 				standardRTConfigSet->UpdateSet();
 
-				renderer->GetSwapchain()->RequestRebuildCommandBuffers();
+				render_pass->RequestRebuildCommandBuffers();
 
 				break;
 			}
@@ -265,6 +272,9 @@ int main(int argc, char **argv)
 	renderer->Start(window_handle, VulkanFlags::Raytrace/* | VulkanFlags::ActiveCMDRebuild*/);
 
 
+	swapchain = renderer->GetSwapchain();
+	render_pass = renderer->CreateRenderPass(3);
+
 
 	// Ray camera
 	glm::mat4 mPos = glm::mat4(1.0f);
@@ -295,9 +305,49 @@ int main(int argc, char **argv)
 
 	// Define a default texture
 	LoadTexture("../../renderer-demo/media/scenes/white.png");
+	std::vector<Vertex> vertexData = {
+		{ glm::vec3(1.0f,1.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(1.0f,1.0f,0.0f), glm::vec2(0.0f,0.0f) ,-1 },
+	{ glm::vec3(1.0f,-1.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(0.0f,1.0f,0.0f), glm::vec2(0.0f,1.0f)  ,-1 },
+	{ glm::vec3(-1.0f,-1.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(.0f,1.0f,1.0f), glm::vec2(1.0f,1.0f)  ,-1 },
+	{ glm::vec3(-1.0f,1.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(1.0f,0.0f,1.0f), glm::vec2(1.0f,0.0f)  ,-1 },
 
+
+	};
+
+	std::vector<uint32_t> indexData{
+		0,1,2,
+		0,2,3,
+	};
+
+	
+
+
+
+	unsigned int vertexStart = used_vertex;
+	unsigned int indexStart = used_index;
+
+	for (uint32_t& index : indexData)
+	{
+		all_indexs[used_index] = index;
+		used_index++;
+	}
+
+	for (Vertex& vertex : vertexData)
+	{
+		vertex.matID += materials.size();
+		all_vertexs[used_vertex] = vertex;
+		used_vertex++;
+	}
+	VulkanModelPool* model_pool2PP = renderer->CreateModelPool(vertexBuffer, vertexStart, 0, indexBuffer, indexStart, indexData.size(), ModelPoolUsage::MultiMesh);
+
+	// PP Model
+	{
+		VulkanModel* model = model_pool2PP->CreateModel();
+	}
 
 	VulkanModelPool* sphere_pool = LoadModel("../../renderer-demo/media/scenes/Medieval_building.obj");
+
+
 	//VulkanModelPool* sphere_pool = LoadModel("../../renderer-demo/media/scenes/CubePBR/cube.obj");
 	//VulkanModelPool* sphere_pool = LoadModel("../../renderer-demo/media/scenes/SpherePBR/sphere.obj");
 
@@ -348,9 +398,79 @@ int main(int argc, char **argv)
 	VulkanUniformBuffer* cameraInfo = renderer->CreateUniformBuffer(&rayCamera, BufferChain::Single, sizeof(RayCamera), 1, true);
 	cameraInfo->SetData(BufferSlot::Primary);
 
+	VertexBase vertex_binding_vertex = {
+		VkVertexInputRate::VK_VERTEX_INPUT_RATE_VERTEX,
+		{
+			{ 0, VkFormat::VK_FORMAT_R32G32B32_SFLOAT,offsetof(Vertex,pos) },
+			{ 1, VkFormat::VK_FORMAT_R32G32B32_SFLOAT,offsetof(Vertex,nrm) },
+			{ 2, VkFormat::VK_FORMAT_R32G32B32_SFLOAT,offsetof(Vertex,color) },
+			{ 3, VkFormat::VK_FORMAT_R32G32_SFLOAT,offsetof(Vertex,texCoord) },
+			{ 4, VkFormat::VK_FORMAT_R32_UINT,offsetof(Vertex,matID) },
+		},
+		sizeof(Vertex),
+		0
+	};
+
+	{
+		postProcessTintPipeline1 = renderer->CreateGraphicsPipeline(render_pass, {
+			{ VkShaderStageFlagBits::VK_SHADER_STAGE_VERTEX_BIT, "../../renderer-demo/Shaders/PP/Tint/vert.spv" },
+			{ VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT, "../../renderer-demo/Shaders/PP/Tint/frag.spv" }
+			});
 
 
-	VulkanRaytracePipeline* ray_pipeline = renderer->CreateRaytracePipeline(
+		// Config base pipeline
+		{
+			VulkanGraphicsPipelineConfig& config = postProcessTintPipeline1->GetGraphicsPipelineConfig();
+			config.allow_darivatives = true;
+			config.culling = VkCullModeFlagBits::VK_CULL_MODE_NONE;
+			config.subpass = 1;
+			config.use_depth_stencil = false;
+		}
+
+		// Define the layout of the input coming to the pipeline from the swapchain
+		postProcessTintPipeline1->AttachDescriptorPool(render_pass->GetInputAttachmentsReadPool());
+
+		postProcessTintPipeline1->AttachVertexBinding(vertex_binding_vertex);/*
+																			postProcessTintPipeline->AttachDescriptorPool(texture_pool);
+																			postProcessTintPipeline->AttachDescriptorSet(0, texture_descriptor_set1);*/
+		postProcessTintPipeline1->Build();
+	}
+
+
+	postProcessTintPipeline1->AttachModelPool(model_pool2PP);
+	render_pass->AttachGraphicsPipeline(postProcessTintPipeline1);
+
+	{
+		postProcessTintPipeline2 = renderer->CreateGraphicsPipeline(render_pass, {
+			{ VkShaderStageFlagBits::VK_SHADER_STAGE_VERTEX_BIT, "../../renderer-demo/Shaders/PP/Tint2/vert.spv" },
+			{ VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT, "../../renderer-demo/Shaders/PP/Tint2/frag.spv" }
+			});
+
+
+		// Config base pipeline
+		{
+			VulkanGraphicsPipelineConfig& config = postProcessTintPipeline2->GetGraphicsPipelineConfig();
+			config.allow_darivatives = true;
+			config.culling = VkCullModeFlagBits::VK_CULL_MODE_NONE;
+			config.subpass = 2;
+			config.use_depth_stencil = false;
+		}
+
+		// Define the layout of the input coming to the pipeline from the swapchain
+		postProcessTintPipeline2->AttachDescriptorPool(render_pass->GetInputAttachmentsReadPool());
+
+		postProcessTintPipeline2->AttachVertexBinding(vertex_binding_vertex);/*
+																			postProcessTintPipeline->AttachDescriptorPool(texture_pool);
+																			postProcessTintPipeline->AttachDescriptorSet(0, texture_descriptor_set1);*/
+		postProcessTintPipeline2->Build();
+	}
+
+
+	postProcessTintPipeline2->AttachModelPool(model_pool2PP);
+	render_pass->AttachGraphicsPipeline(postProcessTintPipeline2);
+
+
+	VulkanRaytracePipeline* ray_pipeline = renderer->CreateRaytracePipeline(render_pass,
 		{
 			{ VkShaderStageFlagBits::VK_SHADER_STAGE_RAYGEN_BIT_NV,		"../../renderer-demo/Shaders/Raytrace/PBR/Gen/rgen.spv" },
 			{ VkShaderStageFlagBits::VK_SHADER_STAGE_MISS_BIT_NV,		"../../renderer-demo/Shaders/Raytrace/PBR/Miss/rmiss.spv" },
@@ -363,6 +483,8 @@ int main(int argc, char **argv)
 		{}, // Fall through hit group for lighting shadows
 	});
 	
+	render_pass->AttachGraphicsPipeline(ray_pipeline);
+
 	int groupID = 0;
 
 	// Ray generation entry point
@@ -395,17 +517,7 @@ int main(int argc, char **argv)
 
 
 
-	ray_pipeline->AttachVertexBinding({
-		VkVertexInputRate::VK_VERTEX_INPUT_RATE_VERTEX,
-		{
-			{ 0, VkFormat::VK_FORMAT_R32G32B32_SFLOAT,offsetof(MeshVertex,position) },
-			{ 1, VkFormat::VK_FORMAT_R32G32_SFLOAT,offsetof(MeshVertex,uv) },
-			{ 2, VkFormat::VK_FORMAT_R32G32B32_SFLOAT,offsetof(MeshVertex,normal) },
-			{ 3, VkFormat::VK_FORMAT_R32G32B32_SFLOAT,offsetof(MeshVertex,color) },
-		},
-		sizeof(MeshVertex),
-		0
-		});
+	ray_pipeline->AttachVertexBinding(vertex_binding_vertex);
 
 
 	VulkanAcceleration* acceleration = renderer->CreateAcceleration();
@@ -525,6 +637,8 @@ int main(int argc, char **argv)
 
 	ray_pipeline->Build();
 
+	render_pass->RebuildCommandBuffers();
+
 	float orbit = 4.0f;
 
 	float rotate = 0.0f;
@@ -544,7 +658,7 @@ int main(int argc, char **argv)
 
 		acceleration->Update();
 
-		renderer->Update();
+		render_pass->Render();
 
 		PollWindow();
 	}

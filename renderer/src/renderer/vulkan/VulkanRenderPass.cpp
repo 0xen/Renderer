@@ -94,8 +94,15 @@ void Renderer::Vulkan::VulkanRenderPass::RebuildCommandBuffers()
 					pipeline->AttachToCommandBuffer(m_command_buffers[i]);
 				}
 			}
+			VkImage target_image = m_swapchain->GetSwapchainImages()[i];
+			VkImageLayout target_layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+			if(m_subpass_count > 1)
+			{
+				target_image = m_attachments[i].color1.image;
+				target_layout = VK_IMAGE_LAYOUT_GENERAL;
+			}
 
-			VulkanCommon::TransitionImageLayout(m_command_buffers[i], m_swapchain->GetSwapchainImages()[i], VK_FORMAT_UNDEFINED, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			VulkanCommon::TransitionImageLayout(m_command_buffers[i], target_image, VK_FORMAT_UNDEFINED, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 				VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, subresourceRange);
 
 
@@ -109,10 +116,10 @@ void Renderer::Vulkan::VulkanRenderPass::RebuildCommandBuffers()
 			copyRegion.dstSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
 			copyRegion.dstOffset = { 0, 0, 0 };
 			copyRegion.extent = { (unsigned int)window_handle->width, (unsigned int)window_handle->height, 1 };
-			vkCmdCopyImage(m_command_buffers[i], m_swapchain->GetRaytracingScratchImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, m_swapchain->GetSwapchainImages()[i], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
+			vkCmdCopyImage(m_command_buffers[i], m_swapchain->GetRaytracingScratchImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, target_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
 
 
-			VulkanCommon::TransitionImageLayout(m_command_buffers[i], m_swapchain->GetSwapchainImages()[i], VK_FORMAT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+			VulkanCommon::TransitionImageLayout(m_command_buffers[i], target_image, VK_FORMAT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, target_layout,
 				VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, subresourceRange);
 
 
@@ -305,8 +312,9 @@ void Renderer::Vulkan::VulkanRenderPass::InitRenderPass()
 
 	for (int i = 0; i < m_attachments.size(); i++)
 	{
-		CreateAttachmentImages(colorFormat, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, m_attachments[i].color1);
-		CreateAttachmentImages(colorFormat, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, m_attachments[i].color2);
+		
+		CreateAttachmentImages(colorFormat, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, m_attachments[i].color1);
+		CreateAttachmentImages(colorFormat, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, m_attachments[i].color2);
 		CreateAttachmentImages(VulkanCommon::GetDepthImageFormat(m_device), VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, m_attachments[i].depth);
 
 		{
@@ -333,9 +341,10 @@ void Renderer::Vulkan::VulkanRenderPass::InitRenderPass()
 	{
 		// Needs sorting for raytracing
 		attachments = {
+			// Define VK_ATTACHMENT_LOAD_OP_DONT_CARE, this will stop the images from being cleared
 			VulkanInitializers::AttachmentDescription(m_swapchain->GetSwapChainImageFormat(), VK_ATTACHMENT_STORE_OP_STORE,VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ATTACHMENT_LOAD_OP_DONT_CARE) ,	//Present
-			VulkanInitializers::AttachmentDescription(colorFormat, VK_ATTACHMENT_STORE_OP_DONT_CARE,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL),	//Color
-			VulkanInitializers::AttachmentDescription(colorFormat, VK_ATTACHMENT_STORE_OP_DONT_CARE,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL),	//Color
+			VulkanInitializers::AttachmentDescription(colorFormat, VK_ATTACHMENT_STORE_OP_DONT_CARE,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ATTACHMENT_LOAD_OP_DONT_CARE),	//Color
+			VulkanInitializers::AttachmentDescription(colorFormat, VK_ATTACHMENT_STORE_OP_DONT_CARE,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ATTACHMENT_LOAD_OP_DONT_CARE),	//Color
 			VulkanInitializers::AttachmentDescription(VulkanCommon::GetDepthImageFormat(m_device), VK_ATTACHMENT_STORE_OP_DONT_CARE,VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)		// Depth
 		};
 	}
