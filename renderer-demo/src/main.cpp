@@ -128,8 +128,7 @@ void PollWindow()
 				standardRTConfigSet->AttachBuffer(1, { renderer->GetSwapchain()->GetRayTraceStagingBuffer() });
 				standardRTConfigSet->UpdateSet();
 
-				render_pass->RequestRebuildCommandBuffers();
-
+				render_pass->Rebuild();
 				break;
 			}
 			break;

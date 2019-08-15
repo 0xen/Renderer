@@ -21,9 +21,7 @@ Renderer::Vulkan::VulkanRenderPass::VulkanRenderPass(VulkanRenderer* renderer, V
 	m_swapchain = swapchain;
 	m_subpass_count = subpass_count;
 
-	InitRenderPass();
-	InitFrameBuffer();
-	InitCommandBuffers();
+	CreateRenderPass();
 	InitFences();
 
 	m_should_rebuild_cmd = true;
@@ -33,8 +31,7 @@ Renderer::Vulkan::VulkanRenderPass::VulkanRenderPass(VulkanRenderer* renderer, V
 
 Renderer::Vulkan::VulkanRenderPass::~VulkanRenderPass()
 {
-	DeInitFrameBuffer();
-	DeInitRenderPass();
+	DestroyRenderPass();
 }
 
 void Renderer::Vulkan::VulkanRenderPass::AttachGraphicsPipeline(VulkanGraphicsPipeline * pipeline)
@@ -50,6 +47,13 @@ void Renderer::Vulkan::VulkanRenderPass::RemoveGraphicsPipeline(VulkanGraphicsPi
 	{
 		m_subpasses[pipeline->GetGraphicsPipelineConfig().subpass].erase(it);
 	}
+}
+
+void Renderer::Vulkan::VulkanRenderPass::Rebuild()
+{
+	DestroyRenderPass();
+	CreateRenderPass();
+	RebuildCommandBuffers();
 }
 
 void Renderer::Vulkan::VulkanRenderPass::RebuildCommandBuffers()
@@ -293,6 +297,19 @@ void Renderer::Vulkan::VulkanRenderPass::SubmitQueue(unsigned int currentBuffer)
 VkRenderPass& Renderer::Vulkan::VulkanRenderPass::GetRenderPass()
 {
 	return m_render_pass;
+}
+
+void Renderer::Vulkan::VulkanRenderPass::CreateRenderPass()
+{
+	InitRenderPass();
+	InitFrameBuffer();
+	InitCommandBuffers();
+}
+
+void Renderer::Vulkan::VulkanRenderPass::DestroyRenderPass()
+{
+	DeInitFrameBuffer();
+	DeInitRenderPass();
 }
 
 void Renderer::Vulkan::VulkanRenderPass::InitRenderPass()

@@ -59,7 +59,6 @@ SDL_Window* window;
 NativeWindowHandle* window_handle;
 VulkanRenderer* renderer;
 RayCamera rayCamera;
-VulkanDescriptorSet* standardRTConfigSet = nullptr;
 VulkanRenderPass* render_pass;
 VulkanSwapchain* swapchain;
 
@@ -122,10 +121,7 @@ void PollWindow()
 
 				renderer->Rebuild();
 
-				standardRTConfigSet->AttachBuffer(1, { renderer->GetSwapchain()->GetRayTraceStagingBuffer() });
-				standardRTConfigSet->UpdateSet();
-
-				render_pass->RequestRebuildCommandBuffers();
+				render_pass->Rebuild();
 
 				break;
 			}

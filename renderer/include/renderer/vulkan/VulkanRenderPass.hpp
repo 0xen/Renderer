@@ -23,12 +23,15 @@ namespace Renderer
 		{
 		public:
 			VulkanRenderPass(VulkanRenderer* renderer, VulkanSwapchain* swapchain,  VulkanInstance* instance, VulkanDevice* device, unsigned int subpass_count = 1);
+
 			~VulkanRenderPass();
 
 			// When a change has been made to the current pipeline pool, RebuildCommandBuffers() must be called
 			void AttachGraphicsPipeline(VulkanGraphicsPipeline* pipeline);
 			// When a change has been made to the current pipeline pool, RebuildCommandBuffers() must be called
 			void RemoveGraphicsPipeline(VulkanGraphicsPipeline* pipeline);
+
+			void Rebuild();
 
 			void RebuildCommandBuffers();
 
@@ -47,6 +50,8 @@ namespace Renderer
 			VkRenderPass& GetRenderPass();
 		private:
 
+			void CreateRenderPass();
+			void DestroyRenderPass();
 
 			void InitRenderPass();
 			void DeInitRenderPass();
