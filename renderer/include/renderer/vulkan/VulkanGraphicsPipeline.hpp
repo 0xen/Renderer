@@ -25,12 +25,12 @@ namespace Renderer
 			unsigned int subpass = 0;
 		};
 
-		class VulkanSwapchain;
+		class VulkanRenderPass;
 		class VulkanModelPool;
 		class VulkanGraphicsPipeline : public VulkanPipeline, public VulkanStatus
 		{
 		public:
-			VulkanGraphicsPipeline(VulkanDevice * device, VulkanSwapchain* swapchain, std::vector<std::pair<VkShaderStageFlagBits, const char*>> paths);
+			VulkanGraphicsPipeline(VulkanDevice * device, VulkanRenderPass* renderpass, std::vector<std::pair<VkShaderStageFlagBits, const char*>> paths);
 			virtual ~VulkanGraphicsPipeline();
 			virtual bool Build();
 			virtual bool CreatePipeline();
@@ -51,7 +51,7 @@ namespace Renderer
 			void InitPipelineCreateInfo();
 
 			VulkanGraphicsPipelineConfig m_graphics_pipeline_config;
-			VulkanSwapchain * m_swapchain;
+			VulkanRenderPass * m_renderpass;
 			std::vector<VkPipelineShaderStageCreateInfo> m_shader_stages;
 			std::vector<VkVertexInputBindingDescription> m_binding_descriptions;
 			std::vector<VkVertexInputAttributeDescription> m_attribute_descriptions;

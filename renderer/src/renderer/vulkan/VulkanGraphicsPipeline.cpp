@@ -2,7 +2,7 @@
 #include <renderer/vulkan/VulkanInitializers.hpp>
 #include <renderer/vulkan/VulkanUniformBuffer.hpp>
 #include <renderer/vulkan/VulkanDevice.hpp>
-#include <renderer/vulkan/VulkanSwapchain.hpp>
+#include <renderer/vulkan/VulkanRenderPass.hpp>
 #include <renderer/vulkan/VulkanCommon.hpp>
 #include <renderer/vulkan/VulkanModelPool.hpp>
 #include <renderer/vulkan/VulkanDescriptorPool.hpp>
@@ -16,10 +16,10 @@
 using namespace Renderer;
 using namespace Renderer::Vulkan;
 
-Renderer::Vulkan::VulkanGraphicsPipeline::VulkanGraphicsPipeline(VulkanDevice * device, VulkanSwapchain* swapchain, std::vector<std::pair<VkShaderStageFlagBits, const char*>> paths) :
+Renderer::Vulkan::VulkanGraphicsPipeline::VulkanGraphicsPipeline(VulkanDevice * device, VulkanRenderPass* renderpass, std::vector<std::pair<VkShaderStageFlagBits, const char*>> paths) :
 	VulkanPipeline(device, paths)
 {
-	m_swapchain = swapchain;
+	m_renderpass = renderpass;
 
 	m_change = false;
 	InitPipelineCreateInfo();
@@ -162,7 +162,7 @@ bool Renderer::Vulkan::VulkanGraphicsPipeline::CreatePipeline()
 	VkPipelineInputAssemblyStateCreateInfo input_assembly = VulkanInitializers::PipelineInputAssemblyStateCreateInfo(m_graphics_pipeline_config.topology);
 
 	VkGraphicsPipelineCreateInfo pipeline_info = VulkanInitializers::GraphicsPipelineCreateInfo(m_shader_stages, vertex_input_info, input_assembly,
-		viewport_state, rasterizer, multisampling, color_blending, depth_stencil, m_pipeline_layout, *m_swapchain->GetRenderPass(), dynamic_states_info);
+		viewport_state, rasterizer, multisampling, color_blending, depth_stencil, m_pipeline_layout, m_renderpass->GetRenderPass(), dynamic_states_info);
 
 	// If we support it, define that this pipeline has derivatives
 	if (m_graphics_pipeline_config.allow_darivatives) 

@@ -18,6 +18,7 @@
 #include <renderer\vulkan\VulkanCommon.hpp>
 #include <renderer\vulkan\VulkanRaytracePipeline.hpp>
 #include <renderer\vulkan\VulkanAcceleration.hpp>
+#include <renderer\vulkan\VulkanRenderPass.hpp>
 
 #include <renderer/NativeWindowHandle.hpp>
 
@@ -65,38 +66,6 @@ bool VulkanRenderer::Start(Renderer::NativeWindowHandle* window_handle)
 	return Start(window_handle, Renderer::Vulkan::VulkanFlags::None);
 }
 
-
-void VulkanRenderer::Update()
-{
-	BeginFrame();
-
-	EndFrame();
-	
-}
-
-void Renderer::Vulkan::VulkanRenderer::BeginFrame()
-{
-	if (!m_running)return;
-
-	if((m_instance->GetFlags()& VulkanFlags::ActiveCMDRebuild) == VulkanFlags::ActiveCMDRebuild)
-		m_swapchain->RequestRebuildCommandBuffers();
-
-	m_swapchain->FindNextImageIndex();
-}
-
-void Renderer::Vulkan::VulkanRenderer::EndFrame()
-{
-	unsigned int currentBuffer = m_swapchain->GetCurrentFrameIndex();
-
-	m_swapchain->SubmitQueue(currentBuffer);
-
-	std::vector<VkSemaphore> signal_semaphores{
-		m_swapchain->GetRenderFinishedSemaphore()
-	};
-
-	m_swapchain->Present(signal_semaphores);
-}
-
 void VulkanRenderer::Stop()
 {
 	if (!m_running)return;
@@ -127,15 +96,10 @@ VulkanIndexBuffer * Renderer::Vulkan::VulkanRenderer::CreateIndexBuffer(void * d
 	return new VulkanIndexBuffer(m_device, dataPtr, indexSize, elementCount);
 }
 
-VulkanGraphicsPipeline * Renderer::Vulkan::VulkanRenderer::CreateGraphicsPipeline(std::vector<std::pair<VkShaderStageFlagBits, const char*>> paths)
+VulkanGraphicsPipeline * Renderer::Vulkan::VulkanRenderer::CreateGraphicsPipeline(VulkanRenderPass* render_pass, std::vector<std::pair<VkShaderStageFlagBits, const char*>> paths)
 {
-	VulkanGraphicsPipeline* graphics_pipeline = new VulkanGraphicsPipeline(m_device, m_swapchain, paths);
+	VulkanGraphicsPipeline* graphics_pipeline = new VulkanGraphicsPipeline(m_device, render_pass, paths);
 	return graphics_pipeline;
-}
-
-void Renderer::Vulkan::VulkanRenderer::RemoveGraphicsPipeline(VulkanGraphicsPipeline * pipeline)
-{
-	m_swapchain->RemoveGraphicsPipeline(pipeline);
 }
 
 VulkanComputePipeline * Renderer::Vulkan::VulkanRenderer::CreateComputePipeline(const char * path, unsigned int x, unsigned int y, unsigned int z)
@@ -183,10 +147,15 @@ VulkanDescriptorPool * Renderer::Vulkan::VulkanRenderer::CreateDescriptorPool(st
 	return new VulkanDescriptorPool(m_device, descriptors);
 }
 
-VulkanRaytracePipeline * Renderer::Vulkan::VulkanRenderer::CreateRaytracePipeline(std::vector<std::pair<VkShaderStageFlagBits, const char*>> paths, std::vector<std::map<VkShaderStageFlagBits, const char*>> hitgroups)
+VulkanRaytracePipeline * Renderer::Vulkan::VulkanRenderer::CreateRaytracePipeline(VulkanRenderPass* render_pass, std::vector<std::pair<VkShaderStageFlagBits, const char*>> paths, std::vector<std::map<VkShaderStageFlagBits, const char*>> hitgroups)
 {
-	VulkanRaytracePipeline* graphics_pipeline = new VulkanRaytracePipeline(m_device, m_swapchain, paths, hitgroups);
+	VulkanRaytracePipeline* graphics_pipeline = new VulkanRaytracePipeline(m_device, m_swapchain, render_pass, paths, hitgroups);
 	return graphics_pipeline;
+}
+
+VulkanRenderPass * Renderer::Vulkan::VulkanRenderer::CreateRenderPass()
+{
+	return new VulkanRenderPass(this, m_swapchain, m_instance, m_device);
 }
 
 VulkanAcceleration * Renderer::Vulkan::VulkanRenderer::CreateAcceleration()

@@ -27,6 +27,7 @@
 #include <renderer/vulkan/VulkanBufferPool.hpp>
 #include <renderer/vulkan/VulkanModel.hpp>
 #include <renderer/vulkan/VulkanDescriptorPool.hpp>
+#include <renderer/vulkan/VulkanRenderPass.hpp>
 
 
 #include <renderer\VertexBase.hpp>
@@ -59,6 +60,8 @@ NativeWindowHandle* window_handle;
 VulkanRenderer* renderer;
 RayCamera rayCamera;
 VulkanDescriptorSet* standardRTConfigSet = nullptr;
+VulkanRenderPass* render_pass1;
+VulkanRenderPass* render_pass2;
 VulkanSwapchain* swapchain;
 
 class MeshVertex
@@ -123,7 +126,8 @@ void PollWindow()
 				standardRTConfigSet->AttachBuffer(1, { renderer->GetSwapchain()->GetRayTraceStagingBuffer() });
 				standardRTConfigSet->UpdateSet();
 
-				renderer->GetSwapchain()->RequestRebuildCommandBuffers();
+				render_pass1->RequestRebuildCommandBuffers();
+				render_pass2->RequestRebuildCommandBuffers();
 
 				break;
 			}
@@ -245,6 +249,9 @@ int main(int argc, char **argv)
 
 
 	swapchain = renderer->GetSwapchain();
+
+	render_pass1 = renderer->CreateRenderPass();
+	render_pass2 = renderer->CreateRenderPass();
 
 
 	// Ray camera
@@ -435,7 +442,7 @@ int main(int argc, char **argv)
 	model_pool1->AttachDescriptorSet(1, texture_descriptor_set1);
 
 	{
-		base = renderer->CreateGraphicsPipeline({
+		base = renderer->CreateGraphicsPipeline(render_pass1, {
 			{ VkShaderStageFlagBits::VK_SHADER_STAGE_VERTEX_BIT, "../../renderer-demo/Shaders/vert.spv" },
 			{ VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT, "../../renderer-demo/Shaders/frag.spv" }
 			});
@@ -456,7 +463,7 @@ int main(int argc, char **argv)
 
 
 	{
-		sceneRenderPassPipeline = renderer->CreateGraphicsPipeline({
+		sceneRenderPassPipeline = renderer->CreateGraphicsPipeline(render_pass1, {
 			{ VkShaderStageFlagBits::VK_SHADER_STAGE_VERTEX_BIT, "../../renderer-demo/Shaders/vert.spv" },
 			{ VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT, "../../renderer-demo/Shaders/frag.spv" }
 			});
@@ -480,12 +487,13 @@ int main(int argc, char **argv)
 
 	sceneRenderPassPipeline->AttachModelPool(model_pool1);
 
-	swapchain->AttachGraphicsPipeline(sceneRenderPassPipeline);
+	render_pass1->AttachGraphicsPipeline(sceneRenderPassPipeline);
+	render_pass2->AttachGraphicsPipeline(sceneRenderPassPipeline);
 
 
 
 	{
-		postProcessTintPipeline = renderer->CreateGraphicsPipeline({
+		postProcessTintPipeline = renderer->CreateGraphicsPipeline(render_pass1,{
 			{ VkShaderStageFlagBits::VK_SHADER_STAGE_VERTEX_BIT, "../../renderer-demo/Shaders/PP/Tint/vert.spv" },
 			{ VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT, "../../renderer-demo/Shaders/PP/Tint/frag.spv" }
 			});
@@ -502,7 +510,7 @@ int main(int argc, char **argv)
 		}
 		
 		// Define the layout of the input coming to the pipeline from the swapchain
-		postProcessTintPipeline->AttachDescriptorPool(swapchain->GetInputAttachmentsReadPool());
+		postProcessTintPipeline->AttachDescriptorPool(render_pass2->GetInputAttachmentsReadPool());
 
 		postProcessTintPipeline->AttachVertexBinding(vertex_binding_vertex);/*
 		postProcessTintPipeline->AttachDescriptorPool(texture_pool);
@@ -515,10 +523,12 @@ int main(int argc, char **argv)
 
 
 
-	swapchain->AttachGraphicsPipeline(postProcessTintPipeline);
+	render_pass1->AttachGraphicsPipeline(postProcessTintPipeline);
+	render_pass2->AttachGraphicsPipeline(postProcessTintPipeline);
 
-	
 
+	render_pass1->RebuildCommandBuffers();
+	render_pass2->RebuildCommandBuffers();
 
 
 
@@ -541,7 +551,7 @@ int main(int argc, char **argv)
 
 		model_position_buffer1->SetData(BufferSlot::Primary);
 
-		renderer->Update();
+		render_pass1->Render();
 
 		PollWindow();
 	}

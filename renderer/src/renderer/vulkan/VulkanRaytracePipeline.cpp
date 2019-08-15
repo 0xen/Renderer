@@ -1,6 +1,7 @@
 #include <renderer/vulkan/VulkanRaytracePipeline.hpp>
 #include <renderer/vulkan/VulkanInitializers.hpp>
 #include <renderer/vulkan/VulkanCommon.hpp>
+#include <renderer/vulkan/VulkanRenderPass.hpp>
 #include <renderer/vulkan/VulkanSwapchain.hpp>
 #include <renderer/vulkan/VulkanDevice.hpp>
 #include <renderer/vulkan/VulkanDescriptorPool.hpp>
@@ -15,11 +16,12 @@
 #define ROUND_UP(v, powerOf2Alignment) (((v) + (powerOf2Alignment)-1) & ~((powerOf2Alignment)-1))
 #endif
 
-Renderer::Vulkan::VulkanRaytracePipeline::VulkanRaytracePipeline(VulkanDevice * device, VulkanSwapchain * swapchain, std::vector<std::pair<VkShaderStageFlagBits, const char*>> paths, std::vector<std::map<VkShaderStageFlagBits, const char*>> hitgroups) :
-	VulkanGraphicsPipeline(device, swapchain, paths)
+Renderer::Vulkan::VulkanRaytracePipeline::VulkanRaytracePipeline(VulkanDevice * device, VulkanSwapchain * swapchain, VulkanRenderPass* renderpass, std::vector<std::pair<VkShaderStageFlagBits, const char*>> paths, std::vector<std::map<VkShaderStageFlagBits, const char*>> hitgroups) :
+	VulkanGraphicsPipeline(device, renderpass, paths)
 {
 	m_device = device;
 	m_swapchain = swapchain;
+	m_renderpass = renderpass;
 	m_hitgroups = hitgroups;
 }
 

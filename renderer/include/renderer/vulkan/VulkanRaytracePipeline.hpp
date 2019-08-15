@@ -12,6 +12,7 @@ namespace Renderer
 	{
 
 		class VulkanSwapchain;
+		class VulkanRenderPass;
 		struct SBTEntry
 		{
 			SBTEntry(uint32_t groupIndex, std::vector<unsigned char> inlineData) : m_groupIndex(groupIndex), m_inlineData(inlineData){}
@@ -23,7 +24,7 @@ namespace Renderer
 		class VulkanRaytracePipeline : public VulkanGraphicsPipeline
 		{
 		public:
-			VulkanRaytracePipeline(VulkanDevice * device, VulkanSwapchain* swapchain, std::vector<std::pair<VkShaderStageFlagBits, const char*>> paths, std::vector<std::map<VkShaderStageFlagBits, const char*>> hitgroups);
+			VulkanRaytracePipeline(VulkanDevice * device, VulkanSwapchain * swapchain, VulkanRenderPass* renderpass, std::vector<std::pair<VkShaderStageFlagBits, const char*>> paths, std::vector<std::map<VkShaderStageFlagBits, const char*>> hitgroups);
 			virtual ~VulkanRaytracePipeline();
 
 			virtual bool Build();
@@ -55,6 +56,7 @@ namespace Renderer
 			std::vector<VkPipelineShaderStageCreateInfo> m_shader_stages;
 			std::vector<VertexBase> m_vertex_bases;
 			VulkanSwapchain * m_swapchain;
+			VulkanRenderPass* m_renderpass;
 			uint32_t m_max_depth = 1;
 
 			VulkanBufferData m_shaderBindingTable;

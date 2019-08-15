@@ -29,6 +29,7 @@ namespace Renderer
 		class VulkanComputeProgram;
 		class VulkanModelPool;
 		class VulkanDescriptorPool;
+		class VulkanRenderPass;
 		enum BufferChain;
 
 		class VulkanRenderer : public VulkanStatus
@@ -38,9 +39,6 @@ namespace Renderer
 			~VulkanRenderer();
 			bool Start(Renderer::NativeWindowHandle* window_handle, unsigned int flags);
 			virtual bool Start(Renderer::NativeWindowHandle* window_handle);
-			virtual void Update();
-			void BeginFrame();
-			void EndFrame();
 
 			void Stop();
 			void Rebuild();
@@ -50,9 +48,7 @@ namespace Renderer
 
 			VulkanIndexBuffer* CreateIndexBuffer(void* dataPtr, unsigned int indexSize, unsigned int elementCount);
 
-			VulkanGraphicsPipeline* CreateGraphicsPipeline(std::vector<std::pair<VkShaderStageFlagBits, const char*>> paths);
-
-			void RemoveGraphicsPipeline(VulkanGraphicsPipeline* pipeline);
+			VulkanGraphicsPipeline* CreateGraphicsPipeline(VulkanRenderPass* render_pass, std::vector<std::pair<VkShaderStageFlagBits, const char*>> paths);
 
 			VulkanComputePipeline* CreateComputePipeline(const char* path, unsigned int x, unsigned int y, unsigned int z);
 
@@ -70,7 +66,9 @@ namespace Renderer
 
 			VulkanDescriptorPool* CreateDescriptorPool(std::vector<VulkanDescriptor*> descriptors);
 
-			VulkanRaytracePipeline* CreateRaytracePipeline(std::vector<std::pair<VkShaderStageFlagBits, const char*>> paths, std::vector<std::map<VkShaderStageFlagBits, const char*>> hitgroups);
+			VulkanRaytracePipeline* CreateRaytracePipeline(VulkanRenderPass* render_pass, std::vector<std::pair<VkShaderStageFlagBits, const char*>> paths, std::vector<std::map<VkShaderStageFlagBits, const char*>> hitgroups);
+
+			VulkanRenderPass* CreateRenderPass();
 
 			VulkanAcceleration* CreateAcceleration();
 

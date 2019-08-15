@@ -53,6 +53,7 @@ if(Vulkan_FOUND)
         src/renderer/vulkan/VulkanDescriptorPool.cpp
         src/renderer/vulkan/VulkanDescriptorSet.cpp
         src/renderer/vulkan/VulkanBufferPool.cpp
+        src/renderer/vulkan/VulkanRenderPass.cpp
     )
 
     set(vulkan_headers
@@ -86,6 +87,7 @@ if(Vulkan_FOUND)
         include/renderer/vulkan/VulkanDescriptorPool.hpp
         include/renderer/vulkan/VulkanDescriptorSet.hpp
         include/renderer/vulkan/VulkanBufferPool.hpp
+        include/renderer/vulkan/VulkanRenderPass.hpp
     )
 
     include_directories(${Vulkan_INCLUDE_DIRS})
