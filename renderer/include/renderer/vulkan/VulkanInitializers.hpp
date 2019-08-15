@@ -54,7 +54,7 @@ namespace Renderer
 
 			VkAttachmentReference AttachmentReference(VkImageLayout layout, uint32_t attachment);
 
-			VkSubpassDescription SubpassDescription(VkAttachmentReference& color_attachment_refrence, VkAttachmentReference& depth_attachment_ref);
+			VkSubpassDescription SubpassDescription(VkAttachmentReference* color_attachment_refrence, unsigned int color_count, VkAttachmentReference& depth_attachment_ref);
 
 			VkSubpassDescription SubpassDescription(VkAttachmentReference& color_attachment_refrence);
 

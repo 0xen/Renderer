@@ -60,8 +60,7 @@ NativeWindowHandle* window_handle;
 VulkanRenderer* renderer;
 RayCamera rayCamera;
 VulkanDescriptorSet* standardRTConfigSet = nullptr;
-VulkanRenderPass* render_pass1;
-VulkanRenderPass* render_pass2;
+VulkanRenderPass* render_pass;
 VulkanSwapchain* swapchain;
 
 class MeshVertex
@@ -126,8 +125,7 @@ void PollWindow()
 				standardRTConfigSet->AttachBuffer(1, { renderer->GetSwapchain()->GetRayTraceStagingBuffer() });
 				standardRTConfigSet->UpdateSet();
 
-				render_pass1->RequestRebuildCommandBuffers();
-				render_pass2->RequestRebuildCommandBuffers();
+				render_pass->RequestRebuildCommandBuffers();
 
 				break;
 			}
@@ -250,8 +248,7 @@ int main(int argc, char **argv)
 
 	swapchain = renderer->GetSwapchain();
 
-	render_pass1 = renderer->CreateRenderPass();
-	render_pass2 = renderer->CreateRenderPass();
+	render_pass = renderer->CreateRenderPass(3);
 
 
 	// Ray camera
@@ -368,7 +365,8 @@ int main(int argc, char **argv)
 
 	VulkanGraphicsPipeline* base;
 	VulkanGraphicsPipeline* sceneRenderPassPipeline;
-	VulkanGraphicsPipeline* postProcessTintPipeline;
+	VulkanGraphicsPipeline* postProcessTintPipeline1;
+	VulkanGraphicsPipeline* postProcessTintPipeline2;
 
 	VertexBase vertex_binding_vertex = {
 		VkVertexInputRate::VK_VERTEX_INPUT_RATE_VERTEX,
@@ -442,7 +440,7 @@ int main(int argc, char **argv)
 	model_pool1->AttachDescriptorSet(1, texture_descriptor_set1);
 
 	{
-		base = renderer->CreateGraphicsPipeline(render_pass1, {
+		base = renderer->CreateGraphicsPipeline(render_pass, {
 			{ VkShaderStageFlagBits::VK_SHADER_STAGE_VERTEX_BIT, "../../renderer-demo/Shaders/vert.spv" },
 			{ VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT, "../../renderer-demo/Shaders/frag.spv" }
 			});
@@ -463,7 +461,7 @@ int main(int argc, char **argv)
 
 
 	{
-		sceneRenderPassPipeline = renderer->CreateGraphicsPipeline(render_pass1, {
+		sceneRenderPassPipeline = renderer->CreateGraphicsPipeline(render_pass, {
 			{ VkShaderStageFlagBits::VK_SHADER_STAGE_VERTEX_BIT, "../../renderer-demo/Shaders/vert.spv" },
 			{ VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT, "../../renderer-demo/Shaders/frag.spv" }
 			});
@@ -487,13 +485,12 @@ int main(int argc, char **argv)
 
 	sceneRenderPassPipeline->AttachModelPool(model_pool1);
 
-	render_pass1->AttachGraphicsPipeline(sceneRenderPassPipeline);
-	render_pass2->AttachGraphicsPipeline(sceneRenderPassPipeline);
+	render_pass->AttachGraphicsPipeline(sceneRenderPassPipeline);
 
 
 
 	{
-		postProcessTintPipeline = renderer->CreateGraphicsPipeline(render_pass1,{
+		postProcessTintPipeline1 = renderer->CreateGraphicsPipeline(render_pass, {
 			{ VkShaderStageFlagBits::VK_SHADER_STAGE_VERTEX_BIT, "../../renderer-demo/Shaders/PP/Tint/vert.spv" },
 			{ VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT, "../../renderer-demo/Shaders/PP/Tint/frag.spv" }
 			});
@@ -501,43 +498,65 @@ int main(int argc, char **argv)
 
 		// Config base pipeline
 		{
-			VulkanGraphicsPipelineConfig& config = postProcessTintPipeline->GetGraphicsPipelineConfig();
+			VulkanGraphicsPipelineConfig& config = postProcessTintPipeline1->GetGraphicsPipelineConfig();
 			config.allow_darivatives = true;
 			config.culling = VkCullModeFlagBits::VK_CULL_MODE_NONE;
 			config.parent = base;
 			config.subpass = 1;
 			config.use_depth_stencil = false;
 		}
-		
-		// Define the layout of the input coming to the pipeline from the swapchain
-		postProcessTintPipeline->AttachDescriptorPool(render_pass2->GetInputAttachmentsReadPool());
 
-		postProcessTintPipeline->AttachVertexBinding(vertex_binding_vertex);/*
-		postProcessTintPipeline->AttachDescriptorPool(texture_pool);
-		postProcessTintPipeline->AttachDescriptorSet(0, texture_descriptor_set1);*/
-		postProcessTintPipeline->Build();
+		// Define the layout of the input coming to the pipeline from the swapchain
+		postProcessTintPipeline1->AttachDescriptorPool(render_pass->GetInputAttachmentsReadPool());
+
+		postProcessTintPipeline1->AttachVertexBinding(vertex_binding_vertex);/*
+																			postProcessTintPipeline->AttachDescriptorPool(texture_pool);
+																			postProcessTintPipeline->AttachDescriptorSet(0, texture_descriptor_set1);*/
+		postProcessTintPipeline1->Build();
 	}
 
 
-	postProcessTintPipeline->AttachModelPool(model_pool2PP);
+	postProcessTintPipeline1->AttachModelPool(model_pool2PP);
 
 
 
-	render_pass1->AttachGraphicsPipeline(postProcessTintPipeline);
-	render_pass2->AttachGraphicsPipeline(postProcessTintPipeline);
+	render_pass->AttachGraphicsPipeline(postProcessTintPipeline1);
+
+	{
+		postProcessTintPipeline2 = renderer->CreateGraphicsPipeline(render_pass, {
+			{ VkShaderStageFlagBits::VK_SHADER_STAGE_VERTEX_BIT, "../../renderer-demo/Shaders/PP/Tint2/vert.spv" },
+			{ VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT, "../../renderer-demo/Shaders/PP/Tint2/frag.spv" }
+			});
 
 
-	render_pass1->RebuildCommandBuffers();
-	render_pass2->RebuildCommandBuffers();
+		// Config base pipeline
+		{
+			VulkanGraphicsPipelineConfig& config = postProcessTintPipeline2->GetGraphicsPipelineConfig();
+			config.allow_darivatives = true;
+			config.culling = VkCullModeFlagBits::VK_CULL_MODE_NONE;
+			config.parent = base;
+			config.subpass = 2;
+			config.use_depth_stencil = false;
+		}
+
+		// Define the layout of the input coming to the pipeline from the swapchain
+		postProcessTintPipeline2->AttachDescriptorPool(render_pass->GetInputAttachmentsReadPool());
+
+		postProcessTintPipeline2->AttachVertexBinding(vertex_binding_vertex);/*
+																			postProcessTintPipeline->AttachDescriptorPool(texture_pool);
+																			postProcessTintPipeline->AttachDescriptorSet(0, texture_descriptor_set1);*/
+		postProcessTintPipeline2->Build();
+	}
+
+
+	postProcessTintPipeline2->AttachModelPool(model_pool2PP);
 
 
 
+	render_pass->AttachGraphicsPipeline(postProcessTintPipeline2);
 
 
-
-
-
-
+	render_pass->RebuildCommandBuffers();
 
 
 
@@ -551,7 +570,7 @@ int main(int argc, char **argv)
 
 		model_position_buffer1->SetData(BufferSlot::Primary);
 
-		render_pass1->Render();
+		render_pass->Render();
 
 		PollWindow();
 	}

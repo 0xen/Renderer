@@ -153,9 +153,9 @@ VulkanRaytracePipeline * Renderer::Vulkan::VulkanRenderer::CreateRaytracePipelin
 	return graphics_pipeline;
 }
 
-VulkanRenderPass * Renderer::Vulkan::VulkanRenderer::CreateRenderPass()
+VulkanRenderPass * Renderer::Vulkan::VulkanRenderer::CreateRenderPass(unsigned int subpass_count)
 {
-	return new VulkanRenderPass(this, m_swapchain, m_instance, m_device);
+	return new VulkanRenderPass(this, m_swapchain, m_instance, m_device, subpass_count);
 }
 
 VulkanAcceleration * Renderer::Vulkan::VulkanRenderer::CreateAcceleration()

@@ -22,7 +22,7 @@ namespace Renderer
 		class VulkanRenderPass : public VulkanStatus
 		{
 		public:
-			VulkanRenderPass(VulkanRenderer* renderer, VulkanSwapchain* swapchain,  VulkanInstance* instance, VulkanDevice* device);
+			VulkanRenderPass(VulkanRenderer* renderer, VulkanSwapchain* swapchain,  VulkanInstance* instance, VulkanDevice* device, unsigned int subpass_count = 1);
 			~VulkanRenderPass();
 
 			// When a change has been made to the current pipeline pool, RebuildCommandBuffers() must be called
@@ -93,6 +93,7 @@ namespace Renderer
 
 			// Render pass
 			VkRenderPass m_render_pass;
+			unsigned int m_subpass_count;
 
 
 			// Frame buffers

@@ -68,7 +68,7 @@ namespace Renderer
 
 			VulkanRaytracePipeline* CreateRaytracePipeline(VulkanRenderPass* render_pass, std::vector<std::pair<VkShaderStageFlagBits, const char*>> paths, std::vector<std::map<VkShaderStageFlagBits, const char*>> hitgroups);
 
-			VulkanRenderPass* CreateRenderPass();
+			VulkanRenderPass* CreateRenderPass(unsigned int subpass_count);
 
 			VulkanAcceleration* CreateAcceleration();
 

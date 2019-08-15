@@ -13,12 +13,13 @@
 
 #include <assert.h>
 
-Renderer::Vulkan::VulkanRenderPass::VulkanRenderPass(VulkanRenderer* renderer, VulkanSwapchain* swapchain, VulkanInstance* instance, VulkanDevice* device)
+Renderer::Vulkan::VulkanRenderPass::VulkanRenderPass(VulkanRenderer* renderer, VulkanSwapchain* swapchain, VulkanInstance* instance, VulkanDevice* device, unsigned int subpass_count)
 {
 	m_renderer = renderer;
 	m_instance = instance;
 	m_device = device;
 	m_swapchain = swapchain;
+	m_subpass_count = subpass_count;
 
 	InitRenderPass();
 	InitFrameBuffer();
@@ -142,7 +143,7 @@ void Renderer::Vulkan::VulkanRenderPass::RebuildCommandBuffers()
 
 
 
-		for (int subpass = 1; m_subpasses.find(subpass) != m_subpasses.end(); subpass++)
+		for (int subpass = 1; subpass < m_subpass_count && m_subpasses.find(subpass) != m_subpasses.end(); subpass++)
 		{
 			vkCmdNextSubpass(m_command_buffers[i], VK_SUBPASS_CONTENTS_INLINE);
 
@@ -166,12 +167,12 @@ void Renderer::Vulkan::VulkanRenderPass::RebuildCommandBuffers()
 				pipeline->BindDescriptorSets(m_command_buffers[i]);
 				pipeline->RenderModels(m_command_buffers[i]);
 
-				vkCmdEndRenderPass(
-					m_command_buffers[i]
-				);
 			}
 		}
 
+		vkCmdEndRenderPass(
+			m_command_buffers[i]
+		);
 
 
 
@@ -309,8 +310,8 @@ void Renderer::Vulkan::VulkanRenderPass::InitRenderPass()
 		VulkanDescriptorSet* set = m_input_attachments_read_pool->CreateDescriptorSet();
 
 
-		set->AttachBuffer(0, VulkanInitializers::DescriptorImageInfo(VK_NULL_HANDLE, m_attachments[i].color.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL));
-		set->AttachBuffer(1, VulkanInitializers::DescriptorImageInfo(VK_NULL_HANDLE, m_attachments[i].depth.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL));
+		set->AttachBuffer(0, VulkanInitializers::DescriptorImageInfo(VK_NULL_HANDLE, m_attachments[i].color.view, VK_IMAGE_LAYOUT_GENERAL));
+		set->AttachBuffer(1, VulkanInitializers::DescriptorImageInfo(VK_NULL_HANDLE, m_attachments[i].depth.view, VK_IMAGE_LAYOUT_GENERAL));
 		set->UpdateSet();
 
 		m_input_attachments_read_sets[i] = set;
@@ -323,7 +324,8 @@ void Renderer::Vulkan::VulkanRenderPass::InitRenderPass()
 	{
 		// Needs sorting for raytracing
 		attachments = {
-			VulkanInitializers::AttachmentDescription(m_swapchain->GetSwapChainImageFormat(), VK_ATTACHMENT_STORE_OP_STORE,VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ATTACHMENT_LOAD_OP_DONT_CARE) ,	//Color
+			VulkanInitializers::AttachmentDescription(m_swapchain->GetSwapChainImageFormat(), VK_ATTACHMENT_STORE_OP_STORE,VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ATTACHMENT_LOAD_OP_DONT_CARE) ,	//Present
+			VulkanInitializers::AttachmentDescription(colorFormat, VK_ATTACHMENT_STORE_OP_DONT_CARE,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL),	//Color
 			VulkanInitializers::AttachmentDescription(VulkanCommon::GetDepthImageFormat(m_device), VK_ATTACHMENT_STORE_OP_DONT_CARE,VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)		// Depth
 		};
 	}
@@ -335,64 +337,196 @@ void Renderer::Vulkan::VulkanRenderPass::InitRenderPass()
 			VulkanInitializers::AttachmentDescription(VulkanCommon::GetDepthImageFormat(m_device), VK_ATTACHMENT_STORE_OP_DONT_CARE,VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)		// Depth
 		};
 	}
+
+	std::vector<VkSubpassDependency> subpass_dependency;
+
 	std::vector<VkSubpassDescription> subpasses_descriptions;
-
-	VkAttachmentReference color_attachment_refrence = VulkanInitializers::AttachmentReference(VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, 1);
+	// Attachment reference to the final swapchain image
+	VkAttachmentReference color_attachment_refrence_swapchain = VulkanInitializers::AttachmentReference(VK_IMAGE_LAYOUT_GENERAL, 0);
+	// Attachment reference to the scratch image
+	VkAttachmentReference color_attachment_refrence = VulkanInitializers::AttachmentReference(VK_IMAGE_LAYOUT_GENERAL, 1);
+	// Attachment reference to the depth image
 	VkAttachmentReference depth_attachment_refrence = VulkanInitializers::AttachmentReference(VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, 2);
+
+
+
+	if (m_subpass_count == 1)
 	{
-		VkSubpassDescription subpass = VulkanInitializers::SubpassDescription(color_attachment_refrence, depth_attachment_refrence);
+		// SubPass 0
+		// Wright directly to the swapchain
+		VkSubpassDescription subpass = VulkanInitializers::SubpassDescription(&color_attachment_refrence_swapchain, 1, depth_attachment_refrence);
 		subpasses_descriptions.push_back(subpass);
+
+		// Define subpass dependency, Should just pass data to the swapchain
+		subpass_dependency.push_back(
+			VulkanInitializers::SubpassDependency(
+				VK_SUBPASS_EXTERNAL,
+				VK_SUBPASS_EXTERNAL,
+				VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+				VK_ACCESS_MEMORY_READ_BIT,
+				VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+				VK_ACCESS_MEMORY_READ_BIT
+			));
+	}
+	else
+	{
+		// SubPass 0
+		{
+			VkSubpassDescription subpass = VulkanInitializers::SubpassDescription(&color_attachment_refrence, 1, depth_attachment_refrence);
+			subpasses_descriptions.push_back(subpass);
+
+			// Define subpass dependency, Should pas data to scratch iamge
+			subpass_dependency.push_back(
+				VulkanInitializers::SubpassDependency(
+					VK_SUBPASS_EXTERNAL,
+					0,
+					VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+					VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+					VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+					VK_ACCESS_MEMORY_READ_BIT
+				));
+		}
+
+		// Define that these sub passes will be taking a direct input from the previous ones
+		VkAttachmentReference inputReferences[2];
+		inputReferences[0] = { 1, VK_IMAGE_LAYOUT_GENERAL };
+		inputReferences[1] = { 2, VK_IMAGE_LAYOUT_GENERAL };
+
+
+
+		// Loop through for all sub passes excluding the first and last one
+		for (int i = 1; i < m_subpass_count - 1; i++)
+		{
+			// Define that we will be writing to the scratch image
+			VkSubpassDescription subpass = VulkanInitializers::SubpassDescription(color_attachment_refrence);
+
+			// Use the attachments filled in the first pass as input attachments
+			subpass.inputAttachmentCount = 2;
+			subpass.pInputAttachments = inputReferences;
+
+			subpasses_descriptions.push_back(subpass);
+
+
+			// Both happen at the same time
+			// First transitions the input from color to shader read
+			subpass_dependency.push_back(
+				VulkanInitializers::SubpassDependency(
+					i - 1,
+					i,
+					VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+					VK_ACCESS_SHADER_READ_BIT,
+					VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+					VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
+				));
+
+			// Second reads the data and works with it
+			subpass_dependency.push_back(
+				VulkanInitializers::SubpassDependency(
+					i - 1,
+					i + 1,
+					VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+					VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+					VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+					VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
+				));
+
+
+		}
+
+		// Attach the final subpass
+		{
+			// Point to the swapchain as the color refrence
+			VkSubpassDescription subpass = VulkanInitializers::SubpassDescription(color_attachment_refrence_swapchain);
+
+
+			// Use the attachments filled in the first pass as input attachments
+			subpass.inputAttachmentCount = 2;
+			subpass.pInputAttachments = inputReferences;
+
+			subpasses_descriptions.push_back(subpass);
+
+
+			// Both happen at the same time
+			// First transitions the input from color to shader read
+			subpass_dependency.push_back(
+				VulkanInitializers::SubpassDependency(
+					m_subpass_count - 2,
+					m_subpass_count - 1,
+					VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+					VK_ACCESS_SHADER_READ_BIT,
+					VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+					VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
+				));
+
+			// Second reads the data and works with it
+			subpass_dependency.push_back(
+				VulkanInitializers::SubpassDependency(
+					m_subpass_count - 2,
+					VK_SUBPASS_EXTERNAL,
+					VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+					VK_ACCESS_MEMORY_READ_BIT,
+					VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+					VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
+				));
+		}
+
 	}
 
-	VkAttachmentReference color_attachment_refrence_swapchain = VulkanInitializers::AttachmentReference(VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, 0);
-	// Color and depth from the first pass will be used for the second one
-	VkAttachmentReference inputReferences[2];
-	inputReferences[0] = { 1, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
-	inputReferences[1] = { 2, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
-	{
-		// Point to the swapchain as the color refrence
-		VkSubpassDescription subpass = VulkanInitializers::SubpassDescription(color_attachment_refrence_swapchain);
+
+	
 
 
-		// Use the attachments filled in the first pass as input attachments
-		subpass.inputAttachmentCount = 2;
-		subpass.pInputAttachments = inputReferences;
+	//std::vector<VkSubpassDependency> subpass_dependency = {
+	//	VulkanInitializers::SubpassDependency(
+	//		VK_SUBPASS_EXTERNAL,
+	//		0,
+	//		VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+	//		VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+	//		VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+	//		VK_ACCESS_MEMORY_READ_BIT
+	//	),
 
-		subpasses_descriptions.push_back(subpass);
-	}
+	//	// Both happen at the same time
+	//	// First transitions the input from color to shader read
+	//	VulkanInitializers::SubpassDependency(
+	//		0,
+	//		1,
+	//		VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+	//		VK_ACCESS_SHADER_READ_BIT,
+	//		VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+	//		VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
+	//	),
+	//	// Second reads the data and works with it
+	//	VulkanInitializers::SubpassDependency(
+	//		0,
+	//		2,
+	//		VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+	//		VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+	//		VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+	//		VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
+	//	),
 
 
-	std::vector<VkSubpassDependency> subpass_dependency = {
-
-		VulkanInitializers::SubpassDependency(
-			VK_SUBPASS_EXTERNAL,
-			0,
-			VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-			VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-			VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-			VK_ACCESS_MEMORY_READ_BIT
-		),
-
-		// Both happen at the same time
-		// First transitions the input from color to shader read
-		VulkanInitializers::SubpassDependency(
-			0,
-			1,
-			VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-			VK_ACCESS_SHADER_READ_BIT,
-			VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-			VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
-		),
-		// Second reads the data and works with it
-		VulkanInitializers::SubpassDependency(
-			0,
-			VK_SUBPASS_EXTERNAL,
-			VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-			VK_ACCESS_MEMORY_READ_BIT,
-			VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-			VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
-		)
-	};
+	//	// Both happen at the same time
+	//	// First transitions the input from color to shader read
+	//	VulkanInitializers::SubpassDependency(
+	//		1,
+	//		2,
+	//		VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+	//		VK_ACCESS_SHADER_READ_BIT,
+	//		VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+	//		VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
+	//	),
+	//	// Second reads the data and works with it
+	//	VulkanInitializers::SubpassDependency(
+	//		1,
+	//		VK_SUBPASS_EXTERNAL,
+	//		VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+	//		VK_ACCESS_MEMORY_READ_BIT,
+	//		VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+	//		VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
+	//	),
+	//};
 
 	VkRenderPassCreateInfo render_pass_info = VulkanInitializers::RenderPassCreateInfo(attachments, subpasses_descriptions.data(), subpasses_descriptions.size(), subpass_dependency.data(), subpass_dependency.size());
 
@@ -548,4 +682,6 @@ void Renderer::Vulkan::VulkanRenderPass::CreateAttachmentImages(VkFormat format,
 	VulkanCommon::CreateImage(m_device, m_swapchain->GetSwapchainExtent(), format, VK_IMAGE_TILING_OPTIMAL, usage | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, attachment.image, attachment.memory);
 	VulkanCommon::CreateImageView(m_device, attachment.image, format, aspectMask, attachment.view);
 
+	if (usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)
+		VulkanCommon::TransitionImageLayout(m_device, attachment.image, format, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 });
 }

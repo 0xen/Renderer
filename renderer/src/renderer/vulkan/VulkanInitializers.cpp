@@ -254,12 +254,12 @@ VkAttachmentReference Renderer::Vulkan::VulkanInitializers::AttachmentReference(
 	return color_attachment_refrence;
 }
 
-VkSubpassDescription Renderer::Vulkan::VulkanInitializers::SubpassDescription(VkAttachmentReference & color_attachment_refrence, VkAttachmentReference & depth_attachment_ref)
+VkSubpassDescription Renderer::Vulkan::VulkanInitializers::SubpassDescription(VkAttachmentReference* color_attachment_refrence, unsigned int color_count, VkAttachmentReference & depth_attachment_ref)
 {
 	VkSubpassDescription subpass = {};
 	subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-	subpass.colorAttachmentCount = 1;
-	subpass.pColorAttachments = &color_attachment_refrence;
+	subpass.colorAttachmentCount = color_count;
+	subpass.pColorAttachments = color_attachment_refrence;
 	subpass.pDepthStencilAttachment = &depth_attachment_ref;
 	return subpass;
 }
