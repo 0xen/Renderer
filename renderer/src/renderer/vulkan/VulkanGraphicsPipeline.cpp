@@ -179,6 +179,8 @@ bool Renderer::Vulkan::VulkanGraphicsPipeline::CreatePipeline()
 		pipeline_info.basePipelineIndex = -1;
 	}
 
+	pipeline_info.subpass = m_graphics_pipeline_config.subpass;
+
 	ErrorCheck(vkCreateGraphicsPipelines(
 		*m_device->GetVulkanDevice(),
 		VK_NULL_HANDLE,
@@ -202,28 +204,9 @@ void Renderer::Vulkan::VulkanGraphicsPipeline::DestroyPipeline()
 void Renderer::Vulkan::VulkanGraphicsPipeline::AttachToCommandBuffer(VkCommandBuffer & command_buffer)
 {
 	if (m_model_pools.size() == 0)return;
-	vkCmdBindPipeline(
-		command_buffer,
-		VK_PIPELINE_BIND_POINT_GRAPHICS,
-		m_pipeline
-	);
-	for(auto it = m_descriptor_sets.begin(); it!= m_descriptor_sets.end(); it++)
-	{
-		vkCmdBindDescriptorSets(
-			command_buffer,
-			VK_PIPELINE_BIND_POINT_GRAPHICS,
-			m_pipeline_layout,
-			it->first,
-			1,
-			&it->second->GetDescriptorSet(),
-			0,
-			NULL
-		);
-	}
-	for (auto model_pool : m_model_pools)
-	{
-		model_pool->AttachToCommandBuffer(command_buffer,this);
-	}
+	AttachPipeline(command_buffer);
+	BindDescriptorSets(command_buffer);
+	RenderModels(command_buffer);
 }
 
 void Renderer::Vulkan::VulkanGraphicsPipeline::AttachModelPool(VulkanModelPool * model_pool)
@@ -254,6 +237,40 @@ bool Renderer::Vulkan::VulkanGraphicsPipeline::HasChanged()
 VulkanGraphicsPipelineConfig & Renderer::Vulkan::VulkanGraphicsPipeline::GetGraphicsPipelineConfig()
 {
 	return m_graphics_pipeline_config;
+}
+
+void Renderer::Vulkan::VulkanGraphicsPipeline::AttachPipeline(VkCommandBuffer & command_buffer)
+{
+	vkCmdBindPipeline(
+		command_buffer,
+		VK_PIPELINE_BIND_POINT_GRAPHICS,
+		m_pipeline
+	);
+}
+
+void Renderer::Vulkan::VulkanGraphicsPipeline::BindDescriptorSets(VkCommandBuffer & command_buffer)
+{
+	for (auto it = m_descriptor_sets.begin(); it != m_descriptor_sets.end(); it++)
+	{
+		vkCmdBindDescriptorSets(
+			command_buffer,
+			VK_PIPELINE_BIND_POINT_GRAPHICS,
+			m_pipeline_layout,
+			it->first,
+			1,
+			&it->second->GetDescriptorSet(),
+			0,
+			NULL
+		);
+	}
+}
+
+void Renderer::Vulkan::VulkanGraphicsPipeline::RenderModels(VkCommandBuffer & command_buffer)
+{
+	for (auto model_pool : m_model_pools)
+	{
+		model_pool->AttachToCommandBuffer(command_buffer, this);
+	}
 }
 
 void Renderer::Vulkan::VulkanGraphicsPipeline::InitPipelineCreateInfo()

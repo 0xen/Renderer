@@ -336,7 +336,7 @@ int main(int argc, char **argv)
 		VulkanModel* model = model_pool1->CreateModel();
 		glm::mat4 pos = glm::mat4(1.0f);
 		pos = glm::translate(pos, glm::vec3(0, 0, -2));
-		float scale = 0.2;
+		float scale = 0.2f;
 		pos = glm::scale(pos, glm::vec3(scale, scale, scale));
 		model->SetData(POSITION_BUFFER, pos);
 	}
@@ -389,12 +389,27 @@ int main(int argc, char **argv)
 
 	VulkanDescriptorPool* camera_pool = renderer->CreateDescriptorPool({
 		renderer->CreateDescriptor(VkDescriptorType::VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VkShaderStageFlagBits::VK_SHADER_STAGE_VERTEX_BIT, 0),
-	});
+		});
 
 
 	VulkanDescriptorSet* camera_descriptor_set = camera_pool->CreateDescriptorSet();
 	camera_descriptor_set->AttachBuffer(0, cameraInfo);
 	camera_descriptor_set->UpdateSet();
+
+
+	/*
+	
+	VulkanDescriptorPool* input_attachments_read = renderer->CreateDescriptorPool({
+		renderer->CreateDescriptor(VkDescriptorType::VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, VkShaderStageFlagBits::VK_SHADER_STAGE_VERTEX_BIT, 0), // Color
+		renderer->CreateDescriptor(VkDescriptorType::VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, VkShaderStageFlagBits::VK_SHADER_STAGE_VERTEX_BIT, 1), // Color
+		renderer->CreateDescriptor(VkDescriptorType::VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, VkShaderStageFlagBits::VK_SHADER_STAGE_VERTEX_BIT, 2), // Depth
+		});
+
+
+	VulkanDescriptorSet* input_attachments_read_set = input_attachments_read->CreateDescriptorSet();
+	input_attachments_read_set->AttachBuffer(0, cameraInfo);
+	input_attachments_read_set->UpdateSet();*/
+
 
 
 	VulkanDescriptorPool* texture_pool = renderer->CreateDescriptorPool({
@@ -452,6 +467,7 @@ int main(int argc, char **argv)
 			VulkanGraphicsPipelineConfig& config = sceneRenderPassPipeline->GetGraphicsPipelineConfig();
 			config.allow_darivatives = true;
 			config.parent = base;
+			config.subpass = 0;
 		}
 
 		sceneRenderPassPipeline->AttachVertexBinding(vertex_binding_vertex);
@@ -481,11 +497,16 @@ int main(int argc, char **argv)
 			config.allow_darivatives = true;
 			config.culling = VkCullModeFlagBits::VK_CULL_MODE_NONE;
 			config.parent = base;
+			config.subpass = 1;
+			config.use_depth_stencil = false;
 		}
+		
+		// Define the layout of the input coming to the pipeline from the swapchain
+		postProcessTintPipeline->AttachDescriptorPool(swapchain->GetInputAttachmentsReadPool());
 
-		postProcessTintPipeline->AttachVertexBinding(vertex_binding_vertex);
+		postProcessTintPipeline->AttachVertexBinding(vertex_binding_vertex);/*
 		postProcessTintPipeline->AttachDescriptorPool(texture_pool);
-		postProcessTintPipeline->AttachDescriptorSet(0, texture_descriptor_set1);
+		postProcessTintPipeline->AttachDescriptorSet(0, texture_descriptor_set1);*/
 		postProcessTintPipeline->Build();
 	}
 

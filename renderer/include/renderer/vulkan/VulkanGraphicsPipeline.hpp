@@ -22,6 +22,7 @@ namespace Renderer
 			VkPrimitiveTopology topology;
 			VkFrontFace front_face;
 			VkPolygonMode polygon_mode;
+			unsigned int subpass = 0;
 		};
 
 		class VulkanSwapchain;
@@ -39,6 +40,10 @@ namespace Renderer
 			virtual void AttachVertexBinding(VertexBase vertex_binding);
 			bool HasChanged();
 			VulkanGraphicsPipelineConfig& GetGraphicsPipelineConfig();
+
+			virtual void AttachPipeline(VkCommandBuffer & command_buffer);
+			virtual void BindDescriptorSets(VkCommandBuffer & command_buffer);
+			virtual void RenderModels(VkCommandBuffer & command_buffer);
 
 		private:
 

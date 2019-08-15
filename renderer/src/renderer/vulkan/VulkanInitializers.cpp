@@ -135,7 +135,7 @@ VkRenderPassBeginInfo Renderer::Vulkan::VulkanInitializers::RenderPassBeginInfo(
 	return render_pass_info;
 }
 
-VkRenderPassBeginInfo Renderer::Vulkan::VulkanInitializers::RenderPassBeginInfo(VkRenderPass render_pass, VkExtent2D swapchain_extent, std::array<VkClearValue, 2>& clear_values)
+VkRenderPassBeginInfo Renderer::Vulkan::VulkanInitializers::RenderPassBeginInfo(VkRenderPass render_pass, VkExtent2D swapchain_extent, std::vector<VkClearValue>& clear_values)
 {
 	VkRenderPassBeginInfo render_pass_info = {};
 	render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -261,6 +261,15 @@ VkSubpassDescription Renderer::Vulkan::VulkanInitializers::SubpassDescription(Vk
 	subpass.colorAttachmentCount = 1;
 	subpass.pColorAttachments = &color_attachment_refrence;
 	subpass.pDepthStencilAttachment = &depth_attachment_ref;
+	return subpass;
+}
+
+VkSubpassDescription Renderer::Vulkan::VulkanInitializers::SubpassDescription(VkAttachmentReference & color_attachment_refrence)
+{
+	VkSubpassDescription subpass = {};
+	subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+	subpass.colorAttachmentCount = 1;
+	subpass.pColorAttachments = &color_attachment_refrence;
 	return subpass;
 }
 

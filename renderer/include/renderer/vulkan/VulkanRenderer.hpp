@@ -70,7 +70,7 @@ namespace Renderer
 
 			VulkanDescriptorPool* CreateDescriptorPool(std::vector<VulkanDescriptor*> descriptors);
 
-			VulkanRaytracePipeline* CreateRaytracePipeline(std::vector<std::pair<VkShaderStageFlagBits, const char*>> paths, std::vector<std::map<VkShaderStageFlagBits, const char*>> hitgroups, bool priority = false);
+			VulkanRaytracePipeline* CreateRaytracePipeline(std::vector<std::pair<VkShaderStageFlagBits, const char*>> paths, std::vector<std::map<VkShaderStageFlagBits, const char*>> hitgroups);
 
 			VulkanAcceleration* CreateAcceleration();
 

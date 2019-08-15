@@ -6,11 +6,15 @@
 #include <renderer/vulkan/VulkanCommon.hpp>
 #include <renderer/vulkan/VulkanGraphicsPipeline.hpp>
 #include <renderer/vulkan/VulkanRaytracePipeline.hpp>
+#include <renderer/vulkan/VulkanRenderer.hpp>
+#include <renderer/vulkan/VulkanDescriptorPool.hpp>
+#include <renderer/vulkan/VulkanDescriptorSet.hpp>
 
 #include <assert.h>
 
-Renderer::Vulkan::VulkanSwapchain::VulkanSwapchain(VulkanInstance * instance, VulkanDevice * device, VkSurfaceKHR* surface, Renderer::NativeWindowHandle* window_handle)
+Renderer::Vulkan::VulkanSwapchain::VulkanSwapchain(VulkanRenderer* renderer, VulkanInstance * instance, VulkanDevice * device, VkSurfaceKHR* surface, Renderer::NativeWindowHandle* window_handle)
 {
+	m_renderer = renderer;
 	m_instance = instance;
 	m_device = device;
 	m_surface = surface;
@@ -162,24 +166,18 @@ VkPresentModeKHR Renderer::Vulkan::VulkanSwapchain::GetSurfacePresentMode()
 	return present_mode;
 }
 
-void Renderer::Vulkan::VulkanSwapchain::AttachGraphicsPipeline(VulkanGraphicsPipeline * pipeline, bool priority)
+void Renderer::Vulkan::VulkanSwapchain::AttachGraphicsPipeline(VulkanGraphicsPipeline * pipeline)
 {
-	if (priority)
-	{
-		m_pipelines.push_back(pipeline);
-	}
-	else
-	{
-		m_pipelines.insert(m_pipelines.begin(), pipeline);
-	}
+	// Attach the pipeline to its correct sub pass
+	m_subpasses[pipeline->GetGraphicsPipelineConfig().subpass].push_back(pipeline);
 }
 
 void Renderer::Vulkan::VulkanSwapchain::RemoveGraphicsPipeline(VulkanGraphicsPipeline * pipeline)
 {
-	auto it = std::find(m_pipelines.begin(), m_pipelines.end(), pipeline);
-	if (it != m_pipelines.end())
+	auto it = std::find(m_subpasses[pipeline->GetGraphicsPipelineConfig().subpass].begin(), m_subpasses[pipeline->GetGraphicsPipelineConfig().subpass].end(), pipeline);
+	if (it != m_subpasses[pipeline->GetGraphicsPipelineConfig().subpass].end())
 	{
-		m_pipelines.erase(it);
+		m_subpasses[pipeline->GetGraphicsPipelineConfig().subpass].erase(it);
 		RebuildSwapchain();
 	}
 }
@@ -229,23 +227,26 @@ VkFormat Renderer::Vulkan::VulkanSwapchain::GetSwapChainImageFormat()
 	return m_swap_chain_image_format;
 }
 
-VkImage Renderer::Vulkan::VulkanSwapchain::GetDepthImage()
-{
-	return m_depth_image;
-}
-
 VkExtent2D Renderer::Vulkan::VulkanSwapchain::GetSwapchainExtent()
 {
 	return m_swap_chain_extent;
 }
 
+Renderer::Vulkan::VulkanDescriptorPool * Renderer::Vulkan::VulkanSwapchain::GetInputAttachmentsReadPool()
+{
+	return m_input_attachments_read_pool;;
+}
+
 void Renderer::Vulkan::VulkanSwapchain::FindNextImageIndex()
 {
-	for (auto pipeline : m_pipelines)
+	for (auto subpass : m_subpasses)
 	{
-		if (pipeline->HasChanged())
+		for (auto pipeline : subpass.second)
 		{
-			m_should_rebuild_cmd = true;
+			if (pipeline->HasChanged())
+			{
+				m_should_rebuild_cmd = true;
+			}
 		}
 	}
 
@@ -280,10 +281,12 @@ void Renderer::Vulkan::VulkanSwapchain::FindNextImageIndex()
 void Renderer::Vulkan::VulkanSwapchain::RebuildCommandBuffers()
 {
 	VkCommandBufferBeginInfo begin_info = VulkanInitializers::CommandBufferBeginInfo(VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
-	std::array<VkClearValue, 2> clear_values;
-	
+	std::vector<VkClearValue> clear_values;
+	clear_values.resize(3);
+
 	std::copy(std::begin(m_window_handle->clear_color.float32), std::end(m_window_handle->clear_color.float32), std::begin(clear_values[0].color.float32));
-	clear_values[1].depthStencil = { 1.0f, 0 };
+	std::copy(std::begin(m_window_handle->clear_color.float32), std::end(m_window_handle->clear_color.float32), std::begin(clear_values[1].color.float32));
+	clear_values[2].depthStencil = { 1.0f, 0 };
 	VkRenderPassBeginInfo render_pass_info = VulkanInitializers::RenderPassBeginInfo(m_render_pass, m_swap_chain_extent, clear_values);
 
 	VkImageSubresourceRange subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
@@ -309,7 +312,7 @@ void Renderer::Vulkan::VulkanSwapchain::RebuildCommandBuffers()
 
 		if ((m_instance->GetFlags()&VulkanFlags::Raytrace) == VulkanFlags::Raytrace)
 		{
-			for (auto pipeline : m_pipelines)
+			for (auto pipeline : m_subpasses[0])
 			{
 				if (dynamic_cast<VulkanRaytracePipeline*>(pipeline) != nullptr)
 				{
@@ -354,11 +357,11 @@ void Renderer::Vulkan::VulkanSwapchain::RebuildCommandBuffers()
 		const VkRect2D scissor = VulkanInitializers::Scissor(m_window_handle->width, m_window_handle->height);
 		vkCmdSetViewport(m_command_buffers[i], 0, 1, &viewport);
 		vkCmdSetScissor(m_command_buffers[i], 0, 1, &scissor);
-		
 
-		for (auto pipeline : m_pipelines)
+
+		for (auto pipeline : m_subpasses[0])
 		{
-			if (dynamic_cast<VulkanRaytracePipeline*>(pipeline)==nullptr)
+			if (dynamic_cast<VulkanRaytracePipeline*>(pipeline) == nullptr)
 			{
 				pipeline->AttachToCommandBuffer(m_command_buffers[i]);
 			}
@@ -366,13 +369,43 @@ void Renderer::Vulkan::VulkanSwapchain::RebuildCommandBuffers()
 
 
 
-		vkCmdEndRenderPass(
-			m_command_buffers[i]
-		);
+		for (int subpass = 1; m_subpasses.find(subpass) != m_subpasses.end(); subpass++)
+		{
+			vkCmdNextSubpass(m_command_buffers[i], VK_SUBPASS_CONTENTS_INLINE);
 
-		
 
-		
+			for (VulkanGraphicsPipeline* pipeline : m_subpasses[subpass])
+			{
+
+				pipeline->AttachPipeline(m_command_buffers[i]);
+
+				vkCmdBindDescriptorSets(
+					m_command_buffers[i],
+					VK_PIPELINE_BIND_POINT_GRAPHICS,
+					pipeline->GetPipelineLayout(),
+					0,
+					1,
+					&m_input_attachments_read_sets[i]->GetDescriptorSet(),
+					0,
+					NULL
+				);
+
+				pipeline->BindDescriptorSets(m_command_buffers[i]);
+				pipeline->RenderModels(m_command_buffers[i]);
+
+				vkCmdEndRenderPass(
+					m_command_buffers[i]
+				);
+			}
+		}
+
+
+
+
+
+
+
+
 		ErrorCheck(vkEndCommandBuffer(
 			m_command_buffers[i]
 		));
@@ -387,7 +420,6 @@ void Renderer::Vulkan::VulkanSwapchain::CreateSwapchain()
 	InitSwapchain();
 	InitSwapchainImages();
 	InitRenderPass();
-	InitDepthImage();
 	if (m_instance->GetFlags()&VulkanFlags::Raytrace == VulkanFlags::Raytrace)
 	{
 		InitRaytracingTempImage();
@@ -402,7 +434,6 @@ void Renderer::Vulkan::VulkanSwapchain::DestroySwapchain()
 	{
 		DeInitRaytracingTempImage();
 	}
-	DeInitDepthImage();
 	DeInitRenderPass();
 	DeInitSwapchainImages();
 	DeInitSwapchain();
@@ -432,19 +463,21 @@ void Renderer::Vulkan::VulkanSwapchain::InitSwapchain()
 	VulkanQueueFamilyIndices indices = *m_device->GetVulkanPhysicalDevice()->GetQueueFamilies();
 	VkSwapchainCreateInfoKHR create_info = VulkanInitializers::SwapchainCreateInfoKHR(surface_format, extent, present_mode, image_count, *m_surface, indices, swap_chain_support);
 
-	if ((swap_chain_support.capabilities.supportedUsageFlags & VK_IMAGE_USAGE_STORAGE_BIT) == VK_IMAGE_USAGE_STORAGE_BIT && 
-		(m_instance->GetFlags() & Renderer::Vulkan::VulkanFlags::Raytrace) == Renderer::Vulkan::VulkanFlags::Raytrace) {
+	if ((swap_chain_support.capabilities.supportedUsageFlags & VK_IMAGE_USAGE_STORAGE_BIT) == VK_IMAGE_USAGE_STORAGE_BIT &&
+		(m_instance->GetFlags() & Renderer::Vulkan::VulkanFlags::Raytrace) == Renderer::Vulkan::VulkanFlags::Raytrace)
+	{
 		create_info.imageUsage |= VK_IMAGE_USAGE_STORAGE_BIT;
 	}
 
-	if ((swap_chain_support.capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT)== VK_IMAGE_USAGE_TRANSFER_DST_BIT) {
+	if ((swap_chain_support.capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT) == VK_IMAGE_USAGE_TRANSFER_DST_BIT)
+	{
 		create_info.imageUsage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 	}
 
-	if ((swap_chain_support.capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_SRC_BIT)== VK_IMAGE_USAGE_TRANSFER_SRC_BIT) {
+	if ((swap_chain_support.capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) == VK_IMAGE_USAGE_TRANSFER_SRC_BIT)
+	{
 		create_info.imageUsage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 	}
-
 
 
 
@@ -605,9 +638,40 @@ void Renderer::Vulkan::VulkanSwapchain::DeInitSwapchainImages()
 
 void Renderer::Vulkan::VulkanSwapchain::InitRenderPass()
 {
+
+	const VkFormat colorFormat = VK_FORMAT_R8G8B8A8_UNORM;
+
+	m_attachments.resize(m_swap_chain_images.size());
+
+
+	m_input_attachments_read_sets.resize(m_attachments.size());
+
+	m_input_attachments_read_pool = m_renderer->CreateDescriptorPool({
+		m_renderer->CreateDescriptor(VkDescriptorType::VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT, 0), // Color
+		m_renderer->CreateDescriptor(VkDescriptorType::VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT, 1), // Depth
+		});
+
+	for (int i = 0; i < m_attachments.size(); i++)
+	{
+		CreateAttachmentImages(colorFormat, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, m_attachments[i].color);
+		CreateAttachmentImages(VulkanCommon::GetDepthImageFormat(m_device), VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, m_attachments[i].depth);
+
+		VulkanDescriptorSet* set = m_input_attachments_read_pool->CreateDescriptorSet();
+
+
+		set->AttachBuffer(0, VulkanInitializers::DescriptorImageInfo(VK_NULL_HANDLE, m_attachments[i].color.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL));
+		set->AttachBuffer(1, VulkanInitializers::DescriptorImageInfo(VK_NULL_HANDLE, m_attachments[i].depth.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL));
+		set->UpdateSet();
+
+		m_input_attachments_read_sets[i] = set;
+	}
+
+
+
 	std::vector<VkAttachmentDescription> attachments;
 	if ((m_instance->GetFlags()&VulkanFlags::Raytrace) == VulkanFlags::Raytrace)
 	{
+		// Needs sorting for raytracing
 		attachments = {
 			VulkanInitializers::AttachmentDescription(m_swap_chain_image_format, VK_ATTACHMENT_STORE_OP_STORE,VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ATTACHMENT_LOAD_OP_DONT_CARE) ,	//Color
 			VulkanInitializers::AttachmentDescription(VulkanCommon::GetDepthImageFormat(m_device), VK_ATTACHMENT_STORE_OP_DONT_CARE,VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)		// Depth
@@ -616,23 +680,71 @@ void Renderer::Vulkan::VulkanSwapchain::InitRenderPass()
 	else
 	{
 		attachments = {
-			VulkanInitializers::AttachmentDescription(m_swap_chain_image_format, VK_ATTACHMENT_STORE_OP_STORE,VK_IMAGE_LAYOUT_PRESENT_SRC_KHR),	//Color
+			VulkanInitializers::AttachmentDescription(m_swap_chain_image_format, VK_ATTACHMENT_STORE_OP_STORE,VK_IMAGE_LAYOUT_PRESENT_SRC_KHR),	// Present
+			VulkanInitializers::AttachmentDescription(colorFormat, VK_ATTACHMENT_STORE_OP_DONT_CARE,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL),	//Color
 			VulkanInitializers::AttachmentDescription(VulkanCommon::GetDepthImageFormat(m_device), VK_ATTACHMENT_STORE_OP_DONT_CARE,VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)		// Depth
 		};
 	}
+	std::vector<VkSubpassDescription> subpasses_descriptions;
 
-	VkAttachmentReference color_attachment_refrence = VulkanInitializers::AttachmentReference(VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, 0);
-	VkAttachmentReference depth_attachment_refrence = VulkanInitializers::AttachmentReference(VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, 1);
+	VkAttachmentReference color_attachment_refrence = VulkanInitializers::AttachmentReference(VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, 1);
+	VkAttachmentReference depth_attachment_refrence = VulkanInitializers::AttachmentReference(VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, 2);
+	{
+		VkSubpassDescription subpass = VulkanInitializers::SubpassDescription(color_attachment_refrence, depth_attachment_refrence);
+		subpasses_descriptions.push_back(subpass);
+	}
 
-	VkSubpassDescription subpass[1] = { 
-		VulkanInitializers::SubpassDescription(color_attachment_refrence, depth_attachment_refrence)
+	VkAttachmentReference color_attachment_refrence_swapchain = VulkanInitializers::AttachmentReference(VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, 0);
+	// Color and depth from the first pass will be used for the second one
+	VkAttachmentReference inputReferences[2];
+	inputReferences[0] = { 1, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+	inputReferences[1] = { 2, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+	{
+		// Point to the swapchain as the color refrence
+		VkSubpassDescription subpass = VulkanInitializers::SubpassDescription(color_attachment_refrence_swapchain);
+
+
+		// Use the attachments filled in the first pass as input attachments
+		subpass.inputAttachmentCount = 2;
+		subpass.pInputAttachments = inputReferences;
+
+		subpasses_descriptions.push_back(subpass);
+	}
+
+
+	std::vector<VkSubpassDependency> subpass_dependency = {
+
+		VulkanInitializers::SubpassDependency(
+			VK_SUBPASS_EXTERNAL,
+			0,
+			VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+			VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+			VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+			VK_ACCESS_MEMORY_READ_BIT
+		),
+
+		// Both happen at the same time
+		// First transitions the input from color to shader read
+		VulkanInitializers::SubpassDependency(
+			0,
+			1,
+			VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+			VK_ACCESS_SHADER_READ_BIT,
+			VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+			VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
+		),
+		// Second reads the data and works with it
+		VulkanInitializers::SubpassDependency(
+			0,
+			VK_SUBPASS_EXTERNAL,
+			VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+			VK_ACCESS_MEMORY_READ_BIT,
+			VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+			VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
+		)
 	};
 
-	VkSubpassDependency subpass_dependency[1] = { 
-		VulkanInitializers::SubpassDependency()
-	};
-
-	VkRenderPassCreateInfo render_pass_info = VulkanInitializers::RenderPassCreateInfo(attachments, subpass, 1, subpass_dependency, 1);
+	VkRenderPassCreateInfo render_pass_info = VulkanInitializers::RenderPassCreateInfo(attachments, subpasses_descriptions.data(), subpasses_descriptions.size(), subpass_dependency.data(), subpass_dependency.size());
 
 	ErrorCheck(vkCreateRenderPass(
 		*m_device->GetVulkanDevice(),
@@ -645,6 +757,46 @@ void Renderer::Vulkan::VulkanSwapchain::InitRenderPass()
 
 void Renderer::Vulkan::VulkanSwapchain::DeInitRenderPass()
 {
+
+
+	for (int i = 0; i < m_attachments.size(); i++)
+	{
+		vkDestroyImageView(
+			*m_device->GetVulkanDevice(),
+			m_attachments[i].color.view,
+			nullptr
+		);
+		vkDestroyImage(
+			*m_device->GetVulkanDevice(),
+			m_attachments[i].color.image,
+			nullptr
+		);
+		vkFreeMemory(
+			*m_device->GetVulkanDevice(),
+			m_attachments[i].color.memory,
+			nullptr
+		);
+		vkDestroyImageView(
+			*m_device->GetVulkanDevice(),
+			m_attachments[i].depth.view,
+			nullptr
+		);
+		vkDestroyImage(
+			*m_device->GetVulkanDevice(),
+			m_attachments[i].depth.image,
+			nullptr
+		);
+		vkFreeMemory(
+			*m_device->GetVulkanDevice(),
+			m_attachments[i].depth.memory,
+			nullptr
+		);
+	}
+	m_attachments.resize(0);
+
+
+
+
 	vkDestroyRenderPass(
 		*m_device->GetVulkanDevice(),
 		m_render_pass,
@@ -680,32 +832,29 @@ void Renderer::Vulkan::VulkanSwapchain::InitCommandBuffers()
 	assert(!HasError() && "Unable to allocate command buffers");
 }
 
-void Renderer::Vulkan::VulkanSwapchain::InitDepthImage()
+void Renderer::Vulkan::VulkanSwapchain::CreateAttachmentImages(VkFormat format, VkImageUsageFlags usage, FrameBufferAttachment& attachment)
 {
-	m_depth_image_format = VulkanCommon::GetDepthImageFormat(m_device);
-	VulkanCommon::CreateImage(m_device,m_swap_chain_extent, m_depth_image_format, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_depth_image, m_depth_image_memory);
-	VulkanCommon::CreateImageView(m_device,m_depth_image, m_depth_image_format, VK_IMAGE_ASPECT_DEPTH_BIT, m_depth_image_view);
+	attachment.format = format;
 
-	//VulkanCommon::TransitionImageLayout(m_device, m_depth_image, m_depth_image_format, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
-}
+	VkImageAspectFlags aspectMask = 0;
+	VkImageLayout imageLayout;
 
-void Renderer::Vulkan::VulkanSwapchain::DeInitDepthImage()
-{
-	vkDestroyImageView(
-		*m_device->GetVulkanDevice(),
-		m_depth_image_view,
-		nullptr
-	);
-	vkFreeMemory(
-		*m_device->GetVulkanDevice(),
-		m_depth_image_memory,
-		nullptr
-	);
-	vkDestroyImage(
-		*m_device->GetVulkanDevice(),
-		m_depth_image,
-		nullptr
-	);
+	if (usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)
+	{
+		aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	}
+	if (usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)
+	{
+		aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+		imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+	}
+
+
+
+	VulkanCommon::CreateImage(m_device, m_swap_chain_extent, format, VK_IMAGE_TILING_OPTIMAL, usage | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, attachment.image, attachment.memory);
+	VulkanCommon::CreateImageView(m_device, attachment.image, format, aspectMask, attachment.view);
+
 }
 
 void Renderer::Vulkan::VulkanSwapchain::InitRaytracingTempImage()
@@ -713,7 +862,7 @@ void Renderer::Vulkan::VulkanSwapchain::InitRaytracingTempImage()
 	VulkanCommon::CreateImage(m_device, m_swap_chain_extent, m_swap_chain_image_format, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_STORAGE_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_raytrace_storage_image, m_raytrace_storage_image_memory);
 	VulkanCommon::CreateImageView(m_device, m_raytrace_storage_image, m_swap_chain_image_format, VK_IMAGE_ASPECT_COLOR_BIT, m_raytrace_storage_image_view);
 
-	VulkanCommon::TransitionImageLayout(m_device, m_raytrace_storage_image, m_depth_image_format, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 });
+	VulkanCommon::TransitionImageLayout(m_device, m_raytrace_storage_image, m_swap_chain_image_format, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 });
 }
 
 void Renderer::Vulkan::VulkanSwapchain::DeInitRaytracingTempImage()
@@ -742,7 +891,8 @@ void Renderer::Vulkan::VulkanSwapchain::InitFrameBuffer()
 	{
 		std::vector<VkImageView> attachments = {
 			m_swap_chain_image_views[i],
-			m_depth_image_view
+			m_attachments[i].color.view,
+			m_attachments[i].depth.view,
 		};
 		// Frame buffer create info
 		VkFramebufferCreateInfo framebuffer_info = VulkanInitializers::FramebufferCreateInfo(m_swap_chain_extent, attachments, m_render_pass);

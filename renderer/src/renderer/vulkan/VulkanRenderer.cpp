@@ -52,7 +52,7 @@ bool Renderer::Vulkan::VulkanRenderer::Start(Renderer::NativeWindowHandle* windo
 	Status::ErrorCheck(m_device);
 	if (HasError())return false;
 
-	m_swapchain = new VulkanSwapchain(m_instance, m_device, &m_surface, window_handle);
+	m_swapchain = new VulkanSwapchain(this, m_instance, m_device, &m_surface, window_handle);
 	Status::ErrorCheck(m_swapchain);
 	if (HasError())return false;
 

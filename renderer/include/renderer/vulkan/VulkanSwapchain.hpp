@@ -6,6 +6,8 @@
 #include <renderer/vulkan/VulkanStatus.hpp>
 #include <renderer/vulkan/VulkanSwapChainSupport.hpp>
 
+#include <map>
+
 namespace Renderer
 {
 	struct NativeWindowHandle;
@@ -14,10 +16,13 @@ namespace Renderer
 		class VulkanInstance;
 		class VulkanDevice;
 		class VulkanGraphicsPipeline;
+		class VulkanDescriptorPool;
+		class VulkanDescriptorSet;
+		class VulkanRenderer;
 		class VulkanSwapchain : public VulkanStatus
 		{
 		public:
-			VulkanSwapchain(VulkanInstance* instance, VulkanDevice* device, VkSurfaceKHR* surface, Renderer::NativeWindowHandle* window_handle);
+			VulkanSwapchain(VulkanRenderer* renderer,VulkanInstance* instance, VulkanDevice* device, VkSurfaceKHR* surface, Renderer::NativeWindowHandle* window_handle);
 			~VulkanSwapchain();
 			void RequestRebuildCommandBuffers();
 			void RebuildSwapchain();
@@ -34,7 +39,7 @@ namespace Renderer
 			VkSwapchainKHR GetSwapchain();
 			VkSurfaceFormatKHR GetSurfaceFormat();
 			VkPresentModeKHR GetSurfacePresentMode();
-			void AttachGraphicsPipeline(VulkanGraphicsPipeline* pipeline, bool priority = false);
+			void AttachGraphicsPipeline(VulkanGraphicsPipeline* pipeline);
 			void RemoveGraphicsPipeline(VulkanGraphicsPipeline* pipeline);
 
 			Renderer::NativeWindowHandle* GetNativeWindowHandle();
@@ -46,8 +51,10 @@ namespace Renderer
 			VkSemaphore GetImageAvailableSemaphore();
 			VkSemaphore GetRenderFinishedSemaphore();
 			VkFormat GetSwapChainImageFormat();
-			VkImage GetDepthImage();
 			VkExtent2D GetSwapchainExtent();
+
+
+			VulkanDescriptorPool* GetInputAttachmentsReadPool();
 
 			void FindNextImageIndex();
 		private:
@@ -74,9 +81,18 @@ namespace Renderer
 			// Command buffers
 			void InitCommandBuffers();
 
-			// Depth image
-			void InitDepthImage();
-			void DeInitDepthImage();
+
+			// Structure for attachments was provided by https://github.com/SaschaWillems/Vulkan/blob/master/examples/inputattachments/inputattachments.cpp
+			struct FrameBufferAttachment
+			{
+				VkImage image;
+				VkDeviceMemory memory;
+				VkImageView view;
+				VkFormat format;
+			};
+
+			// Create the attachments for each swapchain image
+			void CreateAttachmentImages(VkFormat format, VkImageUsageFlags usage, FrameBufferAttachment& attachment);
 
 			// Raytrace temp image image
 			void InitRaytracingTempImage();
@@ -90,6 +106,7 @@ namespace Renderer
 			void InitSemaphores();
 			void DeInitSemaphores();
 
+			VulkanRenderer* m_renderer;
 			VulkanInstance* m_instance;
 			VulkanDevice* m_device;
 			VkSurfaceKHR* m_surface;
@@ -106,7 +123,6 @@ namespace Renderer
 			std::vector<VkFramebuffer> m_swap_chain_framebuffers;
 			VkExtent2D m_swap_chain_extent;
 			VkFormat m_swap_chain_image_format;
-			VkFormat m_depth_image_format;
 			uint32_t m_frame_index = 0;
 			uint32_t m_back_buffer_indices[3];
 			uint32_t image_count;
@@ -117,10 +133,16 @@ namespace Renderer
 			// Command buffers
 			std::vector<VkCommandBuffer> m_command_buffers;
 
-			// Depth image
-			VkImage m_depth_image;
-			VkDeviceMemory m_depth_image_memory;
-			VkImageView m_depth_image_view;
+
+			struct Attachments
+			{
+				FrameBufferAttachment color, depth;
+			};
+			std::vector<Attachments> m_attachments;
+
+			VulkanDescriptorPool* m_input_attachments_read_pool;
+
+			std::vector<VulkanDescriptorSet*> m_input_attachments_read_sets;
 
 			// Raytrace Storage image
 			VkImage m_raytrace_storage_image;
@@ -131,7 +153,8 @@ namespace Renderer
 			VkSemaphore m_image_available_semaphore;
 			VkSemaphore m_render_finished_semaphore;
 
-			std::vector<VulkanGraphicsPipeline*> m_pipelines;
+			// What render pass are they in and then what pipelines to call in that render pass
+			std::map<unsigned int, std::vector<VulkanGraphicsPipeline*>> m_subpasses;
 
 			VkPipelineStageFlags* m_wait_stages;
 

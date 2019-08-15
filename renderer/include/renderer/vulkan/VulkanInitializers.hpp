@@ -38,7 +38,7 @@ namespace Renderer
 
 			VkRenderPassBeginInfo RenderPassBeginInfo(VkRenderPass render_pass, VkExtent2D swapchain_extent);
 
-			VkRenderPassBeginInfo RenderPassBeginInfo(VkRenderPass render_pass, VkExtent2D swapchain_extent, std::array<VkClearValue, 2>& clear_values);
+			VkRenderPassBeginInfo RenderPassBeginInfo(VkRenderPass render_pass, VkExtent2D swapchain_extent, std::vector<VkClearValue>& clear_values);
 
 			VkSwapchainCreateInfoKHR SwapchainCreateInfoKHR(VkSurfaceFormatKHR surface_format, VkExtent2D extent, VkPresentModeKHR present_mode, uint32_t image_count, VkSurfaceKHR surface, Renderer::Vulkan::VulkanQueueFamilyIndices indices, Renderer::Vulkan::VulkanSwapChainSupport swap_chain_support);
 
@@ -55,6 +55,8 @@ namespace Renderer
 			VkAttachmentReference AttachmentReference(VkImageLayout layout, uint32_t attachment);
 
 			VkSubpassDescription SubpassDescription(VkAttachmentReference& color_attachment_refrence, VkAttachmentReference& depth_attachment_ref);
+
+			VkSubpassDescription SubpassDescription(VkAttachmentReference& color_attachment_refrence);
 
 			VkFramebufferCreateInfo FramebufferCreateInfo(VkExtent2D& swap_chain_extent, std::vector<VkImageView>& attachments, VkRenderPass& render_pass);
 
