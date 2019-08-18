@@ -10,9 +10,12 @@ layout(location = 3) in vec2 inUV;
 layout(location = 4) in uint matID;
 
 
+layout(location = 0) out vec2 UV;
+
 
 void main()
 {
 	gl_Position = vec4(inPosition,1.0f);
+	UV = inUV;
 
 }

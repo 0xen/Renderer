@@ -492,13 +492,14 @@ int main(int argc, char **argv)
 			});
 
 
-		// Config base pipeline
+		// Config pipeline
 		{
 			VulkanGraphicsPipelineConfig& config = postProcessTintPipeline1->GetGraphicsPipelineConfig();
 			config.allow_darivatives = true;
 			config.culling = VkCullModeFlagBits::VK_CULL_MODE_NONE;
 			config.parent = base;
 			config.subpass = 1;
+			config.input = ATTACHMENT;
 			config.use_depth_stencil = false;
 		}
 
@@ -525,18 +526,19 @@ int main(int argc, char **argv)
 			});
 
 
-		// Config base pipeline
+		// Config pipeline
 		{
 			VulkanGraphicsPipelineConfig& config = postProcessTintPipeline2->GetGraphicsPipelineConfig();
 			config.allow_darivatives = true;
 			config.culling = VkCullModeFlagBits::VK_CULL_MODE_NONE;
 			config.parent = base;
 			config.subpass = 2;
+			config.input = COMBINED_IMAGE_SAMPLER;
 			config.use_depth_stencil = false;
 		}
 
 		// Define the layout of the input coming to the pipeline from the swapchain
-		postProcessTintPipeline2->AttachDescriptorPool(render_pass->GetInputAttachmentsReadPool());
+		postProcessTintPipeline2->AttachDescriptorPool(render_pass->GetCombinedImageSamplerReadPool());
 
 		postProcessTintPipeline2->AttachVertexBinding(vertex_binding_vertex);/*
 																			postProcessTintPipeline->AttachDescriptorPool(texture_pool);

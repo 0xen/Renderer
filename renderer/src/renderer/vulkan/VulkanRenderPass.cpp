@@ -165,16 +165,37 @@ void Renderer::Vulkan::VulkanRenderPass::RebuildCommandBuffers()
 
 				pipeline->AttachPipeline(m_command_buffers[i]);
 
-				vkCmdBindDescriptorSets(
-					m_command_buffers[i],
-					VK_PIPELINE_BIND_POINT_GRAPHICS,
-					pipeline->GetPipelineLayout(),
-					0,
-					1,
-					&m_input_attachments_read_sets[i][(subpass + 1)%2]->GetDescriptorSet(),
-					0,
-					NULL
-				);
+				if (pipeline->GetGraphicsPipelineConfig().input == ATTACHMENT)
+				{
+					vkCmdBindDescriptorSets(
+						m_command_buffers[i],
+						VK_PIPELINE_BIND_POINT_GRAPHICS,
+						pipeline->GetPipelineLayout(),
+						0,
+						1,
+						&m_input_attachments_read_sets[i][(subpass + 1) % 2]->GetDescriptorSet(),
+						0,
+						NULL
+					);
+				}
+				else if (pipeline->GetGraphicsPipelineConfig().input == COMBINED_IMAGE_SAMPLER)
+				{
+					vkCmdBindDescriptorSets(
+						m_command_buffers[i],
+						VK_PIPELINE_BIND_POINT_GRAPHICS,
+						pipeline->GetPipelineLayout(),
+						0,
+						1,
+						&m_combined_image_sampler_read_sets[i][(subpass + 1) % 2]->GetDescriptorSet(),
+						0,
+						NULL
+					);
+				}
+				else
+				{
+					assert(0 && "Invalid pipeline input");
+				}
+
 
 				pipeline->BindDescriptorSets(m_command_buffers[i]);
 				pipeline->RenderModels(m_command_buffers[i]);
@@ -274,6 +295,11 @@ Renderer::Vulkan::VulkanDescriptorPool* Renderer::Vulkan::VulkanRenderPass::GetI
 	return m_input_attachments_read_pool;
 }
 
+Renderer::Vulkan::VulkanDescriptorPool * Renderer::Vulkan::VulkanRenderPass::GetCombinedImageSamplerReadPool()
+{
+	return m_combined_image_sampler_read_pool;
+}
+
 void Renderer::Vulkan::VulkanRenderPass::SubmitQueue(unsigned int currentBuffer)
 {
 	// Since we are only dealing with one buffer, select it
@@ -320,41 +346,72 @@ void Renderer::Vulkan::VulkanRenderPass::InitRenderPass()
 
 	m_attachments.resize(m_swapchain->GetSwapchainImages().size());
 	m_input_attachments_read_sets.resize(m_attachments.size());
+	m_combined_image_sampler_read_sets.resize(m_attachments.size());
 
+	// Read instance for input attachments
 	m_input_attachments_read_pool = m_renderer->CreateDescriptorPool({
 		m_renderer->CreateDescriptor(VkDescriptorType::VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT, 0), // Color
 		m_renderer->CreateDescriptor(VkDescriptorType::VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT, 1), // Depth
 		});
 
 
+	// Read instance for combined image samplers
+	m_combined_image_sampler_read_pool = m_renderer->CreateDescriptorPool({
+		m_renderer->CreateDescriptor(VkDescriptorType::VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT, 0), // Color
+		m_renderer->CreateDescriptor(VkDescriptorType::VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT, 1), // Depth
+		});
+
 	for (int i = 0; i < m_attachments.size(); i++)
 	{
-		
-		CreateAttachmentImages(colorFormat, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, m_attachments[i].color1);
-		CreateAttachmentImages(colorFormat, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, m_attachments[i].color2);
-		CreateAttachmentImages(VulkanCommon::GetDepthImageFormat(m_device), VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, m_attachments[i].depth);
+		// Create the images and make it to that they are readable as color attachments and as image samplers
+		CreateAttachmentImages(colorFormat, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, m_attachments[i].color1);
+		CreateAttachmentImages(colorFormat, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, m_attachments[i].color2);
+		CreateAttachmentImages(VulkanCommon::GetDepthImageFormat(m_device), VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, m_attachments[i].depth);
 
 		{
-			VulkanDescriptorSet* set = m_input_attachments_read_pool->CreateDescriptorSet();
-			set->AttachBuffer(0, VulkanInitializers::DescriptorImageInfo(VK_NULL_HANDLE, m_attachments[i].color1.view, VK_IMAGE_LAYOUT_GENERAL));
-			set->AttachBuffer(1, VulkanInitializers::DescriptorImageInfo(VK_NULL_HANDLE, m_attachments[i].depth.view, VK_IMAGE_LAYOUT_GENERAL));
-			set->UpdateSet();
-			m_input_attachments_read_sets[i][0] = set;
+			// Input attachments
+			{
+				VulkanDescriptorSet* set = m_input_attachments_read_pool->CreateDescriptorSet();
+				set->AttachBuffer(0, VulkanInitializers::DescriptorImageInfo(VK_NULL_HANDLE, m_attachments[i].color1.view, VK_IMAGE_LAYOUT_GENERAL));
+				set->AttachBuffer(1, VulkanInitializers::DescriptorImageInfo(VK_NULL_HANDLE, m_attachments[i].depth.view, VK_IMAGE_LAYOUT_GENERAL));
+				set->UpdateSet();
+				m_input_attachments_read_sets[i][0] = set;
+			}
+
+
+			{
+				VulkanDescriptorSet* set = m_input_attachments_read_pool->CreateDescriptorSet();
+				set->AttachBuffer(0, VulkanInitializers::DescriptorImageInfo(VK_NULL_HANDLE, m_attachments[i].color2.view, VK_IMAGE_LAYOUT_GENERAL));
+				set->AttachBuffer(1, VulkanInitializers::DescriptorImageInfo(VK_NULL_HANDLE, m_attachments[i].depth.view, VK_IMAGE_LAYOUT_GENERAL));
+				set->UpdateSet();
+				m_input_attachments_read_sets[i][1] = set;
+			}
 		}
-
 		{
-			VulkanDescriptorSet* set = m_input_attachments_read_pool->CreateDescriptorSet();
-			set->AttachBuffer(0, VulkanInitializers::DescriptorImageInfo(VK_NULL_HANDLE, m_attachments[i].color2.view, VK_IMAGE_LAYOUT_GENERAL));
-			set->AttachBuffer(1, VulkanInitializers::DescriptorImageInfo(VK_NULL_HANDLE, m_attachments[i].depth.view, VK_IMAGE_LAYOUT_GENERAL));
-			set->UpdateSet();
-			m_input_attachments_read_sets[i][1] = set;
+			// Combined image samplers
+			{
+				VulkanDescriptorSet* set = m_combined_image_sampler_read_pool->CreateDescriptorSet();
+				set->AttachBuffer(0, VulkanInitializers::DescriptorImageInfo(m_attachments[i].color1.sampler, m_attachments[i].color1.view, VK_IMAGE_LAYOUT_GENERAL));
+				set->AttachBuffer(1, VulkanInitializers::DescriptorImageInfo(m_attachments[i].depth.sampler, m_attachments[i].depth.view, VK_IMAGE_LAYOUT_GENERAL));
+				set->UpdateSet();
+				m_combined_image_sampler_read_sets[i][0] = set;
+			}
+
+
+			{
+				VulkanDescriptorSet* set = m_combined_image_sampler_read_pool->CreateDescriptorSet();
+				set->AttachBuffer(0, VulkanInitializers::DescriptorImageInfo(m_attachments[i].color2.sampler, m_attachments[i].color2.view, VK_IMAGE_LAYOUT_GENERAL));
+				set->AttachBuffer(1, VulkanInitializers::DescriptorImageInfo(m_attachments[i].depth.sampler, m_attachments[i].depth.view, VK_IMAGE_LAYOUT_GENERAL));
+				set->UpdateSet();
+				m_combined_image_sampler_read_sets[i][1] = set;
+			}
 		}
 	}
 
 
 
 	std::vector<VkAttachmentDescription> attachments;
-	if ((m_instance->GetFlags()&VulkanFlags::Raytrace) == VulkanFlags::Raytrace)
+	if ((m_instance->GetFlags() & VulkanFlags::Raytrace) == VulkanFlags::Raytrace)
 	{
 		// Needs sorting for raytracing
 		attachments = {
@@ -395,16 +452,7 @@ void Renderer::Vulkan::VulkanRenderPass::InitRenderPass()
 		subpasses_descriptions.push_back(subpass);
 
 		// Define subpass dependency, Should just pass data to the swapchain
-		subpass_dependency.push_back(
-			/*VulkanInitializers::SubpassDependency(
-				VK_SUBPASS_EXTERNAL,
-				0,
-				VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-				VK_ACCESS_MEMORY_READ_BIT,
-				VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-				VK_ACCESS_MEMORY_READ_BIT
-			)*/
-			VulkanInitializers::SubpassDependency());
+		subpass_dependency.push_back(VulkanInitializers::SubpassDependency());
 	}
 	else
 	{
@@ -598,6 +646,11 @@ void Renderer::Vulkan::VulkanRenderPass::DeInitRenderPass()
 			m_attachments[i].color1.memory,
 			nullptr
 		);
+		vkDestroySampler(
+			*m_device->GetVulkanDevice(),
+			m_attachments[i].color1.sampler,
+			nullptr
+		);
 		vkDestroyImageView(
 			*m_device->GetVulkanDevice(),
 			m_attachments[i].color2.view,
@@ -613,6 +666,11 @@ void Renderer::Vulkan::VulkanRenderPass::DeInitRenderPass()
 			m_attachments[i].color2.memory,
 			nullptr
 		);
+		vkDestroySampler(
+			*m_device->GetVulkanDevice(),
+			m_attachments[i].color2.sampler,
+			nullptr
+		);
 		vkDestroyImageView(
 			*m_device->GetVulkanDevice(),
 			m_attachments[i].depth.view,
@@ -626,6 +684,11 @@ void Renderer::Vulkan::VulkanRenderPass::DeInitRenderPass()
 		vkFreeMemory(
 			*m_device->GetVulkanDevice(),
 			m_attachments[i].depth.memory,
+			nullptr
+		);
+		vkDestroySampler(
+			*m_device->GetVulkanDevice(),
+			m_attachments[i].depth.sampler,
 			nullptr
 		);
 	}
@@ -737,6 +800,47 @@ void Renderer::Vulkan::VulkanRenderPass::CreateAttachmentImages(VkFormat format,
 
 	VulkanCommon::CreateImage(m_device, m_swapchain->GetSwapchainExtent(), format, VK_IMAGE_TILING_OPTIMAL, usage | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, attachment.image, attachment.memory);
 	VulkanCommon::CreateImageView(m_device, attachment.image, format, aspectMask, attachment.view);
+
+
+	{ // Define image sampler
+		
+		VkSamplerCreateInfo sampler_info = VulkanInitializers::SamplerCreateInfo();
+		sampler_info.magFilter = VK_FILTER_LINEAR;
+		sampler_info.minFilter = VK_FILTER_LINEAR;
+		sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+		sampler_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+		sampler_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+		sampler_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+		sampler_info.mipLodBias = 0.0f;
+		sampler_info.compareOp = VK_COMPARE_OP_NEVER;
+		sampler_info.minLod = 0.0f;
+		// Set max level-of-detail to mip level count of the texture
+		sampler_info.maxLod = (float)1;
+		// Enable anisotropic filtering
+		// This feature is optional, so we must check if it's supported on the device
+		if (m_device->GetVulkanPhysicalDevice()->GetDeviceFeatures()->samplerAnisotropy)
+		{
+			// Use max. level of anisotropy for this example
+			sampler_info.maxAnisotropy = m_device->GetVulkanPhysicalDevice()->GetPhysicalDeviceProperties()->limits.maxSamplerAnisotropy;
+			sampler_info.anisotropyEnable = VK_TRUE;
+		}
+		else
+		{
+			// The device does not support anisotropic filtering
+			sampler_info.maxAnisotropy = 1.0;
+			sampler_info.anisotropyEnable = VK_FALSE;
+		}
+		sampler_info.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
+		ErrorCheck(vkCreateSampler(
+			*m_device->GetVulkanDevice(),
+			&sampler_info,
+			nullptr,
+			&attachment.sampler
+		));
+	}
+	
+
+
 
 	if (usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)
 		VulkanCommon::TransitionImageLayout(m_device, attachment.image, format, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 });

@@ -11,7 +11,12 @@ namespace Renderer
 	namespace Vulkan
 	{
 		class VulkanGraphicsPipeline;
-
+		enum PipelineInput
+		{
+			NONE,
+			ATTACHMENT,
+			COMBINED_IMAGE_SAMPLER
+		};
 		struct VulkanGraphicsPipelineConfig
 		{
 			VulkanGraphicsPipeline* parent;
@@ -23,6 +28,8 @@ namespace Renderer
 			VkFrontFace front_face;
 			VkPolygonMode polygon_mode;
 			unsigned int subpass = 0;
+			// Defines the input type when subpass is > 0
+			PipelineInput input = NONE;
 		};
 
 		class VulkanRenderPass;

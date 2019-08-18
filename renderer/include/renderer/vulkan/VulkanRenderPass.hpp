@@ -44,6 +44,8 @@ namespace Renderer
 			unsigned int GetCurrentFrameIndex();
 
 			VulkanDescriptorPool* GetInputAttachmentsReadPool();
+
+			VulkanDescriptorPool* GetCombinedImageSamplerReadPool();
 			
 			void SubmitQueue(unsigned int currentBuffer);
 
@@ -72,7 +74,8 @@ namespace Renderer
 				VkImage image;
 				VkDeviceMemory memory;
 				VkImageView view;
-				VkFormat format;
+				VkFormat format; 
+				VkSampler sampler;
 			};
 
 			// Create the attachments for each swapchain image
@@ -92,8 +95,11 @@ namespace Renderer
 			std::vector<Attachments> m_attachments;
 
 			VulkanDescriptorPool* m_input_attachments_read_pool;
+			VulkanDescriptorPool* m_combined_image_sampler_read_pool;
 			// Define the various attachments that will be passed throughout the sub passes
-			std::vector<std::array<VulkanDescriptorSet*,2>> m_input_attachments_read_sets;
+			std::vector<std::array<VulkanDescriptorSet*, 2>> m_input_attachments_read_sets;
+			// Define the various image samplers that will be passed throughout the sub passes
+			std::vector<std::array<VulkanDescriptorSet*, 2>> m_combined_image_sampler_read_sets;
 
 
 			// Render pass

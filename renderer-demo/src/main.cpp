@@ -123,7 +123,7 @@ void PollWindow()
 				window_handle->width = event.window.data1;
 				window_handle->height = event.window.data2;
 
-				renderer->Rebuild();
+				swapchain->RebuildSwapchain();
 
 				standardRTConfigSet->AttachBuffer(1, { renderer->GetSwapchain()->GetRayTraceStagingBuffer() });
 				standardRTConfigSet->UpdateSet();
@@ -272,7 +272,7 @@ int main(int argc, char **argv)
 
 
 	swapchain = renderer->GetSwapchain();
-	render_pass = renderer->CreateRenderPass(3);
+	render_pass = renderer->CreateRenderPass(1);
 
 
 	// Ray camera
@@ -410,63 +410,65 @@ int main(int argc, char **argv)
 		0
 	};
 
-	{
-		postProcessTintPipeline1 = renderer->CreateGraphicsPipeline(render_pass, {
-			{ VkShaderStageFlagBits::VK_SHADER_STAGE_VERTEX_BIT, "../../renderer-demo/Shaders/PP/Tint/vert.spv" },
-			{ VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT, "../../renderer-demo/Shaders/PP/Tint/frag.spv" }
-			});
+	//{
+	//	postProcessTintPipeline1 = renderer->CreateGraphicsPipeline(render_pass, {
+	//		{ VkShaderStageFlagBits::VK_SHADER_STAGE_VERTEX_BIT, "../../renderer-demo/Shaders/PP/Tint/vert.spv" },
+	//		{ VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT, "../../renderer-demo/Shaders/PP/Tint/frag.spv" }
+	//		});
 
 
-		// Config base pipeline
-		{
-			VulkanGraphicsPipelineConfig& config = postProcessTintPipeline1->GetGraphicsPipelineConfig();
-			config.allow_darivatives = true;
-			config.culling = VkCullModeFlagBits::VK_CULL_MODE_NONE;
-			config.subpass = 1;
-			config.use_depth_stencil = false;
-		}
+	//	// Config base pipeline
+	//	{
+	//		VulkanGraphicsPipelineConfig& config = postProcessTintPipeline1->GetGraphicsPipelineConfig();
+	//		config.allow_darivatives = true;
+	//		config.culling = VkCullModeFlagBits::VK_CULL_MODE_NONE;
+	//		config.subpass = 1;
+	//		config.input = ATTACHMENT;
+	//		config.use_depth_stencil = false;
+	//	}
 
-		// Define the layout of the input coming to the pipeline from the swapchain
-		postProcessTintPipeline1->AttachDescriptorPool(render_pass->GetInputAttachmentsReadPool());
+	//	// Define the layout of the input coming to the pipeline from the swapchain
+	//	postProcessTintPipeline1->AttachDescriptorPool(render_pass->GetInputAttachmentsReadPool());
 
-		postProcessTintPipeline1->AttachVertexBinding(vertex_binding_vertex);/*
-																			postProcessTintPipeline->AttachDescriptorPool(texture_pool);
-																			postProcessTintPipeline->AttachDescriptorSet(0, texture_descriptor_set1);*/
-		postProcessTintPipeline1->Build();
-	}
-
-
-	postProcessTintPipeline1->AttachModelPool(model_pool2PP);
-	render_pass->AttachGraphicsPipeline(postProcessTintPipeline1);
-
-	{
-		postProcessTintPipeline2 = renderer->CreateGraphicsPipeline(render_pass, {
-			{ VkShaderStageFlagBits::VK_SHADER_STAGE_VERTEX_BIT, "../../renderer-demo/Shaders/PP/Tint2/vert.spv" },
-			{ VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT, "../../renderer-demo/Shaders/PP/Tint2/frag.spv" }
-			});
+	//	postProcessTintPipeline1->AttachVertexBinding(vertex_binding_vertex);/*
+	//																		postProcessTintPipeline->AttachDescriptorPool(texture_pool);
+	//																		postProcessTintPipeline->AttachDescriptorSet(0, texture_descriptor_set1);*/
+	//	postProcessTintPipeline1->Build();
+	//}
 
 
-		// Config base pipeline
-		{
-			VulkanGraphicsPipelineConfig& config = postProcessTintPipeline2->GetGraphicsPipelineConfig();
-			config.allow_darivatives = true;
-			config.culling = VkCullModeFlagBits::VK_CULL_MODE_NONE;
-			config.subpass = 2;
-			config.use_depth_stencil = false;
-		}
+	//postProcessTintPipeline1->AttachModelPool(model_pool2PP);
+	//render_pass->AttachGraphicsPipeline(postProcessTintPipeline1);
 
-		// Define the layout of the input coming to the pipeline from the swapchain
-		postProcessTintPipeline2->AttachDescriptorPool(render_pass->GetInputAttachmentsReadPool());
-
-		postProcessTintPipeline2->AttachVertexBinding(vertex_binding_vertex);/*
-																			postProcessTintPipeline->AttachDescriptorPool(texture_pool);
-																			postProcessTintPipeline->AttachDescriptorSet(0, texture_descriptor_set1);*/
-		postProcessTintPipeline2->Build();
-	}
+	//{
+	//	postProcessTintPipeline2 = renderer->CreateGraphicsPipeline(render_pass, {
+	//		{ VkShaderStageFlagBits::VK_SHADER_STAGE_VERTEX_BIT, "../../renderer-demo/Shaders/PP/Tint2/vert.spv" },
+	//		{ VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT, "../../renderer-demo/Shaders/PP/Tint2/frag.spv" }
+	//		});
 
 
-	postProcessTintPipeline2->AttachModelPool(model_pool2PP);
-	render_pass->AttachGraphicsPipeline(postProcessTintPipeline2);
+	//	// Config base pipeline
+	//	{
+	//		VulkanGraphicsPipelineConfig& config = postProcessTintPipeline2->GetGraphicsPipelineConfig();
+	//		config.allow_darivatives = true;
+	//		config.culling = VkCullModeFlagBits::VK_CULL_MODE_NONE;
+	//		config.subpass = 2;
+	//		config.input = COMBINED_IMAGE_SAMPLER;
+	//		config.use_depth_stencil = false;
+	//	}
+
+	//	// Define the layout of the input coming to the pipeline from the swapchain
+	//  postProcessTintPipeline2->AttachDescriptorPool(render_pass->GetCombinedImageSamplerReadPool());
+
+	//	postProcessTintPipeline2->AttachVertexBinding(vertex_binding_vertex);/*
+	//																		postProcessTintPipeline->AttachDescriptorPool(texture_pool);
+	//																		postProcessTintPipeline->AttachDescriptorSet(0, texture_descriptor_set1);*/
+	//	postProcessTintPipeline2->Build();
+	//}
+
+
+	//postProcessTintPipeline2->AttachModelPool(model_pool2PP);
+	//render_pass->AttachGraphicsPipeline(postProcessTintPipeline2);
 
 
 	VulkanRaytracePipeline* ray_pipeline = renderer->CreateRaytracePipeline(render_pass,
