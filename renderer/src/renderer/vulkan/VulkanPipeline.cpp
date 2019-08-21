@@ -15,9 +15,9 @@ Renderer::Vulkan::VulkanPipeline::~VulkanPipeline()
 {
 }
 
-void Renderer::Vulkan::VulkanPipeline::AttachDescriptorPool(VulkanDescriptorPool * buffer)
+void Renderer::Vulkan::VulkanPipeline::AttachDescriptorPool(unsigned int setID, VulkanDescriptorPool * buffer)
 {
-	m_descriptor_pools.push_back(buffer);
+	m_descriptor_pools[setID] = buffer;
 }
 
 void Renderer::Vulkan::VulkanPipeline::AttachDescriptorSet(unsigned int setID, VulkanDescriptorSet* descriptor_set)

@@ -18,7 +18,7 @@ namespace Renderer
 		public:
 			VulkanPipeline(VulkanDevice * device, std::vector<std::pair<VkShaderStageFlagBits, const char*>> paths);
 			~VulkanPipeline();
-			virtual void AttachDescriptorPool(VulkanDescriptorPool* buffer);
+			virtual void AttachDescriptorPool(unsigned int setID, VulkanDescriptorPool* buffer);
 			virtual void AttachDescriptorSet(unsigned int setID, VulkanDescriptorSet* descriptor_set);
 			virtual bool Build();
 			virtual bool CreatePipeline();
@@ -32,8 +32,8 @@ namespace Renderer
 
 			VkPipelineLayout m_pipeline_layout;
 
-			std::vector<VulkanDescriptorPool*> m_descriptor_pools;
-			std::map<unsigned int,VulkanDescriptorSet*> m_descriptor_sets;
+			std::map<unsigned int, VulkanDescriptorPool*> m_descriptor_pools;
+			std::map<unsigned int, VulkanDescriptorSet*> m_descriptor_sets;
 			VkPipeline m_pipeline = VK_NULL_HANDLE;
 		private:
 			std::vector<std::pair<VkShaderStageFlagBits, const char*>> m_paths;

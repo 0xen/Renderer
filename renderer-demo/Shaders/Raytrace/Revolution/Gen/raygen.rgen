@@ -1,0 +1,417 @@
+#version 460
+#extension GL_NV_ray_tracing : require
+#extension GL_EXT_nonuniform_qualifier : enable
+
+// The CPU generated acceleration structure ihstance that is needed to spawn rays
+layout(binding = 0, set = 0) uniform accelerationStructureNV topLevelAS;
+
+// The final image we will wright our shader data to
+layout(binding = 1, set = 0, rgba8) uniform image2D image;
+
+// The camera we are reading the initial data from
+layout(binding = 2, set = 0) uniform CameraProperties
+{
+    mat4 view;
+    mat4 proj;
+    mat4 viewInverse;
+    mat4 projInverse;
+} cam;
+
+// The whole scenes vertices
+layout(binding = 0, set = 1) buffer Vertices { vec4 v[]; }
+vertices;
+
+// The whole scenes indices
+layout(binding = 1, set = 1) buffer Indices { uint i[]; }
+indices;
+
+// Contains compressed data relating to the models material. The material tells the shader what textures, colors, etc to use
+layout(binding = 2, set = 1) buffer MatColorBufferObject { vec4[] m; }
+materials;
+
+// All textures that can be sampled by the materials
+layout(binding = 3, set = 1) uniform sampler2D[] textureSamplers;
+
+// Contains compressed light data.
+layout(binding = 4, set = 1) buffer Lights { vec4 l[]; }
+lights;
+
+// Position data for all the models
+layout(binding = 0, set = 2) buffer ModelPos { mat4 m[]; }
+models;
+
+// Tells the shader which model position belongs to what model
+layout(binding = 1, set = 2) buffer ModelOffsets { uint o[]; }
+offsets;
+
+
+
+struct RayPayload {
+    uint instance;
+    uint primitive;
+    vec2 barycentric;
+    bool hit;
+};
+
+layout(location = 0) rayPayloadNV RayPayload rayPayload;
+layout(location = 1) rayPayloadNV RayPayload shadowRayPayload;
+
+
+
+struct Offsets
+{
+    uint index;
+    uint vertex;
+    uint position;
+};
+
+Offsets unpackOffsets(uint index)
+{
+    uint startingIndex = index * 3;
+    Offsets o;
+    o.index = offsets.o[startingIndex];
+    o.vertex = offsets.o[startingIndex + 1];
+    o.position = offsets.o[startingIndex + 2];
+    return o;
+}
+
+struct Vertex
+{
+    vec3 pos;
+    vec3 nrm;
+    vec3 color;
+    vec2 texCoord;
+    int matIndex;
+};
+// Number of vec4 values used to represent a vertex
+uint vertexSize = 3;
+
+Vertex unpackVertex(uint index, uint vertexOffset)
+{
+    Vertex v;
+
+    vec4 d0 = vertices.v[vertexSize * (index + vertexOffset)];
+    vec4 d1 = vertices.v[vertexSize * (index + vertexOffset) + 1];
+    vec4 d2 = vertices.v[vertexSize * (index + vertexOffset) + 2];
+
+    v.pos = d0.xyz;
+    v.nrm = vec3(d0.w, d1.x, d1.y);
+    v.color = vec3(d1.z, d1.w, d2.x);
+    v.texCoord = vec2(d2.y, d2.z);
+    v.matIndex = floatBitsToInt(d2.w);
+    return v;
+}
+
+struct WaveFrontMaterial
+{
+  vec3 ambient;
+  vec3 diffuse;
+  vec3 specular;
+  vec3 transmittance;
+  vec3 emission;
+  float shininess;
+  float ior;      // index of refraction
+  float dissolve; // 1 == opaque; 0 == fully transparent
+  int illum;      // illumination model (see http://www.fileformat.info/format/material/)
+  int textureId;
+  int metalicTextureId;
+  int roughnessTextureId;
+};
+// Number of vec4 values used to represent a material
+const int sizeofMat = 6;
+
+WaveFrontMaterial unpackMaterial(int matIndex)
+{
+  WaveFrontMaterial m;
+  vec4 d0 = materials.m[sizeofMat * matIndex + 0];
+  vec4 d1 = materials.m[sizeofMat * matIndex + 1];
+  vec4 d2 = materials.m[sizeofMat * matIndex + 2];
+  vec4 d3 = materials.m[sizeofMat * matIndex + 3];
+  vec4 d4 = materials.m[sizeofMat * matIndex + 4];
+  vec4 d5 = materials.m[sizeofMat * matIndex + 5];
+
+  m.ambient = vec3(d0.x, d0.y, d0.z);
+  m.diffuse = vec3(d0.w, d1.x, d1.y);
+  m.specular = vec3(d1.z, d1.w, d2.x);
+  m.transmittance = vec3(d2.y, d2.z, d2.w);
+  m.emission = vec3(d3.x, d3.y, d3.z);
+  m.shininess = d3.w;
+  m.ior = d4.x;
+  m.dissolve = d4.y;
+  m.illum = int(d4.z);
+  m.textureId = floatBitsToInt(d4.w);
+
+  m.metalicTextureId = floatBitsToInt(d5.r);
+  m.roughnessTextureId = floatBitsToInt(d5.g);
+
+  return m;
+}
+
+
+struct Light
+{
+  vec3 position;
+  float intensity;
+  vec3 color;
+};
+
+Light unpackLight(uint index)
+{
+  uint startingIndex = index * 2;
+
+  vec4 d0 = lights.l[index];
+  vec4 d1 = lights.l[index + 1];
+
+  Light l;
+  l.position = vec3(d0.x,d0.y,d0.z);
+  l.intensity = d0.w;
+  l.color = vec3(d1.x,d1.y,d1.z);
+
+  return l;
+}
+
+struct Ray
+{
+    vec3 origin;
+    vec3 direction;
+    float tmin;
+    float tmax;
+};
+
+// Get the default ray information based on the starting screen pixel
+Ray CameraRay(vec2 screen_coordinate)
+{
+    Ray ray;
+
+    ray.origin = (cam.viewInverse*vec4(0,0,0,1)).xyz;
+    vec4 target = cam.projInverse * vec4(screen_coordinate.x, screen_coordinate.y, 1, 1);
+
+    ray.direction = (cam.viewInverse *vec4(normalize(target.xyz), 0)).xyz;
+
+    ray.tmin = 0.001;
+    ray.tmax = 10000.0;
+    return ray;
+}
+
+// Trace a ray to see what we hit
+void TraceRay(Ray ray)
+{
+    uint rayFlags = gl_RayFlagsOpaqueNV;
+    uint cullMask = 0xff;
+
+
+    uint sbtRecordOffset = 0;
+    uint sbtRecordStride = 0;
+    uint missIndex = 0;
+
+    traceNV(topLevelAS, rayFlags, cullMask, sbtRecordOffset, sbtRecordStride,
+        missIndex, ray.origin, ray.tmin, ray.direction, ray.tmax, 0 /*payload*/);
+}
+
+
+vec3 CalculatePBR(Ray ray)
+{
+    // Get the vertex, index and position offsets for the model
+    Offsets o = unpackOffsets(rayPayload.instance);
+
+    // Get the index data for the triangle
+    ivec3 ind = ivec3(
+    indices.i[3 * rayPayload.primitive + o.index], 
+    indices.i[3 * rayPayload.primitive + 1 + o.index],
+    indices.i[3 * rayPayload.primitive + 2 + o.index]
+    );
+
+
+    // Get the triangles vertex data
+    Vertex v0 = unpackVertex(ind.x,o.vertex);
+    Vertex v1 = unpackVertex(ind.y,o.vertex);
+    Vertex v2 = unpackVertex(ind.z,o.vertex);
+
+
+
+    const vec3 barycentrics = vec3(
+        1.0 - rayPayload.barycentric.x - rayPayload.barycentric.y,
+        rayPayload.barycentric.x,
+        rayPayload.barycentric.y
+        );
+
+    WaveFrontMaterial mat = unpackMaterial(v1.matIndex);
+
+
+    // Calculate normal
+    vec3 f_normal = normalize(v0.nrm * barycentrics.x + v1.nrm * barycentrics.y + v2.nrm * barycentrics.z);
+    vec3 f_position = normalize(v0.pos * barycentrics.x + v1.pos * barycentrics.y + v2.pos * barycentrics.z);
+
+    mat3 positionMatrix = mat3(models.m[o.position]);
+    positionMatrix = transpose(positionMatrix);
+
+    vec3 normal = normalize(f_normal * positionMatrix);
+    vec3 origin = normalize(f_position * positionMatrix);
+
+
+    vec2 texCoord = v0.texCoord * barycentrics.x +
+        v1.texCoord * barycentrics.y +
+        v2.texCoord * barycentrics.z;
+
+
+
+    // Texture maps             
+    vec3 albedo = texture(textureSamplers[mat.textureId], texCoord).xyz;
+    float roughness = 1.0f;//texture(textureSamplers[mat.roughnessTextureId], texCoord).r;
+    float metalness = 0.0f;//texture(textureSamplers[mat.metalicTextureId], texCoord).r;
+    float cavity = 1.0f; // Temp
+    float ao = cavity; // Temp
+
+
+
+    vec3 viewVector = normalize(ray.origin - origin);
+
+    float nDotV = max(dot(normal,viewVector), 0.001f);
+    // Mix the minimum reflectiveness (4%) with the current albedo based on the range of 0-1
+    vec3 specularColour = mix(vec3(0.04f, 0.04f, 0.04f), albedo, metalness);
+
+
+
+
+    // Calculate the reflection angle
+    vec3 reflectVec = reflect(-viewVector, normal);
+
+
+
+
+    // To do, global illumination /////////
+    vec3 globalIll = vec3(0.4f,0.4f,0.4f);
+    vec3 globalIll2 = vec3(0.4f,0.4f,0.4f);
+    //////////////////////////////////////
+
+
+
+    // At a glancing angle, how much should we increase the reflection
+    // Microfacet specular - fresnel term - Slide 21
+    vec3 F = specularColour + (1 - specularColour) * pow(max(1.0f - nDotV, 0.0f), 5.0f);
+
+
+    // DIFFRENT - We use globalIll for both
+    vec3 totalColor = ((albedo  * (globalIll*(1 - F * (1 - roughness)))) + (F * (1 - roughness) * globalIll2)) * ao;
+
+
+
+    for(int i = 0 ; i < 1; i ++)
+    {
+        const float PI = 3.14159265359f;
+
+
+        // Lighting Calc
+
+        Light light = unpackLight(i);
+        
+        vec3 l = light.position - origin;
+
+        float rdist = 1 / length(l);
+        // Normalise the light vector
+        l *= rdist;
+
+
+        uint sbtRecordOffset = 0;
+        uint sbtRecordStride = 0;
+        uint missIndex = 0;
+        float tmin = 0.001;
+        float tmax = 10000.0;
+
+
+        traceNV(topLevelAS, gl_RayFlagsTerminateOnFirstHitNV|gl_RayFlagsOpaqueNV|gl_RayFlagsSkipClosestHitShaderNV, 
+            0xFF, sbtRecordOffset, sbtRecordStride,
+            missIndex, origin, tmin, l, tmax, 1);
+
+        if (!shadowRayPayload.hit)
+        {
+
+
+
+            float  li = light.intensity * rdist * rdist;
+            vec3 lc = light.color;
+
+
+            // Vector that is half way between the view and the light
+            vec3 h = normalize(l + viewVector);
+
+            float nDotL = max(dot(normal,l), 0.001f);
+            float nDotH = max(dot(normal,h), 0.001f);
+
+
+            // Lambert diffuse - Slide 13
+            vec3 lambert = albedo / PI; // PI used for conservation of energy
+
+
+            // Reflected light - Microfacet
+            // Microfacet specular - normal distribution term - Slide 15-17
+            float alpha = max(roughness * roughness, 2.0e-3f); // Dividing by alpha in the dn term so don't allow it to reach 0
+            float alpha2 = alpha * alpha;
+            float nDotH2 = nDotH * nDotH;
+            float dn = nDotH2 * (alpha2 - 1) + 1;
+            float D = alpha2 / (PI * dn * dn);
+
+
+            // Microfacet specular - geometry term - Slide 23
+            float k = (roughness + 1);
+            k = k * k / 8;
+            float gV = nDotV / (nDotV * (1 - k) + k);
+            float gL = nDotL / (nDotL * (1 - k) + k);
+            float G = gV * gL;
+
+            // BRDF - Slide 14 & 24 - Lambert is the diffuse term
+            vec3 brdf = lambert + F * G * D / (4 * nDotL * nDotV);
+
+            totalColor += PI * li * lc * cavity * brdf * nDotL;
+
+
+
+
+        }
+    }
+
+
+
+
+
+  
+    return totalColor;
+}
+
+
+
+void main() 
+{
+    const vec2 pixelCenter = vec2(gl_LaunchIDNV.xy) + vec2(0.5);
+    const vec2 inUV = pixelCenter/vec2(gl_LaunchSizeNV.xy);
+    vec2 screen_coordinate = inUV * 2.0 - 1.0;
+
+    
+
+    vec3 color = vec3(0.0);
+
+    // Create a basic ray payload
+    Ray ray = CameraRay(screen_coordinate);
+
+    // Trace the initial camera ray
+    TraceRay(ray);
+
+
+    if(rayPayload.hit)
+    {
+        color += CalculatePBR(ray);
+
+
+
+
+    }
+    else
+    {
+        color = vec3(0.0,0.0,0.0);
+    }
+
+
+
+
+    imageStore(image, ivec2(gl_LaunchIDNV.xy), vec4(color, 1.0));
+}

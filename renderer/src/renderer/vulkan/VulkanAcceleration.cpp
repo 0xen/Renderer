@@ -39,25 +39,20 @@ void Renderer::Vulkan::VulkanAcceleration::Build()
 	VkResult res = vkBeginCommandBuffer(commandBuffer, &beginInfo);
 
 
-	m_bottom_level_as.resize(m_model_pools.size()); // Will be amount of geometry instances
-
-	std::vector<std::pair<VkAccelerationStructureNV, glm::mat4x4>> instances;
+	m_bottom_level_as.resize(m_model_pools.size());
 
 
 	for (int i = 0; i < m_model_pools.size(); i++)
 	{
 		m_bottom_level_as[i] = CreateBottomLevelAS(commandBuffer, m_model_pools[i].model_pool);
-
-		for (auto& it : m_model_pools[i].model_pool->GetModels())
-		{
-			//glm::mat4x4 mat = glm::mat4x4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1);
-			static const int position_buffer_index = 0;
-			instances.push_back({ m_bottom_level_as[i].structure, it.second->GetData<glm::mat4>(position_buffer_index) });
-		}
 	}
 
+	UpdateAsInstance();
 
-	CreateTopLevelAS(commandBuffer, instances);
+
+
+
+	CreateTopLevelAS(commandBuffer);
 
 	BuildTopLevelAS(commandBuffer);
 
@@ -72,17 +67,7 @@ void Renderer::Vulkan::VulkanAcceleration::Build()
 void Renderer::Vulkan::VulkanAcceleration::Update()
 {
 
-	m_as_instance.clear();
-
-	for (uint32_t i = 0; i < m_model_pools.size(); i++)
-	{
-		for (auto& it : m_model_pools[i].model_pool->GetModels())
-		{
-			static const int position_buffer_index = 0;
-			// we set the hit group to 2 * i as there are two types of rays being used in this example, shadow rays and camera rays.
-			m_as_instance.push_back({ m_bottom_level_as[i].structure,it.second->GetData<glm::mat4>(position_buffer_index), i, m_model_pools[i].hitGroupOffset });
-		}
-	}
+	UpdateAsInstance();
 
 	{
 		VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
@@ -261,19 +246,13 @@ Renderer::Vulkan::AccelerationStructure Renderer::Vulkan::VulkanAcceleration::Cr
 	return acceleration;
 }
 
-void Renderer::Vulkan::VulkanAcceleration::CreateTopLevelAS(VkCommandBuffer commandBuffer, std::vector<std::pair<VkAccelerationStructureNV, glm::mat4x4>>& instances)
+void Renderer::Vulkan::VulkanAcceleration::CreateTopLevelAS(VkCommandBuffer commandBuffer)
 {
-
-	for (uint32_t i = 0; i < instances.size(); i++)
-	{
-		// we set the hit group to 2 * i as there are two types of rays being used in this example, shadow rays and camera rays.
-		m_as_instance.push_back({ instances[i].first,instances[i].second, i, 0/*For now use hit group 0*/ });
-	}
 
 	VkBuildAccelerationStructureFlagsNV flags = VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_NV;
 
 	{
-		VkAccelerationStructureInfoNV acceleration_structure_info = VulkanInitializers::AccelerationStructureInfoNV(VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_NV, flags, VK_NULL_HANDLE, 0, instances.size());
+		VkAccelerationStructureInfoNV acceleration_structure_info = VulkanInitializers::AccelerationStructureInfoNV(VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_NV, flags, VK_NULL_HANDLE, 0, m_as_instance.size());
 
 		VkAccelerationStructureCreateInfoNV create_info = VulkanInitializers::AccelerationStructureCreateInfoNV(acceleration_structure_info);
 
@@ -323,7 +302,7 @@ void Renderer::Vulkan::VulkanAcceleration::CreateTopLevelAS(VkCommandBuffer comm
 	}
 
 
-	instances_size = instances.size() * sizeof(VkGeometryInstance);
+	instances_size = m_as_instance.size() * sizeof(VkGeometryInstance);
 
 
 
@@ -469,4 +448,19 @@ unsigned int Renderer::Vulkan::VulkanAcceleration::UpdateGeometryInstances()
 	}
 
 	return geometryInstances.size();
+}
+
+void Renderer::Vulkan::VulkanAcceleration::UpdateAsInstance()
+{
+	m_as_instance.clear();
+
+	for (uint32_t i = 0; i < m_model_pools.size(); i++)
+	{
+		for (auto& it : m_model_pools[i].model_pool->GetModels())
+		{
+			static const int position_buffer_index = 0;
+			// we set the hit group to 2 * i as there are two types of rays being used in this example, shadow rays and camera rays.
+			m_as_instance.push_back({ m_bottom_level_as[i].structure,it.second->GetData<glm::mat4>(position_buffer_index), i, m_model_pools[i].hitGroupOffset });
+		}
+	}
 }

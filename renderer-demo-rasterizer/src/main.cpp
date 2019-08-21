@@ -284,9 +284,7 @@ int main(int argc, char **argv)
 		{ glm::vec3(1.0f,1.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(1.0f,1.0f,0.0f), glm::vec2(0.0f,0.0f) ,-1 },
 		{ glm::vec3(1.0f,-1.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(0.0f,1.0f,0.0f), glm::vec2(0.0f,1.0f)  ,-1 },
 		{ glm::vec3(-1.0f,-1.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(.0f,1.0f,1.0f), glm::vec2(1.0f,1.0f)  ,-1 },
-	{ glm::vec3(-1.0f,1.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(1.0f,0.0f,1.0f), glm::vec2(1.0f,0.0f)  ,-1 },
-
-
+		{ glm::vec3(-1.0f,1.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(1.0f,0.0f,1.0f), glm::vec2(1.0f,0.0f)  ,-1 },
 	};
 
 	std::vector<uint32_t> indexData{
@@ -322,6 +320,7 @@ int main(int argc, char **argv)
 
 
 	VulkanModelPool* model_pool1 = renderer->CreateModelPool(vertexBuffer, vertexStart, 0, indexBuffer, indexStart, indexData.size(), ModelPoolUsage::MultiMesh);
+	VulkanModelPool* model_pool_lights = renderer->CreateModelPool(vertexBuffer, vertexStart, 0, indexBuffer, indexStart, indexData.size(), ModelPoolUsage::MultiMesh);
 	VulkanModelPool* model_pool2PP = renderer->CreateModelPool(vertexBuffer, vertexStart, 0, indexBuffer, indexStart, indexData.size(), ModelPoolUsage::MultiMesh);
 
 
@@ -449,9 +448,9 @@ int main(int argc, char **argv)
 
 		base->AttachVertexBinding(vertex_binding_vertex);
 		base->AttachVertexBinding(vertex_binding_position);
-		base->AttachDescriptorPool(camera_pool);
+		base->AttachDescriptorPool(0, camera_pool);
 		base->AttachDescriptorSet(0, camera_descriptor_set);
-		base->AttachDescriptorPool(texture_pool);
+		base->AttachDescriptorPool(1, texture_pool);
 		base->Build();
 	}
 
@@ -473,17 +472,15 @@ int main(int argc, char **argv)
 
 		sceneRenderPassPipeline->AttachVertexBinding(vertex_binding_vertex);
 		sceneRenderPassPipeline->AttachVertexBinding(vertex_binding_position);
-		sceneRenderPassPipeline->AttachDescriptorPool(camera_pool);
+		sceneRenderPassPipeline->AttachDescriptorPool(0, camera_pool);
 		sceneRenderPassPipeline->AttachDescriptorSet(0, camera_descriptor_set);
-		sceneRenderPassPipeline->AttachDescriptorPool(texture_pool);
+		sceneRenderPassPipeline->AttachDescriptorPool(1,texture_pool);
 		sceneRenderPassPipeline->Build();
 	}
 
 	sceneRenderPassPipeline->AttachModelPool(model_pool1);
 
 	render_pass->AttachGraphicsPipeline(sceneRenderPassPipeline);
-
-
 
 	{
 		postProcessTintPipeline1 = renderer->CreateGraphicsPipeline(render_pass, {
@@ -504,7 +501,7 @@ int main(int argc, char **argv)
 		}
 
 		// Define the layout of the input coming to the pipeline from the swapchain
-		postProcessTintPipeline1->AttachDescriptorPool(render_pass->GetInputAttachmentsReadPool());
+		postProcessTintPipeline1->AttachDescriptorPool(0,render_pass->GetInputAttachmentsReadPool());
 
 		postProcessTintPipeline1->AttachVertexBinding(vertex_binding_vertex);/*
 																			postProcessTintPipeline->AttachDescriptorPool(texture_pool);
@@ -538,7 +535,7 @@ int main(int argc, char **argv)
 		}
 
 		// Define the layout of the input coming to the pipeline from the swapchain
-		postProcessTintPipeline2->AttachDescriptorPool(render_pass->GetCombinedImageSamplerReadPool());
+		postProcessTintPipeline2->AttachDescriptorPool(0,render_pass->GetCombinedImageSamplerReadPool());
 
 		postProcessTintPipeline2->AttachVertexBinding(vertex_binding_vertex);/*
 																			postProcessTintPipeline->AttachDescriptorPool(texture_pool);
@@ -555,8 +552,6 @@ int main(int argc, char **argv)
 
 
 	render_pass->RebuildCommandBuffers();
-
-
 
 
 

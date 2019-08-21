@@ -98,9 +98,11 @@ void Renderer::Vulkan::VulkanRenderPass::RebuildCommandBuffers()
 					pipeline->AttachToCommandBuffer(m_command_buffers[i]);
 				}
 			}
+
+
 			VkImage target_image = m_swapchain->GetSwapchainImages()[i];
 			VkImageLayout target_layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-			if(m_subpass_count > 1)
+			if (m_subpass_count > 1)
 			{
 				target_image = m_attachments[i].color1.image;
 				target_layout = VK_IMAGE_LAYOUT_GENERAL;
@@ -137,6 +139,7 @@ void Renderer::Vulkan::VulkanRenderPass::RebuildCommandBuffers()
 			VK_SUBPASS_CONTENTS_INLINE
 		);
 
+		
 
 		vkCmdSetLineWidth(m_command_buffers[i], 1.0f);
 		const VkViewport viewport = VulkanInitializers::Viewport((float)window_handle->width, (float)window_handle->height, 0.0f, 0.0f, 0.0f, 1.0f);
@@ -416,7 +419,7 @@ void Renderer::Vulkan::VulkanRenderPass::InitRenderPass()
 		// Needs sorting for raytracing
 		attachments = {
 			// Define VK_ATTACHMENT_LOAD_OP_DONT_CARE, this will stop the images from being cleared
-			VulkanInitializers::AttachmentDescription(m_swapchain->GetSwapChainImageFormat(), VK_ATTACHMENT_STORE_OP_STORE,VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ATTACHMENT_LOAD_OP_DONT_CARE) ,	//Present
+			VulkanInitializers::AttachmentDescription(m_swapchain->GetSwapChainImageFormat(), VK_ATTACHMENT_STORE_OP_STORE,VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,VK_ATTACHMENT_LOAD_OP_DONT_CARE) ,	//Present
 			VulkanInitializers::AttachmentDescription(colorFormat, VK_ATTACHMENT_STORE_OP_DONT_CARE,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ATTACHMENT_LOAD_OP_DONT_CARE),	//Color
 			VulkanInitializers::AttachmentDescription(colorFormat, VK_ATTACHMENT_STORE_OP_DONT_CARE,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ATTACHMENT_LOAD_OP_DONT_CARE),	//Color
 			VulkanInitializers::AttachmentDescription(VulkanCommon::GetDepthImageFormat(m_device), VK_ATTACHMENT_STORE_OP_DONT_CARE,VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)		// Depth
@@ -461,7 +464,7 @@ void Renderer::Vulkan::VulkanRenderPass::InitRenderPass()
 			VkSubpassDescription subpass = VulkanInitializers::SubpassDescription(&color_attachment_refrence[0], 1, depth_attachment_refrence);
 			subpasses_descriptions.push_back(subpass);
 
-			// Define subpass dependency, Should pas data to scratch iamge
+			// Define subpass dependency, Should pass data to scratch image
 			subpass_dependency.push_back(
 				VulkanInitializers::SubpassDependency(
 					VK_SUBPASS_EXTERNAL,

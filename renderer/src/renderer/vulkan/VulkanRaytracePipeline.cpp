@@ -37,9 +37,10 @@ bool Renderer::Vulkan::VulkanRaytracePipeline::Build()
 bool Renderer::Vulkan::VulkanRaytracePipeline::CreatePipeline()
 {
 	std::vector<VkDescriptorSetLayout> descriptor_set_layouts;
+	descriptor_set_layouts.resize(m_descriptor_pools.size());
 	for (auto descriptor_pool : m_descriptor_pools)
 	{
-		descriptor_set_layouts.push_back(descriptor_pool->GetDescriptorSetLayout());
+		descriptor_set_layouts[descriptor_pool.first] = descriptor_pool.second->GetDescriptorSetLayout();
 	}
 
 	VkPipelineLayoutCreateInfo pipeline_layout_info = VulkanInitializers::PipelineLayoutCreateInfo(descriptor_set_layouts);
