@@ -88,6 +88,8 @@ void Renderer::Vulkan::VulkanAcceleration::Update()
 		vkEndCommandBuffer(commandBuffer);
 
 		m_device->SubmitGraphicsCommand(&commandBuffer, 1);
+
+		//m_device->FreeGraphicsCommand(&commandBuffer,1);
 	}
 }
 

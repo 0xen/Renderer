@@ -303,8 +303,8 @@ int main(int argc, char **argv)
 	indexBuffer = renderer->CreateIndexBuffer(all_indexs, sizeof(uint32_t), index_max);
 
 	// Define a default texture
-	LoadTexture("../../renderer-demo/media/scenes/white.png");
 	LoadTexture("../../renderer-demo/media/scenes/black.png");
+	LoadTexture("../../renderer-demo/media/scenes/white.png");
 
 	std::vector<Vertex> vertexData = {
 		{ glm::vec3(1.0f,1.0f,0.0f) , glm::vec3(1.0f,1.0f,1.0f),glm::vec3(1.0f,1.0f,0.0f), glm::vec2(0.0f,0.0f) ,-1 },
@@ -356,7 +356,7 @@ int main(int argc, char **argv)
 
 
 	//VulkanModelPool* sphere_pool = LoadModel("../../renderer-demo/media/scenes/CubePBR/cube.obj");
-	VulkanModelPool* model_pool_lights = LoadModel("../../renderer-demo/media/scenes/SpherePBR/sphere.obj");
+	VulkanModelPool* model_pool_lights = LoadModel("../../renderer-demo/media/scenes/Sphere/sphere.obj");
 
 
 
@@ -377,17 +377,17 @@ int main(int argc, char **argv)
 	model_pool_lights->AttachBufferPool(POSITION_BUFFER, position_buffer_pool);
 
 
-	{
-		VulkanModel* house = sphere_pool->CreateModel();
+	
+	VulkanModel* house = sphere_pool->CreateModel();
 
-		glm::mat4 modelPosition = glm::mat4(1.0f);
-		modelPosition = glm::translate(modelPosition, glm::vec3(0.5, 0, 0));
-		float scale = 0.2;
-		modelPosition = glm::scale(modelPosition, glm::vec3(scale, scale, scale));
-		scale = 0.25f;
+	glm::mat4 modelPosition = glm::mat4(1.0f);
+	modelPosition = glm::translate(modelPosition, glm::vec3(0.5, 0, -0.5));
+	float scale = 0.2;
+	modelPosition = glm::scale(modelPosition, glm::vec3(scale, scale, scale));
+	scale = 0.25f;
 
-		house->SetData(POSITION_BUFFER, modelPosition);
-	}
+	house->SetData(POSITION_BUFFER, modelPosition);
+	
 
 	{
 		VulkanModel* light = model_pool_lights->CreateModel();
@@ -434,16 +434,16 @@ int main(int argc, char **argv)
 
 	VulkanRaytracePipeline* ray_pipeline = renderer->CreateRaytracePipeline(render_pass,
 		{
-			{ VkShaderStageFlagBits::VK_SHADER_STAGE_RAYGEN_BIT_NV,		"../../renderer-demo/Shaders/Raytrace/Revolution/Gen/rgen.spv" },
-			{ VkShaderStageFlagBits::VK_SHADER_STAGE_MISS_BIT_NV,		"../../renderer-demo/Shaders/Raytrace/Revolution/Miss/rmiss.spv" },
+			{ VkShaderStageFlagBits::VK_SHADER_STAGE_RAYGEN_BIT_NV,		"../../renderer-demo/Shaders/Raytrace/Revolution2/Gen/rgen.spv" },
+			{ VkShaderStageFlagBits::VK_SHADER_STAGE_MISS_BIT_NV,		"../../renderer-demo/Shaders/Raytrace/Revolution2/Miss/rmiss.spv" },
+			{ VkShaderStageFlagBits::VK_SHADER_STAGE_MISS_BIT_NV,		"../../renderer-demo/Shaders/Raytrace/Revolution2/Miss/ShadowMiss/rmiss.spv" },
 		},
-	{
-
-		{
-			{ VkShaderStageFlagBits::VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, "../../renderer-demo/Shaders/Raytrace/Revolution/Hitgroups/rchit.spv" },
-		},
-
-	});
+			{
+				{ // Involved 
+					{ VkShaderStageFlagBits::VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, "../../renderer-demo/Shaders/Raytrace/Revolution2/Hitgroups/rchit.spv" },
+				},
+				{}, // Fall through hit group for shadow's, etc
+		});
 	
 	render_pass->AttachGraphicsPipeline(ray_pipeline);
 
@@ -454,12 +454,13 @@ int main(int argc, char **argv)
 		ray_pipeline->AddRayGenerationProgram(groupID++, {});
 	}
 
-	// Miss Program
 	{
+		ray_pipeline->AddMissProgram(groupID++, {});
 		ray_pipeline->AddMissProgram(groupID++, {});
 	}
 
 	{
+		ray_pipeline->AddHitGroup(groupID++, {});
 		ray_pipeline->AddHitGroup(groupID++, {});
 	}
 
@@ -527,7 +528,7 @@ int main(int argc, char **argv)
 
 	{
 		VulkanDescriptorPool* standardRTConfigPool = renderer->CreateDescriptorPool({
-			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV, VK_SHADER_STAGE_RAYGEN_BIT_NV, 0),
+			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV, VK_SHADER_STAGE_RAYGEN_BIT_NV | VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 0),
 			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_RAYGEN_BIT_NV, 1),
 			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_NV, 2),
 			});
@@ -546,11 +547,11 @@ int main(int argc, char **argv)
 
 	{
 		VulkanDescriptorPool* RTModelPool = renderer->CreateDescriptorPool({
-			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_NV, 0),
-			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_NV, 1),
-			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_NV, 2),
-			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_RAYGEN_BIT_NV, 3,texture_descriptors.size()),
-			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_NV, 4),
+			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 0),
+			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 1),
+			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 2),
+			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 3,texture_descriptors.size()),
+			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 4),
 			});
 		ray_pipeline->AttachDescriptorPool(1,RTModelPool);
 
@@ -571,8 +572,8 @@ int main(int argc, char **argv)
 
 	{
 		VulkanDescriptorPool* RTModelInstancePool = renderer->CreateDescriptorPool({
-			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_NV, 0),
-			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_NV, 1),
+			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 0),
+			renderer->CreateDescriptor(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_NV, 1),
 			});
 		ray_pipeline->AttachDescriptorPool(2,RTModelInstancePool);
 
@@ -600,11 +601,11 @@ int main(int argc, char **argv)
 	{
 		rotate += 0.001f;
 
-		lights[1].position = glm::vec3(cos(rotate)*orbit,0.0f,sin(rotate)*orbit);
+		//lights[1].position = glm::vec3(cos(rotate)*orbit,0.0f,sin(rotate)*orbit);
 		lightBuffer->SetData(BufferSlot::Primary);
 
-		//cube->SetData(POSITION_BUFFER, glm::translate(modelPosition, glm::vec3(0, sin(rotate)*3, 0)));
-		//cube->SetData(POSITION_BUFFER, glm::rotate(cube->GetData<glm::mat4>(POSITION_BUFFER), 0.001f, glm::vec3(0, 1, 0)));
+		//house->SetData(POSITION_BUFFER, glm::translate(modelPosition, glm::vec3(0, sin(rotate)*3, 0)));
+		house->SetData(POSITION_BUFFER, glm::rotate(house->GetData<glm::mat4>(POSITION_BUFFER), 0.001f, glm::vec3(0, 1, 0)));
 
 
 		model_position_buffer1->SetData(BufferSlot::Primary);
