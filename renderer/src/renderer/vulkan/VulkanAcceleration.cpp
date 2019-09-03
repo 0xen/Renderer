@@ -25,6 +25,29 @@ void Renderer::Vulkan::VulkanAcceleration::AttachModelPool(VulkanModelPool * poo
 	m_model_pools.push_back({ pool ,hitGroupOffset });
 }
 
+void Renderer::Vulkan::VulkanAcceleration::SetModelPoolHitGroupOffset(VulkanModelPool * pool, unsigned int hitGroupOffset)
+{
+	for (auto& p : m_model_pools)
+	{
+		if (p.model_pool == pool)
+		{
+			p.hitGroupOffset = hitGroupOffset;
+		}
+	}
+}
+
+unsigned int Renderer::Vulkan::VulkanAcceleration::GetModelPoolHitGroupOffset(VulkanModelPool * pool)
+{
+	for (auto& p : m_model_pools)
+	{
+		if (p.model_pool == pool)
+		{
+			return p.hitGroupOffset;
+		}
+	}
+	return UINT_MAX;
+}
+
 void Renderer::Vulkan::VulkanAcceleration::Build()
 {
 	VkCommandBuffer commandBuffer = VK_NULL_HANDLE;

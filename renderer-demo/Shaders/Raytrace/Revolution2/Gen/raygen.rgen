@@ -73,6 +73,9 @@ Ray CalculateReflection(Ray ray)
 }
 
 
+layout (constant_id = 0) const int MAX_RECURSION1 = 0;
+layout (constant_id = 1) const int MAX_RECURSION2 = 0;
+
 void main() 
 {
     const vec2 pixelCenter = vec2(gl_LaunchIDNV.xy) + vec2(0.5);
@@ -90,7 +93,7 @@ void main()
 
     rayPayload.reflector = 1.0f;
 
-    for(int i = 0 ; i < 2; i ++)
+    for(int i = 0 ; i < MAX_RECURSION2; i ++)
     {
         TraceRay(ray);
 

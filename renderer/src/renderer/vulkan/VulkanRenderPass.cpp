@@ -313,12 +313,13 @@ void Renderer::Vulkan::VulkanRenderPass::SubmitQueue(unsigned int currentBuffer)
 
 	vkResetFences(*m_device->GetVulkanDevice(), 1, &m_fence[currentBuffer]);
 
-	ErrorCheck(vkQueueSubmit(
+	VkResult res = vkQueueSubmit(
 		*m_device->GetGraphicsQueue(),
 		1,
 		&info,
 		m_fence[currentBuffer]
-	));
+	);
+	ErrorCheck(res);
 
 	assert(!HasError());
 }

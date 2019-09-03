@@ -972,3 +972,22 @@ VkWriteDescriptorSetAccelerationStructureNV Renderer::Vulkan::VulkanInitializers
 	return descriptorAccelerationStructureInfo;
 }
 
+VkSpecializationInfo Renderer::Vulkan::VulkanInitializers::SpecializationInfo(uint32_t mapEntryCount, const VkSpecializationMapEntry * mapEntries, size_t dataSize, const void * data)
+{
+	VkSpecializationInfo specializationInfo{};
+	specializationInfo.mapEntryCount = mapEntryCount;
+	specializationInfo.pMapEntries = mapEntries;
+	specializationInfo.dataSize = dataSize;
+	specializationInfo.pData = data;
+	return specializationInfo;
+}
+
+VkSpecializationMapEntry Renderer::Vulkan::VulkanInitializers::SpecializationMapEntry(uint32_t constantID, uint32_t offset, size_t size)
+{
+	VkSpecializationMapEntry specializationMapEntry{};
+	specializationMapEntry.constantID = constantID;
+	specializationMapEntry.offset = offset;
+	specializationMapEntry.size = size;
+	return specializationMapEntry;
+}
+

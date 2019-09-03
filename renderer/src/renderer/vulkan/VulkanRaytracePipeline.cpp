@@ -54,8 +54,20 @@ bool Renderer::Vulkan::VulkanRaytracePipeline::CreatePipeline()
 
 	if (HasError())return false;
 
-
 	auto shaders = GetPaths();
+
+
+	struct Specialization
+	{
+		std::vector<VkSpecializationMapEntry> entitys;
+		VkSpecializationInfo info;
+	};
+
+	std::vector<Specialization> temporary_specialization(shaders.size() + m_hitgroups.size());
+
+	unsigned int rayGenSTBSeen = 0;
+	unsigned int missSTBSeen = 0;
+	unsigned int hitSTBSeen = 0;
 
 	for (auto shader = shaders.begin(); shader != shaders.end(); shader++)
 	{
@@ -65,7 +77,40 @@ bool Renderer::Vulkan::VulkanRaytracePipeline::CreatePipeline()
 		auto shader_module = VulkanCommon::CreateShaderModule(m_device, shaderCode);
 		// Push the shader back
 		VkShaderStageFlagBits shaderStage = shader->first;
-		m_shader_stages.push_back(VulkanInitializers::PipelineShaderStageCreateInfo(shader_module, "main", shaderStage));
+
+		SBTEntry* stbEntry = nullptr;
+		switch (shaderStage)
+		{
+		case VK_SHADER_STAGE_RAYGEN_BIT_NV:
+			stbEntry = &m_rayGen[rayGenSTBSeen++];
+			break;
+		case VK_SHADER_STAGE_MISS_BIT_NV:
+			stbEntry = &m_miss[missSTBSeen++];
+			break;
+		}
+
+		assert(stbEntry != nullptr && "Invalid shader stage used. Should only be ray gen or miss shader");
+
+		VkPipelineShaderStageCreateInfo shader_stage_create_info = VulkanInitializers::PipelineShaderStageCreateInfo(shader_module, "main", shaderStage);
+
+		if (stbEntry->m_constants.size() > 0)
+		{ // Store the group id into the shaders specialization
+			// Get the specialization we are going to be accessing
+			Specialization& spec = temporary_specialization[m_shader_groupIndex];
+
+			spec.entitys.resize(stbEntry->m_constants.size());
+			unsigned int uintSize = sizeof(unsigned int);
+			for (int i = 0; i < spec.entitys.size(); i++)
+			{
+				spec.entitys[i] = VulkanInitializers::SpecializationMapEntry(i, i*uintSize, uintSize);
+			}
+
+			spec.info = VulkanInitializers::SpecializationInfo(spec.entitys.size(), spec.entitys.data(), stbEntry->m_constants.size() * uintSize, stbEntry->m_constants.data());
+
+			shader_stage_create_info.pSpecializationInfo = &spec.info;
+		}
+
+		m_shader_stages.push_back(shader_stage_create_info);
 
 		uint32_t shaderID = m_shader_stages.size() - 1;
 
@@ -79,6 +124,7 @@ bool Renderer::Vulkan::VulkanRaytracePipeline::CreatePipeline()
 	for (auto& hitgroup : m_hitgroups)
 	{
 
+		SBTEntry* stbEntry = &m_hitGroup[hitSTBSeen++];
 
 		VkRayTracingShaderGroupCreateInfoNV group = VulkanInitializers::RayTracingShaderGroupCreateNV(VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_NV);
 
@@ -90,7 +136,28 @@ bool Renderer::Vulkan::VulkanRaytracePipeline::CreatePipeline()
 			auto shader_module = VulkanCommon::CreateShaderModule(m_device, shaderCode);
 			// Push the shader back
 			VkShaderStageFlagBits shaderStage = shader->first;
-			m_shader_stages.push_back(VulkanInitializers::PipelineShaderStageCreateInfo(shader_module, "main", shaderStage));
+
+
+			VkPipelineShaderStageCreateInfo shader_stage_create_info = VulkanInitializers::PipelineShaderStageCreateInfo(shader_module, "main", shaderStage);
+
+			if (stbEntry->m_constants.size() > 0)
+			{ // Store the group id into the shaders specialization
+			  // Get the specialization we are going to be accessing
+				Specialization& spec = temporary_specialization[m_shader_groupIndex];
+
+				spec.entitys.resize(stbEntry->m_constants.size());
+				unsigned int uintSize = sizeof(unsigned int);
+				for (int i = 0; i < spec.entitys.size(); i++)
+				{
+					spec.entitys[i] = VulkanInitializers::SpecializationMapEntry(i, i*uintSize, uintSize);
+				}
+
+				spec.info = VulkanInitializers::SpecializationInfo(spec.entitys.size(), spec.entitys.data(), stbEntry->m_constants.size() * uintSize, stbEntry->m_constants.data());
+
+				shader_stage_create_info.pSpecializationInfo = &spec.info;
+			}
+
+			m_shader_stages.push_back(shader_stage_create_info);
 
 			uint32_t shaderID = m_shader_stages.size() - 1;
 
@@ -247,19 +314,19 @@ void Renderer::Vulkan::VulkanRaytracePipeline::SetMaxRecursionDepth(uint32_t max
 	m_max_depth = max_depth;
 }
 
-void Renderer::Vulkan::VulkanRaytracePipeline::AddRayGenerationProgram(uint32_t group, const std::vector<unsigned char>& inlineData)
+void Renderer::Vulkan::VulkanRaytracePipeline::AddRayGenerationProgram(uint32_t group, const std::vector<unsigned char>& inlineData, const std::vector<unsigned int>& constants)
 {
-	m_rayGen.push_back(SBTEntry(group, inlineData));
+	m_rayGen.push_back(SBTEntry(group, inlineData, constants));
 }
 
-void Renderer::Vulkan::VulkanRaytracePipeline::AddMissProgram(uint32_t group, const std::vector<unsigned char>& inlineData)
+void Renderer::Vulkan::VulkanRaytracePipeline::AddMissProgram(uint32_t group, const std::vector<unsigned char>& inlineData, const std::vector<unsigned int>& constants)
 {
-	m_miss.push_back(SBTEntry(group, inlineData));
+	m_miss.push_back(SBTEntry(group, inlineData, constants));
 }
 
-void Renderer::Vulkan::VulkanRaytracePipeline::AddHitGroup(uint32_t group, const std::vector<unsigned char>& inlineData)
+void Renderer::Vulkan::VulkanRaytracePipeline::AddHitGroup(uint32_t group, const std::vector<unsigned char>& inlineData, const std::vector<unsigned int>& constants)
 {
-	m_hitGroup.push_back(SBTEntry(group, inlineData));
+	m_hitGroup.push_back(SBTEntry(group, inlineData, constants));
 }
 
 VkDeviceSize Renderer::Vulkan::VulkanRaytracePipeline::GetEntrySize(std::vector<SBTEntry> entries)

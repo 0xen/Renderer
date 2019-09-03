@@ -167,6 +167,9 @@ namespace Renderer
 
 			VkWriteDescriptorSetAccelerationStructureNV WriteDescriptorSetAccelerator(VkAccelerationStructureNV& acceleration);
 
+			VkSpecializationInfo SpecializationInfo(uint32_t mapEntryCount, const VkSpecializationMapEntry* mapEntries, size_t dataSize, const void* data);
+			
+			VkSpecializationMapEntry SpecializationMapEntry(uint32_t constantID, uint32_t offset, size_t size);
 		}
 	}
 }

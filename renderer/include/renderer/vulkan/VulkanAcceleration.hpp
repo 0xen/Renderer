@@ -77,6 +77,10 @@ namespace Renderer
 
 			void AttachModelPool(VulkanModelPool* pool, unsigned int hitGroupOffset = 0);
 
+			void SetModelPoolHitGroupOffset(VulkanModelPool* pool, unsigned int hitGroupOffset = 0);
+
+			unsigned int GetModelPoolHitGroupOffset(VulkanModelPool* pool);
+
 			void Build();
 
 			void Update();

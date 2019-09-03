@@ -15,10 +15,12 @@ namespace Renderer
 		class VulkanRenderPass;
 		struct SBTEntry
 		{
-			SBTEntry(uint32_t groupIndex, std::vector<unsigned char> inlineData) : m_groupIndex(groupIndex), m_inlineData(inlineData){}
+			SBTEntry() {};
+			SBTEntry(uint32_t groupIndex, std::vector<unsigned char> inlineData, const std::vector<unsigned int> constants) : m_groupIndex(groupIndex), m_inlineData(inlineData), m_constants(constants){}
 
 			uint32_t                         m_groupIndex;
 			const std::vector<unsigned char> m_inlineData;
+			const std::vector<unsigned int> m_constants;
 		};
 
 		class VulkanRaytracePipeline : public VulkanGraphicsPipeline
@@ -36,9 +38,9 @@ namespace Renderer
 
 			void SetMaxRecursionDepth(uint32_t max_depth);
 
-			void AddRayGenerationProgram(uint32_t group, const std::vector<unsigned char>& inlineData);
-			void AddMissProgram(uint32_t group, const std::vector<unsigned char>& inlineData);
-			void AddHitGroup(uint32_t group, const std::vector<unsigned char>& inlineData);
+			void AddRayGenerationProgram(uint32_t group, const std::vector<unsigned char>& inlineData, const std::vector<unsigned int>& constants);
+			void AddMissProgram(uint32_t group, const std::vector<unsigned char>& inlineData, const std::vector<unsigned int>& constants);
+			void AddHitGroup(uint32_t group, const std::vector<unsigned char>& inlineData, const std::vector<unsigned int>& constants);
 
 
 		private:

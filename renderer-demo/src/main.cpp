@@ -451,17 +451,17 @@ int main(int argc, char **argv)
 
 	// Ray generation entry point
 	{
-		ray_pipeline->AddRayGenerationProgram(groupID++, {});
+		ray_pipeline->AddRayGenerationProgram(groupID++, {}, {2,5});
 	}
 
 	{
-		ray_pipeline->AddMissProgram(groupID++, {});
-		ray_pipeline->AddMissProgram(groupID++, {});
+		ray_pipeline->AddMissProgram(groupID++, {}, {1});
+		ray_pipeline->AddMissProgram(groupID++, {}, {1});
 	}
 
 	{
-		ray_pipeline->AddHitGroup(groupID++, {});
-		ray_pipeline->AddHitGroup(groupID++, {});
+		ray_pipeline->AddHitGroup(groupID++, {}, {1});
+		ray_pipeline->AddHitGroup(groupID++, {}, {1});
 	}
 
 	ray_pipeline->SetMaxRecursionDepth(5);
