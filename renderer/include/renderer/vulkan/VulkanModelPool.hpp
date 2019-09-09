@@ -14,7 +14,7 @@ namespace Renderer
 		class VulkanModel;
 		class VulkanDevice;
 		class VulkanDescriptorSet;
-		class VulkanPipeline;
+		class VulkanGraphicsPipeline;
 		class VulkanVertexBuffer;
 		class VulkanIndexBuffer;
 		class VulkanBufferPool;
@@ -60,7 +60,7 @@ namespace Renderer
 			unsigned int GetModelBufferOffset(VulkanModel* model,unsigned int buffer);
 			std::map<unsigned int, VulkanModel*>& GetModels();
 			std::map<unsigned int, VulkanBufferPool*>& GetBufferPools();
-			void AttachToCommandBuffer(VkCommandBuffer & command_buffer, VulkanPipeline* pipeline);
+			void AttachToCommandBuffer(VkCommandBuffer & command_buffer, VulkanGraphicsPipeline* pipeline);
 			bool HasChanged();
 		private:
 			void SetModelOffsets(unsigned int id, unsigned int vertexOffset, unsigned int indexOffset, unsigned int indexSize);

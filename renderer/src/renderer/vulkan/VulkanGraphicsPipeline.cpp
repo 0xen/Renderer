@@ -240,6 +240,11 @@ VulkanGraphicsPipelineConfig & Renderer::Vulkan::VulkanGraphicsPipeline::GetGrap
 	return m_graphics_pipeline_config;
 }
 
+VulkanRenderPass * Renderer::Vulkan::VulkanGraphicsPipeline::GetRenderPass()
+{
+	return m_renderpass;
+}
+
 void Renderer::Vulkan::VulkanGraphicsPipeline::AttachPipeline(VkCommandBuffer & command_buffer)
 {
 	vkCmdBindPipeline(

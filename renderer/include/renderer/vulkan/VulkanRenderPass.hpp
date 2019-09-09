@@ -50,6 +50,8 @@ namespace Renderer
 			void SubmitQueue(unsigned int currentBuffer);
 
 			VkRenderPass& GetRenderPass();
+
+			VulkanSwapchain* GetSwapchain();
 		private:
 
 			void CreateRenderPass();

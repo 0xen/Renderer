@@ -139,13 +139,13 @@ void Renderer::Vulkan::VulkanRenderPass::RebuildCommandBuffers()
 			VK_SUBPASS_CONTENTS_INLINE
 		);
 
-		
 
 		vkCmdSetLineWidth(m_command_buffers[i], 1.0f);
 		const VkViewport viewport = VulkanInitializers::Viewport((float)window_handle->width, (float)window_handle->height, 0.0f, 0.0f, 0.0f, 1.0f);
-		const VkRect2D scissor = VulkanInitializers::Scissor(window_handle->width, window_handle->height);
 		vkCmdSetViewport(m_command_buffers[i], 0, 1, &viewport);
+		VkRect2D scissor = VulkanInitializers::Scissor(window_handle->width, window_handle->height);
 		vkCmdSetScissor(m_command_buffers[i], 0, 1, &scissor);
+
 
 
 		for (auto pipeline : m_subpasses[0])
@@ -327,6 +327,11 @@ void Renderer::Vulkan::VulkanRenderPass::SubmitQueue(unsigned int currentBuffer)
 VkRenderPass& Renderer::Vulkan::VulkanRenderPass::GetRenderPass()
 {
 	return m_render_pass;
+}
+
+Renderer::Vulkan::VulkanSwapchain * Renderer::Vulkan::VulkanRenderPass::GetSwapchain()
+{
+	return m_swapchain;
 }
 
 void Renderer::Vulkan::VulkanRenderPass::CreateRenderPass()

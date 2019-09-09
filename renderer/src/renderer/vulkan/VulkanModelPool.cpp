@@ -5,8 +5,10 @@
 #include <renderer/vulkan/VulkanVertexBuffer.hpp>
 #include <renderer/vulkan/VulkanIndexBuffer.hpp>
 #include <renderer/vulkan/VulkanDescriptorSet.hpp>
-#include <renderer/vulkan/VulkanPipeline.hpp>
+#include <renderer/vulkan/VulkanGraphicsPipeline.hpp>
 #include <renderer/vulkan/VulkanPhysicalDevice.hpp>
+#include <renderer/vulkan/VulkanRenderPass.hpp>
+#include <renderer/vulkan/VulkanSwapchain.hpp>
 
 
 
@@ -343,7 +345,7 @@ std::map<unsigned int, Renderer::Vulkan::VulkanBufferPool*>& Renderer::Vulkan::V
 	return m_buffers;
 }
 
-void Renderer::Vulkan::VulkanModelPool::AttachToCommandBuffer(VkCommandBuffer & command_buffer, VulkanPipeline* pipeline)
+void Renderer::Vulkan::VulkanModelPool::AttachToCommandBuffer(VkCommandBuffer & command_buffer, VulkanGraphicsPipeline* pipeline)
 {
 	for (auto it = m_descriptor_sets.begin(); it != m_descriptor_sets.end(); it++)
 	{
@@ -380,7 +382,8 @@ void Renderer::Vulkan::VulkanModelPool::AttachToCommandBuffer(VkCommandBuffer & 
 
 	
 
-
+	Renderer::NativeWindowHandle* window_handle = pipeline->GetRenderPass()->GetSwapchain()->GetNativeWindowHandle();
+	
 
 
 	if (Indexed())
@@ -405,6 +408,19 @@ void Renderer::Vulkan::VulkanModelPool::AttachToCommandBuffer(VkCommandBuffer & 
 					buffer_offsets.data()
 				);
 			}
+			// Should we use the default provided scissor or the custom defined one
+
+			if (m_models[j]->UsingCustomScissor())
+			{
+				VkRect2D& scissor = m_models[j]->GetScissor();
+				vkCmdSetScissor(command_buffer, 0, 1, &scissor);
+			}
+			else
+			{
+				VkRect2D scissor = VulkanInitializers::Scissor(window_handle->width, window_handle->height);
+				vkCmdSetScissor(command_buffer, 0, 1, &scissor);
+			}
+
 
 			vkCmdDrawIndexedIndirect(
 				command_buffer,
@@ -433,6 +449,18 @@ void Renderer::Vulkan::VulkanModelPool::AttachToCommandBuffer(VkCommandBuffer & 
 				);
 			}
 
+			// Should we use the default provided scissor or the custom defined one
+
+			if (m_models[j]->UsingCustomScissor())
+			{
+				VkRect2D scissor = m_models[j]->GetScissor();
+				vkCmdSetScissor(command_buffer, 0, 1, &scissor);
+			}
+			else
+			{
+				VkRect2D scissor = VulkanInitializers::Scissor(window_handle->width, window_handle->height);
+				vkCmdSetScissor(command_buffer, 0, 1, &scissor);
+			}
 			vkCmdDrawIndirect(
 				command_buffer,
 				m_indirect_draw_buffer->GetBufferData(BufferSlot::Primary)->buffer,

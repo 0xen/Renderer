@@ -47,6 +47,7 @@ namespace Renderer
 			virtual void AttachVertexBinding(VertexBase vertex_binding);
 			bool HasChanged();
 			VulkanGraphicsPipelineConfig& GetGraphicsPipelineConfig();
+			VulkanRenderPass* GetRenderPass();
 
 			virtual void AttachPipeline(VkCommandBuffer & command_buffer);
 			virtual void BindDescriptorSets(VkCommandBuffer & command_buffer);

@@ -5,12 +5,14 @@ Renderer::Vulkan::VulkanModel::VulkanModel(VulkanModelPool* pool, unsigned int m
 	m_model_pool_index(model_pool_index), m_pool(pool)
 {
 	m_rendering = false;
+	m_custom_scissor = false;
 }
 
 Renderer::Vulkan::VulkanModel::VulkanModel(VulkanModelPool* pool, unsigned int model_pool_index, unsigned int vertexOffset, unsigned int indexOffset, unsigned int indexSize) :
 	m_model_pool_index(model_pool_index), m_pool(pool), m_vertexOffset(vertexOffset), m_indexOffset(indexOffset), m_indexSize(indexSize)
 {
 	m_rendering = false;
+	m_custom_scissor = false;
 }
 
 void Renderer::Vulkan::VulkanModel::SetDataPointer(unsigned int index, void * data)
@@ -65,6 +67,16 @@ unsigned int Renderer::Vulkan::VulkanModel::GetIndexSize()
 	return m_indexSize;
 }
 
+VkRect2D& Renderer::Vulkan::VulkanModel::GetScissor()
+{
+	return m_scissor;
+}
+
+bool Renderer::Vulkan::VulkanModel::UsingCustomScissor()
+{
+	return m_custom_scissor;
+}
+
 void Renderer::Vulkan::VulkanModel::SetVertexOffset(unsigned int offset)
 {
 	m_vertexOffset = offset;
@@ -81,4 +93,15 @@ void Renderer::Vulkan::VulkanModel::SetIndexSize(unsigned int size)
 {
 	m_indexSize = size;
 	m_pool->m_vertex_index_change = true;
+}
+
+void Renderer::Vulkan::VulkanModel::SetScissor(VkRect2D scissor)
+{
+	m_scissor = scissor;
+	m_custom_scissor = true;
+}
+
+void Renderer::Vulkan::VulkanModel::ResetScissor()
+{
+	m_custom_scissor = false;
 }

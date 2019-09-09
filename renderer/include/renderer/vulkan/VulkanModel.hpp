@@ -1,10 +1,10 @@
 #pragma once
 
 #include <map>
+#include <vulkan\vulkan_core.h>
 
 namespace Renderer
 {
-
 	namespace Vulkan
 	{
 		class VulkanModelPool;
@@ -29,9 +29,13 @@ namespace Renderer
 			unsigned int GetVertexOffset();
 			unsigned int GetIndexOffset();
 			unsigned int GetIndexSize();
+			VkRect2D& GetScissor();
+			bool UsingCustomScissor();
 			void SetVertexOffset(unsigned int offset);
 			void SetIndexOffset(unsigned int offset);
 			void SetIndexSize(unsigned int size);
+			void SetScissor(VkRect2D scissor);
+			void ResetScissor();
 		private:
 			unsigned int m_model_pool_index;
 			unsigned int m_vertexOffset;
@@ -40,6 +44,8 @@ namespace Renderer
 			std::map<unsigned int, void*> m_data_pointers;
 			VulkanModelPool * m_pool;
 			bool m_rendering;
+			VkRect2D m_scissor;
+			bool m_custom_scissor;
 		};
 		template<class T>
 		inline void VulkanModel::SetData(unsigned int index, T data)
