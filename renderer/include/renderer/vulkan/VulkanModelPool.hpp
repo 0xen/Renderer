@@ -42,7 +42,7 @@ namespace Renderer
 			void AttachDescriptorSet(unsigned int index, VulkanDescriptorSet* descriptor_set);
 			std::vector<VulkanDescriptorSet*> GetDescriptorSets();
 			unsigned int GetLargestIndex();
-
+			void AllowCustomScissors(bool allow);
 
 			void SetVertexBuffer(VulkanVertexBuffer* vertex_buffer);
 			VulkanVertexBuffer * GetVertexBuffer();
@@ -87,6 +87,7 @@ namespace Renderer
 			unsigned int m_index_offset;
 			unsigned int m_index_size;
 			bool m_vertex_index_change = false;
+			bool m_allow_custom_scissors = false;
 			ModelPoolUsage m_model_pool_usage;
 
 

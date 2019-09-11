@@ -24,6 +24,7 @@ Renderer::Vulkan::VulkanModelPool::VulkanModelPool(VulkanDevice * device, Vulkan
 	m_largest_index = 0;
 	m_change = false;
 	m_indexed = false;
+	m_allow_custom_scissors = false;
 
 	ResizeIndirectArray(m_indirect_array_padding);
 }
@@ -38,6 +39,7 @@ Renderer::Vulkan::VulkanModelPool::VulkanModelPool(VulkanDevice* device, VulkanV
 	m_largest_index = 0;
 	m_change = false;
 	m_indexed = true;
+	m_allow_custom_scissors = false;
 
 	ResizeIndirectArray(m_indirect_array_padding);
 }
@@ -264,6 +266,11 @@ unsigned int Renderer::Vulkan::VulkanModelPool::GetLargestIndex()
 	return m_largest_index;
 }
 
+void Renderer::Vulkan::VulkanModelPool::AllowCustomScissors(bool allow)
+{
+	m_allow_custom_scissors = allow;
+}
+
 
 void Renderer::Vulkan::VulkanModelPool::SetVertexBuffer(VulkanVertexBuffer * vertex_buffer)
 {
@@ -384,7 +391,11 @@ void Renderer::Vulkan::VulkanModelPool::AttachToCommandBuffer(VkCommandBuffer & 
 
 	Renderer::NativeWindowHandle* window_handle = pipeline->GetRenderPass()->GetSwapchain()->GetNativeWindowHandle();
 	
-
+	if (!m_allow_custom_scissors)
+	{
+		VkRect2D scissor = VulkanInitializers::Scissor(window_handle->width, window_handle->height);
+		vkCmdSetScissor(command_buffer, 0, 1, &scissor);
+	}
 
 	if (Indexed())
 	{
@@ -409,16 +420,18 @@ void Renderer::Vulkan::VulkanModelPool::AttachToCommandBuffer(VkCommandBuffer & 
 				);
 			}
 			// Should we use the default provided scissor or the custom defined one
-
-			if (m_models[j]->UsingCustomScissor())
+			if (m_allow_custom_scissors)
 			{
-				VkRect2D& scissor = m_models[j]->GetScissor();
-				vkCmdSetScissor(command_buffer, 0, 1, &scissor);
-			}
-			else
-			{
-				VkRect2D scissor = VulkanInitializers::Scissor(window_handle->width, window_handle->height);
-				vkCmdSetScissor(command_buffer, 0, 1, &scissor);
+				if (m_models[j]->UsingCustomScissor())
+				{
+					VkRect2D& scissor = m_models[j]->GetScissor();
+					vkCmdSetScissor(command_buffer, 0, 1, &scissor);
+				}
+				else
+				{
+					VkRect2D scissor = VulkanInitializers::Scissor(window_handle->width, window_handle->height);
+					vkCmdSetScissor(command_buffer, 0, 1, &scissor);
+				}
 			}
 
 
