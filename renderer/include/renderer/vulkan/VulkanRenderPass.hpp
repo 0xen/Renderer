@@ -52,6 +52,8 @@ namespace Renderer
 			VkRenderPass& GetRenderPass();
 
 			VulkanSwapchain* GetSwapchain();
+
+			std::vector<std::array<VulkanDescriptorSet*, 2>>& GetCombinedImageSamplerReadSets();
 		private:
 
 			void CreateRenderPass();

@@ -334,6 +334,11 @@ Renderer::Vulkan::VulkanSwapchain * Renderer::Vulkan::VulkanRenderPass::GetSwapc
 	return m_swapchain;
 }
 
+std::vector<std::array< Renderer::Vulkan::VulkanDescriptorSet*, 2>>& Renderer::Vulkan::VulkanRenderPass::GetCombinedImageSamplerReadSets()
+{
+	return m_combined_image_sampler_read_sets;
+}
+
 void Renderer::Vulkan::VulkanRenderPass::CreateRenderPass()
 {
 	InitRenderPass();
@@ -349,7 +354,6 @@ void Renderer::Vulkan::VulkanRenderPass::DestroyRenderPass()
 
 void Renderer::Vulkan::VulkanRenderPass::InitRenderPass()
 {
-
 	const VkFormat colorFormat = VK_FORMAT_R8G8B8A8_UNORM;
 
 
@@ -451,6 +455,12 @@ void Renderer::Vulkan::VulkanRenderPass::InitRenderPass()
 	// Attachment reference to the depth image
 	VkAttachmentReference depth_attachment_refrence = VulkanInitializers::AttachmentReference(VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, 3);
 
+	// Define that these sub passes will be taking a direct input from the previous ones
+	VkAttachmentReference inputReferences[2][2];
+	inputReferences[0][0] = { 1, VK_IMAGE_LAYOUT_GENERAL }; // Storage image 1
+	inputReferences[0][1] = { 3, VK_IMAGE_LAYOUT_GENERAL }; // Depth buffer
+	inputReferences[1][0] = { 2, VK_IMAGE_LAYOUT_GENERAL }; // Storage image 2
+	inputReferences[1][1] = { 3, VK_IMAGE_LAYOUT_GENERAL }; // Depth buffer
 
 
 	if (m_subpass_count == 1)
@@ -482,12 +492,6 @@ void Renderer::Vulkan::VulkanRenderPass::InitRenderPass()
 				));
 		}
 
-		// Define that these sub passes will be taking a direct input from the previous ones
-		VkAttachmentReference inputReferences[2][2];
-		inputReferences[0][0] = { 1, VK_IMAGE_LAYOUT_GENERAL }; // Storage image 1
-		inputReferences[0][1] = { 3, VK_IMAGE_LAYOUT_GENERAL }; // Depth buffer
-		inputReferences[1][0] = { 2, VK_IMAGE_LAYOUT_GENERAL }; // Storage image 2
-		inputReferences[1][1] = { 3, VK_IMAGE_LAYOUT_GENERAL }; // Depth buffer
 
 
 
@@ -624,6 +628,7 @@ void Renderer::Vulkan::VulkanRenderPass::InitRenderPass()
 	//		VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
 	//	),
 	//};
+
 
 	VkRenderPassCreateInfo render_pass_info = VulkanInitializers::RenderPassCreateInfo(attachments, subpasses_descriptions.data(), subpasses_descriptions.size(), subpass_dependency.data(), subpass_dependency.size());
 
@@ -794,12 +799,12 @@ void Renderer::Vulkan::VulkanRenderPass::CreateAttachmentImages(VkFormat format,
 	VkImageAspectFlags aspectMask = 0;
 	VkImageLayout imageLayout;
 
-	if (usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)
+	if ((usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) == VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)
 	{
 		aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 	}
-	if (usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)
+	if ((usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) == VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)
 	{
 		aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
 		imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
