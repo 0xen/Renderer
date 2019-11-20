@@ -119,7 +119,7 @@ void PollWindow()
 				window_handle->width = event.window.data1;
 				window_handle->height = event.window.data2;
 
-				swapchain->RebuildSwapchain();
+				renderer->Rebuild();
 
 				render_pass->Rebuild();
 
@@ -242,9 +242,9 @@ int main(int argc, char **argv)
 	renderer->Start(window_handle);
 
 
-	swapchain = renderer->CreateSwapchain();
+	swapchain = renderer->GetSwapchain();
 
-	render_pass = renderer->CreateRenderPass(swapchain, 3);
+	render_pass = renderer->CreateRenderPass(3);
 
 
 	// Ray camera
@@ -564,8 +564,6 @@ int main(int argc, char **argv)
 		model_position_buffer1->SetData(BufferSlot::Primary);
 
 		render_pass->Render();
-
-		//render_pass->Present();
 
 		PollWindow();
 	}

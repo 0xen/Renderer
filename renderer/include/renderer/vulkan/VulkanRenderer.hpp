@@ -41,9 +41,7 @@ namespace Renderer
 			virtual bool Start(Renderer::NativeWindowHandle* window_handle);
 
 			void Stop();
-
-			VulkanSwapchain* CreateSwapchain();
-
+			void Rebuild();
 			VulkanUniformBuffer* CreateUniformBuffer(void* dataPtr, BufferChain level, unsigned int indexSize, unsigned int elementCount, bool modifiable);
 
 			VulkanVertexBuffer* CreateVertexBuffer(void* dataPtr, unsigned int indexSize, unsigned int elementCount);
@@ -68,11 +66,13 @@ namespace Renderer
 
 			VulkanDescriptorPool* CreateDescriptorPool(std::vector<VulkanDescriptor*> descriptors);
 
-			VulkanRaytracePipeline* CreateRaytracePipeline(VulkanRenderPass* render_pass, VulkanSwapchain* swapchain, std::vector<std::pair<VkShaderStageFlagBits, const char*>> paths, std::vector<std::map<VkShaderStageFlagBits, const char*>> hitgroups);
+			VulkanRaytracePipeline* CreateRaytracePipeline(VulkanRenderPass* render_pass, std::vector<std::pair<VkShaderStageFlagBits, const char*>> paths, std::vector<std::map<VkShaderStageFlagBits, const char*>> hitgroups);
 
-			VulkanRenderPass* CreateRenderPass(VulkanSwapchain* swapchain, unsigned int subpass_count);
+			VulkanRenderPass* CreateRenderPass(unsigned int subpass_count);
 
 			VulkanAcceleration* CreateAcceleration();
+
+			VulkanSwapchain* GetSwapchain();
 
 			bool IsRunning();
 		private:
@@ -82,6 +82,7 @@ namespace Renderer
 			VkSurfaceKHR m_surface;
 			VulkanPhysicalDevice* m_physical_device;
 			VulkanDevice* m_device;
+			VulkanSwapchain* m_swapchain;
 
 			bool m_running = false;
 		};

@@ -53,6 +53,10 @@ bool Renderer::Vulkan::VulkanRenderer::Start(Renderer::NativeWindowHandle* windo
 	Status::ErrorCheck(m_device);
 	if (HasError())return false;
 
+	m_swapchain = new VulkanSwapchain(this, m_instance, m_device, &m_surface, window_handle);
+	Status::ErrorCheck(m_swapchain);
+	if (HasError())return false;
+
 	m_running = true;
 	return m_running;
 }
@@ -65,15 +69,16 @@ bool VulkanRenderer::Start(Renderer::NativeWindowHandle* window_handle)
 void VulkanRenderer::Stop()
 {
 	if (!m_running)return;
+	delete m_swapchain;
 	delete m_device;
 	delete m_physical_device;
 	delete m_instance;
 	m_running = false;
 }
 
-VulkanSwapchain * Renderer::Vulkan::VulkanRenderer::CreateSwapchain()
+void Renderer::Vulkan::VulkanRenderer::Rebuild()
 {
-	return new VulkanSwapchain(this, m_instance, m_device, &m_surface, m_window_handle);
+	m_swapchain->RebuildSwapchain();
 }
 
 VulkanUniformBuffer * Renderer::Vulkan::VulkanRenderer::CreateUniformBuffer(void * dataPtr, BufferChain level, unsigned int indexSize, unsigned int elementCount, bool modifiable)
@@ -142,20 +147,25 @@ VulkanDescriptorPool * Renderer::Vulkan::VulkanRenderer::CreateDescriptorPool(st
 	return new VulkanDescriptorPool(m_device, descriptors);
 }
 
-VulkanRaytracePipeline * Renderer::Vulkan::VulkanRenderer::CreateRaytracePipeline(VulkanRenderPass* render_pass, VulkanSwapchain* swapchain, std::vector<std::pair<VkShaderStageFlagBits, const char*>> paths, std::vector<std::map<VkShaderStageFlagBits, const char*>> hitgroups)
+VulkanRaytracePipeline * Renderer::Vulkan::VulkanRenderer::CreateRaytracePipeline(VulkanRenderPass* render_pass, std::vector<std::pair<VkShaderStageFlagBits, const char*>> paths, std::vector<std::map<VkShaderStageFlagBits, const char*>> hitgroups)
 {
-	VulkanRaytracePipeline* graphics_pipeline = new VulkanRaytracePipeline(m_device, swapchain, render_pass, paths, hitgroups);
+	VulkanRaytracePipeline* graphics_pipeline = new VulkanRaytracePipeline(m_device, m_swapchain, render_pass, paths, hitgroups);
 	return graphics_pipeline;
 }
 
-VulkanRenderPass * Renderer::Vulkan::VulkanRenderer::CreateRenderPass(VulkanSwapchain* swapchain, unsigned int subpass_count)
+VulkanRenderPass * Renderer::Vulkan::VulkanRenderer::CreateRenderPass(unsigned int subpass_count)
 {
-	return new VulkanRenderPass(this, swapchain, m_instance, m_device, subpass_count);
+	return new VulkanRenderPass(this, m_swapchain, m_instance, m_device, subpass_count);
 }
 
 VulkanAcceleration * Renderer::Vulkan::VulkanRenderer::CreateAcceleration()
 {
 	return new VulkanAcceleration(m_device);
+}
+
+VulkanSwapchain * Renderer::Vulkan::VulkanRenderer::GetSwapchain()
+{
+	return m_swapchain;
 }
 
 bool Renderer::Vulkan::VulkanRenderer::IsRunning()
