@@ -39,6 +39,8 @@ namespace Renderer
 
 			void Render();
 
+			void Present();
+
 			void FindNextImageIndex();
 
 			unsigned int GetCurrentFrameIndex();
@@ -123,6 +125,7 @@ namespace Renderer
 
 			// Render fence
 			std::vector<VkFence> m_fence;
+			
 
 			// Current frame index we are rendering too
 			uint32_t m_frame_index = 0;

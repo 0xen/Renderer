@@ -239,9 +239,18 @@ void Renderer::Vulkan::VulkanRenderPass::Render()
 
 	SubmitQueue(current_frame_index);
 
+}
+
+void Renderer::Vulkan::VulkanRenderPass::Present()
+{
+
+	// Get the frame we are rendering too
+	unsigned int current_frame_index = GetCurrentFrameIndex();
+
 	std::vector<VkSemaphore> signal_semaphores{
 		m_swapchain->GetRenderFinishedSemaphore()
 	};
+
 
 	m_swapchain->Present(signal_semaphores, current_frame_index);
 }
@@ -265,6 +274,7 @@ void Renderer::Vulkan::VulkanRenderPass::FindNextImageIndex()
 		m_should_rebuild_cmd = false;
 		RebuildCommandBuffers();
 	}
+
 	vkWaitForFences(*m_device->GetVulkanDevice(), 1, &m_fence[m_frame_index], VK_TRUE, 100);
 
 	VkResult check = vkAcquireNextImageKHR(
@@ -781,15 +791,16 @@ void Renderer::Vulkan::VulkanRenderPass::InitCommandBuffers()
 
 void Renderer::Vulkan::VulkanRenderPass::InitFences()
 {
+	VkFenceCreateInfo info = {};
+	info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+	info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 	for (int i = 0; i < 3; i++)
 	{
 		VkFence fence;
-		VkFenceCreateInfo info = {};
-		info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-		info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 		vkCreateFence(*m_device->GetVulkanDevice(), &info, nullptr, &fence);
 		m_fence.push_back(fence);
 	}
+	
 }
 
 void Renderer::Vulkan::VulkanRenderPass::CreateAttachmentImages(VkFormat format, VkImageUsageFlags usage, FrameBufferAttachment & attachment)
