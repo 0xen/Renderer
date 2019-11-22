@@ -440,7 +440,7 @@ unsigned int Renderer::Vulkan::VulkanAcceleration::UpdateGeometryInstances()
 		gInst.instanceOffset = instance.hitGroupIndex;
 
 								 // Disable culling
-		gInst.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FRONT_COUNTERCLOCKWISE_BIT_NV;
+		gInst.flags = 0;// VK_GEOMETRY_INSTANCE_TRIANGLE_FRONT_COUNTERCLOCKWISE_BIT_NV;
 		gInst.accelerationStructureHandle = accelerationStructureHandle;
 		geometryInstances.push_back(gInst);
 	}
