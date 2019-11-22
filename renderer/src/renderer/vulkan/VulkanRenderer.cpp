@@ -122,14 +122,24 @@ VulkanModelPool * Renderer::Vulkan::VulkanRenderer::CreateModelPool(VulkanVertex
 	return new VulkanModelPool(m_device, vertex_buffer, vertex_offset, vertex_size, usage);
 }
 
-VulkanTextureBuffer * Renderer::Vulkan::VulkanRenderer::CreateTextureBuffer(void * dataPtr, VkFormat format, unsigned int width, unsigned int height)
+VulkanTextureBuffer * Renderer::Vulkan::VulkanRenderer::CreateTextureBuffer(void * dataPtr, VkFormat format, unsigned int width, unsigned int height, VkImageUsageFlags usageFlags)
 {
-	return new VulkanTextureBuffer(m_device, dataPtr, format, width, height);
+	return new VulkanTextureBuffer(m_device, BufferChain::Single, dataPtr, format, width, height, usageFlags);
 }
 
-VulkanTextureBuffer * Renderer::Vulkan::VulkanRenderer::CreateTextureBuffer(void * dataPtr, BufferChain level, VkFormat format, unsigned int width, unsigned int height)
+VulkanTextureBuffer * Renderer::Vulkan::VulkanRenderer::CreateTextureBuffer(void * dataPtr, BufferChain level, VkFormat format, unsigned int width, unsigned int height, VkImageUsageFlags usageFlags)
 {
-	return new VulkanTextureBuffer(m_device, level,  dataPtr, format, width, height);
+	return new VulkanTextureBuffer(m_device, level,  dataPtr, format, width, height, usageFlags);
+}
+
+VulkanTextureBuffer * Renderer::Vulkan::VulkanRenderer::CreateTextureBuffer(VkFormat format, unsigned int width, unsigned int height, VkImageUsageFlags usageFlags)
+{
+	return new VulkanTextureBuffer(m_device, BufferChain::Single, format, width, height, usageFlags);
+}
+
+VulkanTextureBuffer * Renderer::Vulkan::VulkanRenderer::CreateTextureBuffer(BufferChain level, VkFormat format, unsigned int width, unsigned int height, VkImageUsageFlags usageFlags)
+{
+	return new VulkanTextureBuffer(m_device, level, format, width, height, usageFlags);
 }
 
 /*VulkanDescriptor * Renderer::Vulkan::VulkanRenderer::CreateDescriptor(DescriptorType descriptor_type, ShaderStage shader_stage, unsigned int binding, unsigned int count)

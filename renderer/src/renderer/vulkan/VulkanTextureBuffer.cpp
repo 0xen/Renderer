@@ -5,28 +5,30 @@
 using namespace Renderer;
 using namespace Renderer::Vulkan;
 
-Renderer::Vulkan::VulkanTextureBuffer::VulkanTextureBuffer(VulkanDevice* device, void* dataPtr, VkFormat format, unsigned int width, unsigned int height):
-	VulkanBuffer(device, BufferChain::Single, dataPtr, GetFormatSize(format) * width * height, 1,
+
+Renderer::Vulkan::VulkanTextureBuffer::VulkanTextureBuffer(VulkanDevice * device, BufferChain level, VkFormat format, unsigned int width, unsigned int height, VkImageUsageFlags usageFlags) :
+	VulkanBuffer(device, level, nullptr, GetFormatSize(format) * width * height, 1,
 		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
 {
+	m_imageUsageFlags = usageFlags;
 	m_format = format;
 	m_width = width;
 	m_height = height;
 	InitTexture();
-	m_gpu_allocation[BufferChain::Single].image_info = VulkanInitializers::DescriptorImageInfo(m_sampler,m_view, m_image_layout);
+	m_gpu_allocation[BufferChain::Single].image_info = VulkanInitializers::DescriptorImageInfo(m_sampler, m_view, m_image_layout);
 }
 
-Renderer::Vulkan::VulkanTextureBuffer::VulkanTextureBuffer(VulkanDevice * device, BufferChain level, void * dataPtr, VkFormat format, unsigned int width, unsigned int height):
+Renderer::Vulkan::VulkanTextureBuffer::VulkanTextureBuffer(VulkanDevice * device, BufferChain level, void * dataPtr, VkFormat format, unsigned int width, unsigned int height, VkImageUsageFlags usageFlags) :
 	VulkanBuffer(device, level, dataPtr, GetFormatSize(format) * width * height, 1,
 		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
 {
+	m_imageUsageFlags = usageFlags;
 	m_format = format;
 	m_width = width;
 	m_height = height;
 	InitTexture();
-
 	VkDeviceSize offset = 0;
 	for (unsigned int slot = 0; slot <= (unsigned int)level; slot++)
 	{
@@ -65,6 +67,7 @@ VkImage & Renderer::Vulkan::VulkanTextureBuffer::GetImage()
 
 void Renderer::Vulkan::VulkanTextureBuffer::SetData(BufferSlot slot)
 {
+	if (m_local_allocation[(unsigned int)slot].dataPtr == nullptr) return;
 	VulkanBuffer::SetData(slot);
 	MoveDataToImage();
 }
@@ -111,11 +114,11 @@ void Renderer::Vulkan::VulkanTextureBuffer::InitTexture()
 		m_height,
 		m_format,
 		VK_IMAGE_TILING_OPTIMAL,
-		VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+		m_imageUsageFlags,
 		m_mipLevels
 	);
 
-	image_create_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	image_create_info.initialLayout = VK_IMAGE_LAYOUT_GENERAL;
 
 	ErrorCheck(vkCreateImage(
 		*m_device->GetVulkanDevice(),
@@ -152,7 +155,6 @@ void Renderer::Vulkan::VulkanTextureBuffer::InitTexture()
 		m_device_memory,
 		0
 	));
-
 
 	SetData(BufferSlot::Primary);
 

@@ -58,9 +58,13 @@ namespace Renderer
 
 			VulkanModelPool* CreateModelPool(VulkanVertexBuffer* vertex_buffer, unsigned int vertex_offset, unsigned int vertex_size,ModelPoolUsage usage);
 
-			VulkanTextureBuffer* CreateTextureBuffer(void* dataPtr, VkFormat format, unsigned int width, unsigned int height);
+			VulkanTextureBuffer* CreateTextureBuffer(void* dataPtr, VkFormat format, unsigned int width, unsigned int height, VkImageUsageFlags usageFlags = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
 
-			VulkanTextureBuffer* CreateTextureBuffer(void* dataPtr, BufferChain level, VkFormat format, unsigned int width, unsigned int height);
+			VulkanTextureBuffer* CreateTextureBuffer(void* dataPtr, BufferChain level, VkFormat format, unsigned int width, unsigned int height, VkImageUsageFlags usageFlags = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+
+			VulkanTextureBuffer* CreateTextureBuffer(VkFormat format, unsigned int width, unsigned int height, VkImageUsageFlags usageFlags = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+
+			VulkanTextureBuffer* CreateTextureBuffer(BufferChain level, VkFormat format, unsigned int width, unsigned int height, VkImageUsageFlags usageFlags = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
 
 			VulkanDescriptor* CreateDescriptor(VkDescriptorType descriptor_type, VkShaderStageFlags shader_stage, unsigned int binding,unsigned int count = 1);
 

@@ -309,6 +309,7 @@ int main(int argc, char **argv)
 	}
 
 
+	VulkanTextureBuffer* noDataTexture = renderer->CreateTextureBuffer(VkFormat::VK_FORMAT_R8G8B8A8_UNORM, 1028, 1028);
 
 
 
