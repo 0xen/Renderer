@@ -11,8 +11,8 @@ namespace Renderer
 		class VulkanTextureBuffer : public VulkanBuffer, public VulkanStatus
 		{
 		public:
-			VulkanTextureBuffer(VulkanDevice* device, BufferChain level, VkFormat format, unsigned int width, unsigned int height, VkImageUsageFlags usageFlags);
-			VulkanTextureBuffer(VulkanDevice* device, BufferChain level, void* dataPtr, VkFormat format, unsigned int width, unsigned int height, VkImageUsageFlags usageFlags);
+			VulkanTextureBuffer(VulkanDevice* device, BufferChain level, VkFormat format, unsigned int width, unsigned int height, VkImageUsageFlags usageFlags, VkImageLayout layout);
+			VulkanTextureBuffer(VulkanDevice* device, BufferChain level, void* dataPtr, VkFormat format, unsigned int width, unsigned int height, VkImageUsageFlags usageFlags, VkImageLayout layout);
 			virtual ~VulkanTextureBuffer();
 			VkImage& GetImage();
 			virtual void SetData(BufferSlot slot);

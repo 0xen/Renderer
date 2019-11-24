@@ -6,7 +6,7 @@ using namespace Renderer;
 using namespace Renderer::Vulkan;
 
 
-Renderer::Vulkan::VulkanTextureBuffer::VulkanTextureBuffer(VulkanDevice * device, BufferChain level, VkFormat format, unsigned int width, unsigned int height, VkImageUsageFlags usageFlags) :
+Renderer::Vulkan::VulkanTextureBuffer::VulkanTextureBuffer(VulkanDevice * device, BufferChain level, VkFormat format, unsigned int width, unsigned int height, VkImageUsageFlags usageFlags, VkImageLayout layout) :
 	VulkanBuffer(device, level, nullptr, GetFormatSize(format) * width * height, 1,
 		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
@@ -15,11 +15,15 @@ Renderer::Vulkan::VulkanTextureBuffer::VulkanTextureBuffer(VulkanDevice * device
 	m_format = format;
 	m_width = width;
 	m_height = height;
+
+	// Change texture image layout to shader read after all mip levels have been copied
+	m_image_layout = layout;
+
 	InitTexture();
 	m_gpu_allocation[BufferChain::Single].image_info = VulkanInitializers::DescriptorImageInfo(m_sampler, m_view, m_image_layout);
 }
 
-Renderer::Vulkan::VulkanTextureBuffer::VulkanTextureBuffer(VulkanDevice * device, BufferChain level, void * dataPtr, VkFormat format, unsigned int width, unsigned int height, VkImageUsageFlags usageFlags) :
+Renderer::Vulkan::VulkanTextureBuffer::VulkanTextureBuffer(VulkanDevice * device, BufferChain level, void * dataPtr, VkFormat format, unsigned int width, unsigned int height, VkImageUsageFlags usageFlags, VkImageLayout layout) :
 	VulkanBuffer(device, level, dataPtr, GetFormatSize(format) * width * height, 1,
 		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
@@ -28,6 +32,10 @@ Renderer::Vulkan::VulkanTextureBuffer::VulkanTextureBuffer(VulkanDevice * device
 	m_format = format;
 	m_width = width;
 	m_height = height;
+
+	// Change texture image layout to shader read after all mip levels have been copied
+	m_image_layout = layout;
+
 	InitTexture();
 	VkDeviceSize offset = 0;
 	for (unsigned int slot = 0; slot <= (unsigned int)level; slot++)
@@ -118,7 +126,7 @@ void Renderer::Vulkan::VulkanTextureBuffer::InitTexture()
 		m_mipLevels
 	);
 
-	image_create_info.initialLayout = VK_IMAGE_LAYOUT_GENERAL;
+	image_create_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
 	ErrorCheck(vkCreateImage(
 		*m_device->GetVulkanDevice(),
@@ -258,9 +266,6 @@ void Renderer::Vulkan::VulkanTextureBuffer::MoveDataToImage()
 		static_cast<uint32_t>(m_bufferCopyRegions.size()),
 		m_bufferCopyRegions.data());
 
-
-	// Change texture image layout to shader read after all mip levels have been copied
-	m_image_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
 	VulkanCommon::SetImageLayout(
 		copy_cmd,
