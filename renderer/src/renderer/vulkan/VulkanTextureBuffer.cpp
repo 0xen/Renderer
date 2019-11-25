@@ -291,6 +291,15 @@ unsigned int Renderer::Vulkan::VulkanTextureBuffer::GetFormatSize(VkFormat forma
 	
 	switch (format)
 	{
+		case VkFormat::VK_FORMAT_R8_SNORM:
+		case VkFormat::VK_FORMAT_R8_USCALED:
+		case VkFormat::VK_FORMAT_R8_SSCALED:
+		case VkFormat::VK_FORMAT_R8_UINT:
+		case VkFormat::VK_FORMAT_R8_SINT:
+		case VkFormat::VK_FORMAT_R8_SRGB:
+		case VkFormat::VK_FORMAT_R8_UNORM:
+			return 1;
+			break;
 		case VkFormat::VK_FORMAT_R8G8_UNORM:
 		case VkFormat::VK_FORMAT_R8G8_SNORM:
 		case VkFormat::VK_FORMAT_R8G8_USCALED:
