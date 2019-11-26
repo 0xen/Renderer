@@ -1,5 +1,6 @@
 #include <renderer/vulkan/VulkanDescriptorSet.hpp>
 #include <renderer/vulkan/VulkanBuffer.hpp>
+#include <renderer/vulkan/VulkanTextureBuffer.hpp>
 #include <renderer/vulkan/VulkanDescriptorPool.hpp>
 #include <renderer/vulkan/VulkanDevice.hpp>
 #include <renderer/vulkan/VulkanDescriptor.hpp>
@@ -33,7 +34,7 @@ void Renderer::Vulkan::VulkanDescriptorSet::AttachBuffer(unsigned int location, 
 	VulkanDescriptor* descriptor = m_descriptor_pool->GetDescriptors()[location];
 	if (descriptor->GetDescriptorType() == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
 	{
-		AttachBuffer(location, { buffer->GetDescriptorImageInfo(BufferSlot::Primary) }); // Write as a single image buffer
+		AttachBuffer(location, { static_cast<VulkanTextureBuffer*>(buffer)->GetDescriptorImageInfo(BufferSlot::Primary) }); // Write as a single image buffer
 	}
 	else
 	{

@@ -367,8 +367,8 @@ void Renderer::Vulkan::VulkanCommon::CopyBuffer(VulkanDevice * device, VkBuffer 
 
 void Renderer::Vulkan::VulkanCommon::SetImageLayout(VkCommandBuffer cmdbuffer, VkImage image, VkImageLayout oldImageLayout, VkImageLayout newImageLayout, VkImageSubresourceRange subresourceRange)
 {
-	VkPipelineStageFlags srcStageMask;
-	VkPipelineStageFlags dstStageMask;
+	VkPipelineStageFlags srcStageMask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+	VkPipelineStageFlags dstStageMask = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
 
 	// Create an image barrier object
 	VkImageMemoryBarrier imageMemoryBarrier = VulkanInitializers::ImageMemoryBarrier();
@@ -473,11 +473,11 @@ void Renderer::Vulkan::VulkanCommon::SetImageLayout(VkCommandBuffer cmdbuffer, V
 	}*/
 
 
-	if (oldImageLayout == VK_IMAGE_LAYOUT_UNDEFINED && newImageLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
+	if(oldImageLayout == VK_IMAGE_LAYOUT_UNDEFINED && newImageLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
 	{
 		imageMemoryBarrier.srcAccessMask = 0;
 		imageMemoryBarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-		
+
 		srcStageMask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
 		dstStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
 	}
@@ -491,7 +491,7 @@ void Renderer::Vulkan::VulkanCommon::SetImageLayout(VkCommandBuffer cmdbuffer, V
 	}
 	else
 	{
-		throw std::invalid_argument("unsupported layout transition!");
+		//throw std::invalid_argument("unsupported layout transition!");
 	}
 
 

@@ -42,7 +42,6 @@ namespace Renderer
 			void* GetDataPointer(BufferSlot slot);
 
 			VulkanBufferData* GetBufferData(BufferSlot slot);
-			VkDescriptorImageInfo& GetDescriptorImageInfo(BufferSlot slot);
 			VkDescriptorBufferInfo& GetDescriptorBufferInfo(BufferSlot slot);
 
 		protected:

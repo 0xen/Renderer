@@ -75,8 +75,8 @@ VkImage & Renderer::Vulkan::VulkanTextureBuffer::GetImage()
 
 void Renderer::Vulkan::VulkanTextureBuffer::SetData(BufferSlot slot)
 {
-	if (m_local_allocation[(unsigned int)slot].dataPtr == nullptr) return;
-	VulkanBuffer::SetData(slot);
+	if (m_local_allocation[(unsigned int)slot].dataPtr != nullptr)
+		VulkanBuffer::SetData(slot);
 	MoveDataToImage();
 }
 
@@ -93,6 +93,11 @@ unsigned int Renderer::Vulkan::VulkanTextureBuffer::GetWidth()
 unsigned int Renderer::Vulkan::VulkanTextureBuffer::GetHeight()
 {
 	return m_height;
+}
+
+VkDescriptorImageInfo & Renderer::Vulkan::VulkanTextureBuffer::GetDescriptorImageInfo(BufferSlot slot)
+{
+	return m_gpu_allocation[slot].image_info;
 }
 
 void Renderer::Vulkan::VulkanTextureBuffer::InitTexture()
@@ -165,8 +170,6 @@ void Renderer::Vulkan::VulkanTextureBuffer::InitTexture()
 	));
 
 	SetData(BufferSlot::Primary);
-
-
 
 
 	VkSamplerCreateInfo sampler_info = VulkanInitializers::SamplerCreateInfo();

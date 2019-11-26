@@ -99,11 +99,6 @@ Renderer::Vulkan::VulkanBufferData * Renderer::Vulkan::VulkanBuffer::GetBufferDa
 	return &m_gpu_allocation[slot].buffer;
 }
 
-VkDescriptorImageInfo & Renderer::Vulkan::VulkanBuffer::GetDescriptorImageInfo(BufferSlot slot)
-{
-	return m_gpu_allocation[slot].image_info;
-}
-
 VkDescriptorBufferInfo & Renderer::Vulkan::VulkanBuffer::GetDescriptorBufferInfo(BufferSlot slot)
 {
 	return m_gpu_allocation[slot].buffer_info;
