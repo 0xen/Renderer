@@ -328,8 +328,11 @@ unsigned int Renderer::Vulkan::VulkanTextureBuffer::GetFormatSize(VkFormat forma
 		case VkFormat::VK_FORMAT_R8G8B8A8_UINT:
 		case VkFormat::VK_FORMAT_R8G8B8A8_SINT:
 		case VkFormat::VK_FORMAT_R8G8B8A8_SRGB:
+		case VkFormat::VK_FORMAT_R32_SFLOAT:
 			return 4;
 			break;
+		case VkFormat::VK_FORMAT_R32G32B32A32_SFLOAT:
+			return 16;
 	}
 	return 0;
 }
