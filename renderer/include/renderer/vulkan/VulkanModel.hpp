@@ -36,6 +36,8 @@ namespace Renderer
 			void SetIndexSize(unsigned int size);
 			void SetScissor(VkRect2D scissor);
 			void ResetScissor();
+			void SetUUID(int uuid);
+			int GetUUID();
 		private:
 			unsigned int m_model_pool_index;
 			unsigned int m_vertexOffset;
@@ -46,6 +48,7 @@ namespace Renderer
 			bool m_rendering;
 			VkRect2D m_scissor;
 			bool m_custom_scissor;
+			int m_uuid;
 		};
 		template<class T>
 		inline void VulkanModel::SetData(unsigned int index, T data)

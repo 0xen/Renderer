@@ -6,6 +6,7 @@ Renderer::Vulkan::VulkanModel::VulkanModel(VulkanModelPool* pool, unsigned int m
 {
 	m_rendering = false;
 	m_custom_scissor = false;
+	m_uuid = -1;
 }
 
 Renderer::Vulkan::VulkanModel::VulkanModel(VulkanModelPool* pool, unsigned int model_pool_index, unsigned int vertexOffset, unsigned int indexOffset, unsigned int indexSize) :
@@ -13,6 +14,7 @@ Renderer::Vulkan::VulkanModel::VulkanModel(VulkanModelPool* pool, unsigned int m
 {
 	m_rendering = false;
 	m_custom_scissor = false;
+	m_uuid = -1;
 }
 
 void Renderer::Vulkan::VulkanModel::SetDataPointer(unsigned int index, void * data)
@@ -104,4 +106,14 @@ void Renderer::Vulkan::VulkanModel::SetScissor(VkRect2D scissor)
 void Renderer::Vulkan::VulkanModel::ResetScissor()
 {
 	m_custom_scissor = false;
+}
+
+void Renderer::Vulkan::VulkanModel::SetUUID(int uuid)
+{
+	m_uuid = uuid;
+}
+
+int Renderer::Vulkan::VulkanModel::GetUUID()
+{
+	return m_uuid;
 }
