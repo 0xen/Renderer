@@ -364,29 +364,33 @@ void Renderer::Vulkan::VulkanRenderPass::InitRenderPass()
 	// Read instance for input attachments
 	m_input_attachments_read_pool = m_renderer->CreateDescriptorPool({
 		m_renderer->CreateDescriptor(VkDescriptorType::VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT, 0), // Color
-		m_renderer->CreateDescriptor(VkDescriptorType::VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT, 1), // Depth
+		//m_renderer->CreateDescriptor(VkDescriptorType::VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT, 1), // Depth
 		});
 
 
 	// Read instance for combined image samplers
 	m_combined_image_sampler_read_pool = m_renderer->CreateDescriptorPool({
 		m_renderer->CreateDescriptor(VkDescriptorType::VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT, 0), // Color
-		m_renderer->CreateDescriptor(VkDescriptorType::VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT, 1), // Depth
+		//m_renderer->CreateDescriptor(VkDescriptorType::VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT, 1), // Depth
 		});
 
 	for (int i = 0; i < m_attachments.size(); i++)
 	{
 		// Create the images and make it to that they are readable as color attachments and as image samplers
-		CreateAttachmentImages(colorFormat, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, m_attachments[i].color1);
-		CreateAttachmentImages(colorFormat, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, m_attachments[i].color2);
-		CreateAttachmentImages(VulkanCommon::GetDepthImageFormat(m_device), VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, m_attachments[i].depth);
+		CreateAttachmentImages(colorFormat, 
+			VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, m_attachments[i].color1);
+		CreateAttachmentImages(colorFormat, 
+			VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, m_attachments[i].color2);
+
+		CreateAttachmentImages(VulkanCommon::GetDepthImageFormat(m_device), 
+			VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, m_attachments[i].depth);
 
 		{
 			// Input attachments
 			{
 				VulkanDescriptorSet* set = m_input_attachments_read_pool->CreateDescriptorSet();
-				set->AttachBuffer(0, VulkanInitializers::DescriptorImageInfo(VK_NULL_HANDLE, m_attachments[i].color1.view, VK_IMAGE_LAYOUT_GENERAL));
-				set->AttachBuffer(1, VulkanInitializers::DescriptorImageInfo(VK_NULL_HANDLE, m_attachments[i].depth.view, VK_IMAGE_LAYOUT_GENERAL));
+				set->AttachBuffer(0, VulkanInitializers::DescriptorImageInfo(VK_NULL_HANDLE, m_attachments[i].color1.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL));
+				//set->AttachBuffer(1, VulkanInitializers::DescriptorImageInfo(m_attachments[i].depth.sampler, m_attachments[i].depth.view, VK_IMAGE_LAYOUT_GENERAL));
 				set->UpdateSet();
 				m_input_attachments_read_sets[i][0] = set;
 			}
@@ -394,8 +398,8 @@ void Renderer::Vulkan::VulkanRenderPass::InitRenderPass()
 
 			{
 				VulkanDescriptorSet* set = m_input_attachments_read_pool->CreateDescriptorSet();
-				set->AttachBuffer(0, VulkanInitializers::DescriptorImageInfo(VK_NULL_HANDLE, m_attachments[i].color2.view, VK_IMAGE_LAYOUT_GENERAL));
-				set->AttachBuffer(1, VulkanInitializers::DescriptorImageInfo(VK_NULL_HANDLE, m_attachments[i].depth.view, VK_IMAGE_LAYOUT_GENERAL));
+				set->AttachBuffer(0, VulkanInitializers::DescriptorImageInfo(VK_NULL_HANDLE, m_attachments[i].color2.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL));
+				//set->AttachBuffer(1, VulkanInitializers::DescriptorImageInfo(m_attachments[i].depth.sampler, m_attachments[i].depth.view, VK_IMAGE_LAYOUT_GENERAL));
 				set->UpdateSet();
 				m_input_attachments_read_sets[i][1] = set;
 			}
@@ -404,8 +408,8 @@ void Renderer::Vulkan::VulkanRenderPass::InitRenderPass()
 			// Combined image samplers
 			{
 				VulkanDescriptorSet* set = m_combined_image_sampler_read_pool->CreateDescriptorSet();
-				set->AttachBuffer(0, VulkanInitializers::DescriptorImageInfo(m_attachments[i].color1.sampler, m_attachments[i].color1.view, VK_IMAGE_LAYOUT_GENERAL));
-				set->AttachBuffer(1, VulkanInitializers::DescriptorImageInfo(m_attachments[i].depth.sampler, m_attachments[i].depth.view, VK_IMAGE_LAYOUT_GENERAL));
+				set->AttachBuffer(0, VulkanInitializers::DescriptorImageInfo(m_attachments[i].color1.sampler, m_attachments[i].color1.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL));
+				//set->AttachBuffer(1, VulkanInitializers::DescriptorImageInfo(m_attachments[i].depth.sampler, m_attachments[i].depth.view, VK_IMAGE_LAYOUT_GENERAL));
 				set->UpdateSet();
 				m_combined_image_sampler_read_sets[i][0] = set;
 			}
@@ -413,8 +417,8 @@ void Renderer::Vulkan::VulkanRenderPass::InitRenderPass()
 
 			{
 				VulkanDescriptorSet* set = m_combined_image_sampler_read_pool->CreateDescriptorSet();
-				set->AttachBuffer(0, VulkanInitializers::DescriptorImageInfo(m_attachments[i].color2.sampler, m_attachments[i].color2.view, VK_IMAGE_LAYOUT_GENERAL));
-				set->AttachBuffer(1, VulkanInitializers::DescriptorImageInfo(m_attachments[i].depth.sampler, m_attachments[i].depth.view, VK_IMAGE_LAYOUT_GENERAL));
+				set->AttachBuffer(0, VulkanInitializers::DescriptorImageInfo(m_attachments[i].color2.sampler, m_attachments[i].color2.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL));
+				//set->AttachBuffer(1, VulkanInitializers::DescriptorImageInfo(m_attachments[i].depth.sampler, m_attachments[i].depth.view, VK_IMAGE_LAYOUT_GENERAL));
 				set->UpdateSet();
 				m_combined_image_sampler_read_sets[i][1] = set;
 			}
@@ -449,25 +453,35 @@ void Renderer::Vulkan::VulkanRenderPass::InitRenderPass()
 
 	std::vector<VkSubpassDescription> subpasses_descriptions;
 	// Attachment reference to the final swapchain image
-	VkAttachmentReference color_attachment_refrence_swapchain = VulkanInitializers::AttachmentReference(VK_IMAGE_LAYOUT_GENERAL, 0);
+
+	VkAttachmentReference color_attachment_refrence[3] = {
+		VulkanInitializers::AttachmentReference(VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, 0), // KHR
+		VulkanInitializers::AttachmentReference(VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, 1),
+		VulkanInitializers::AttachmentReference(VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, 2)
+	};
+
+	/*VkAttachmentReference color_attachment_refrence_swapchain = VulkanInitializers::AttachmentReference(VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, 0);
 	// Attachment reference to the scratch images
-	VkAttachmentReference color_attachment_refrence[2] = { VulkanInitializers::AttachmentReference(VK_IMAGE_LAYOUT_GENERAL, 1),VulkanInitializers::AttachmentReference(VK_IMAGE_LAYOUT_GENERAL, 2) };
+	VkAttachmentReference color_attachment_refrence[2] = { 
+		VulkanInitializers::AttachmentReference(VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, 1),
+		VulkanInitializers::AttachmentReference(VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, 2)
+	};*/
 	// Attachment reference to the depth image
 	VkAttachmentReference depth_attachment_refrence = VulkanInitializers::AttachmentReference(VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, 3);
 
 	// Define that these sub passes will be taking a direct input from the previous ones
-	VkAttachmentReference inputReferences[2][2];
-	inputReferences[0][0] = { 1, VK_IMAGE_LAYOUT_GENERAL }; // Storage image 1
-	inputReferences[0][1] = { 3, VK_IMAGE_LAYOUT_GENERAL }; // Depth buffer
-	inputReferences[1][0] = { 2, VK_IMAGE_LAYOUT_GENERAL }; // Storage image 2
-	inputReferences[1][1] = { 3, VK_IMAGE_LAYOUT_GENERAL }; // Depth buffer
+	VkAttachmentReference inputReferences[2][1];
+	inputReferences[0][0] = { 1, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL }; // Storage image 1
+	//inputReferences[0][1] = { 3, VK_IMAGE_LAYOUT_GENERAL }; // Depth buffer
+	inputReferences[1][0] = { 2, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL }; // Storage image 2
+	//inputReferences[1][1] = { 3, VK_IMAGE_LAYOUT_GENERAL }; // Depth buffer
 
 
 	if (m_subpass_count == 1)
 	{
 		// SubPass 0
 		// Wright directly to the swapchain
-		VkSubpassDescription subpass = VulkanInitializers::SubpassDescription(&color_attachment_refrence_swapchain, 1, depth_attachment_refrence);
+		VkSubpassDescription subpass = VulkanInitializers::SubpassDescription(color_attachment_refrence, 1, depth_attachment_refrence);
 		subpasses_descriptions.push_back(subpass);
 
 		// Define subpass dependency, Should just pass data to the swapchain
@@ -477,7 +491,7 @@ void Renderer::Vulkan::VulkanRenderPass::InitRenderPass()
 	{
 		// SubPass 0
 		{
-			VkSubpassDescription subpass = VulkanInitializers::SubpassDescription(&color_attachment_refrence[0], 1, depth_attachment_refrence);
+			VkSubpassDescription subpass = VulkanInitializers::SubpassDescription(&color_attachment_refrence[1], 1, depth_attachment_refrence);
 			subpasses_descriptions.push_back(subpass);
 
 			// Define subpass dependency, Should pass data to scratch image
@@ -499,10 +513,10 @@ void Renderer::Vulkan::VulkanRenderPass::InitRenderPass()
 		for (int i = 1; i < m_subpass_count - 1; i++)
 		{
 			// Define that we will be writing to the scratch image
-			VkSubpassDescription subpass = VulkanInitializers::SubpassDescription(color_attachment_refrence[i % 2]);
+			VkSubpassDescription subpass = VulkanInitializers::SubpassDescription(color_attachment_refrence[1 + (i % 2)]);
 
 			// Use the attachments filled in the first pass as input attachments
-			subpass.inputAttachmentCount = 2;
+			subpass.inputAttachmentCount = 1;
 			subpass.pInputAttachments = inputReferences[(i + 1) % 2];
 
 			subpasses_descriptions.push_back(subpass);
@@ -537,11 +551,11 @@ void Renderer::Vulkan::VulkanRenderPass::InitRenderPass()
 		// Attach the final subpass
 		{
 			// Point to the swapchain as the color refrence
-			VkSubpassDescription subpass = VulkanInitializers::SubpassDescription(color_attachment_refrence_swapchain);
+			VkSubpassDescription subpass = VulkanInitializers::SubpassDescription(color_attachment_refrence[0]);
 
 
 			// Use the attachments filled in the first pass as input attachments
-			subpass.inputAttachmentCount = 2;
+			subpass.inputAttachmentCount = 1;
 			subpass.pInputAttachments = inputReferences[(m_subpass_count) % 2];
 
 			subpasses_descriptions.push_back(subpass);
@@ -799,12 +813,12 @@ void Renderer::Vulkan::VulkanRenderPass::CreateAttachmentImages(VkFormat format,
 	VkImageAspectFlags aspectMask = 0;
 	VkImageLayout imageLayout;
 
-	if ((usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) == VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)
+	if (usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)
 	{
 		aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 	}
-	if ((usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) == VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)
+	if (usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)
 	{
 		aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
 		imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
@@ -812,8 +826,38 @@ void Renderer::Vulkan::VulkanRenderPass::CreateAttachmentImages(VkFormat format,
 
 
 
-	VulkanCommon::CreateImage(m_device, m_swapchain->GetSwapchainExtent(), format, VK_IMAGE_TILING_OPTIMAL, usage | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, attachment.image, attachment.memory);
-	VulkanCommon::CreateImageView(m_device, attachment.image, format, aspectMask, attachment.view);
+	VulkanCommon::CreateImage(m_device, m_swapchain->GetSwapchainExtent(), format, VK_IMAGE_TILING_OPTIMAL, 
+		usage | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, attachment.image, attachment.memory, VK_IMAGE_LAYOUT_UNDEFINED);
+
+	//VulkanCommon::CreateImageView(m_device, attachment.image, format, aspectMask, attachment.view);
+
+
+
+	{
+		// Create image view
+		VkImageViewCreateInfo create_info = {};
+		create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+		create_info.image = attachment.image;
+		create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+		create_info.format = format;
+		create_info.subresourceRange = {};
+		create_info.subresourceRange.aspectMask = aspectMask;
+		create_info.subresourceRange.baseMipLevel = 0;
+		create_info.subresourceRange.levelCount = 1;
+		create_info.subresourceRange.baseArrayLayer = 0;
+		create_info.subresourceRange.layerCount = 1;
+		vkCreateImageView(
+			*m_device->GetVulkanDevice(),
+			&create_info,
+			nullptr,
+			&attachment.view
+		);
+	}
+
+
+
+
+
 
 
 	{ // Define image sampler

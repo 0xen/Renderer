@@ -340,6 +340,25 @@ VkImageCreateInfo Renderer::Vulkan::VulkanInitializers::ImageCreateInfo(uint32_t
 	return image_info;
 }
 
+VkImageCreateInfo Renderer::Vulkan::VulkanInitializers::ImageCreateInfo(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkImageLayout initialLayout, uint32_t mip_levels)
+{
+	VkImageCreateInfo image_info = {};
+	image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	image_info.imageType = VK_IMAGE_TYPE_2D;
+	image_info.extent.width = width;
+	image_info.extent.height = height;
+	image_info.extent.depth = 1;
+	image_info.mipLevels = mip_levels;
+	image_info.arrayLayers = 1;
+	image_info.format = format;
+	image_info.tiling = tiling;
+	image_info.initialLayout = initialLayout;
+	image_info.usage = usage;
+	image_info.samples = VK_SAMPLE_COUNT_1_BIT;
+	image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	return image_info;
+}
+
 VkImageMemoryBarrier Renderer::Vulkan::VulkanInitializers::ImageMemoryBarrier()
 {
 	VkImageMemoryBarrier image_memory_barrier{};

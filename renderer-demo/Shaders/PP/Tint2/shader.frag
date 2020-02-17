@@ -1,7 +1,6 @@
 #version 450
 
 layout (set = 0, binding = 0) uniform sampler2D inputColor;
-layout (set = 0, binding = 1) uniform sampler2D inputDepth;
 
 //layout (input_attachment_index = 0, binding = 0) uniform subpassInput inputColor;
 //layout (input_attachment_index = 1, binding = 1) uniform subpassInput inputDepth;

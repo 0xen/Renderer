@@ -352,7 +352,8 @@ int main(int argc, char **argv)
 
 
 
-	VulkanModelPool* sphere_pool = LoadModel("../../renderer-demo/media/scenes/Medieval_building.obj");
+	//VulkanModelPool* sphere_pool = LoadModel("../../renderer-demo/media/scenes/Medieval_building.obj");
+	VulkanModelPool* sphere_pool = LoadModel("../../renderer-demo/media/scenes/Sphere/sphere.obj");
 
 
 	//VulkanModelPool* sphere_pool = LoadModel("../../renderer-demo/media/scenes/CubePBR/cube.obj");
@@ -477,7 +478,7 @@ int main(int argc, char **argv)
 
 	acceleration->AttachModelPool(sphere_pool, 0);
 
-	acceleration->AttachModelPool(model_pool_lights, 0);
+	//acceleration->AttachModelPool(model_pool_lights, 0);
 	acceleration->Build();
 
 	struct ModelOffsets

@@ -93,16 +93,15 @@ void main()
 
     rayPayload.reflector = 1.0f;
 
-    for(int i = 0 ; i < MAX_RECURSION2; i ++)
+    for(int i = 0 ; i < 1/*MAX_RECURSION2*/; i ++)
     {
         TraceRay(ray);
 
         float max = ((rayPayload.reflector - 1.0f) * -1.0f);
         vec3 hitColor = rayPayload.color * max;
-        //vec3 hitColor = rayPayload.color;
+         color += rayPayload.color;
 
-
-        if (rayPayload.distance < 0.0f)// Missed
+        /*if (rayPayload.distance < 0.0f)// Missed
         { 
             color += hitColor;//rayPayload.color;
             break;
@@ -116,7 +115,7 @@ void main()
         {
             color += hitColor;
             break;
-        }
+        }*/
 
     }
 

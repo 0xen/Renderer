@@ -174,9 +174,12 @@ void Renderer::Vulkan::VulkanTextureBuffer::InitTexture()
 
 	VkSamplerCreateInfo sampler_info = VulkanInitializers::SamplerCreateInfo();
 
-
-	sampler_info.magFilter = VK_FILTER_LINEAR;
-	sampler_info.minFilter = VK_FILTER_LINEAR;
+	// Point
+	sampler_info.magFilter = VK_FILTER_NEAREST;
+	sampler_info.minFilter = VK_FILTER_NEAREST;
+	// Byliniar
+	//sampler_info.magFilter = VK_FILTER_LINEAR;
+	//sampler_info.minFilter = VK_FILTER_LINEAR;
 	sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
 	sampler_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
 	sampler_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;

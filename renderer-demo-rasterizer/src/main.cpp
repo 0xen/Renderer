@@ -538,17 +538,10 @@ int main(int argc, char **argv)
 		// Define the layout of the input coming to the pipeline from the swapchain
 		postProcessTintPipeline2->AttachDescriptorPool(0,render_pass->GetCombinedImageSamplerReadPool());
 
-		postProcessTintPipeline2->AttachVertexBinding(vertex_binding_vertex);/*
-																			postProcessTintPipeline->AttachDescriptorPool(texture_pool);
-																			postProcessTintPipeline->AttachDescriptorSet(0, texture_descriptor_set1);*/
+		postProcessTintPipeline2->AttachVertexBinding(vertex_binding_vertex);
 		postProcessTintPipeline2->Build();
 	}
-
-
 	postProcessTintPipeline2->AttachModelPool(model_pool2PP);
-
-
-
 	render_pass->AttachGraphicsPipeline(postProcessTintPipeline2);
 
 

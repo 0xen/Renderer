@@ -409,6 +409,14 @@ void Renderer::Vulkan::VulkanSwapchain::InitSemaphores()
 
 void Renderer::Vulkan::VulkanSwapchain::DeInitSemaphores()
 {
-	vkDestroySemaphore(*m_device->GetVulkanDevice(), m_image_available_semaphore, nullptr);
-	vkDestroySemaphore(*m_device->GetVulkanDevice(), m_render_finished_semaphore, nullptr);
+	if (m_image_available_semaphore != VK_NULL_HANDLE)
+	{
+		vkDestroySemaphore(*m_device->GetVulkanDevice(), m_image_available_semaphore, nullptr);
+		m_image_available_semaphore = VK_NULL_HANDLE;
+	}
+	if (m_render_finished_semaphore != VK_NULL_HANDLE)
+	{
+		vkDestroySemaphore(*m_device->GetVulkanDevice(), m_render_finished_semaphore, nullptr);
+		m_render_finished_semaphore = VK_NULL_HANDLE;
+	}
 }

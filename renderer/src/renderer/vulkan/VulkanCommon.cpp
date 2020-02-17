@@ -85,6 +85,44 @@ void VulkanCommon::CreateImage(VulkanDevice* device, VkExtent2D extent, VkFormat
 	);
 }
 
+void Renderer::Vulkan::VulkanCommon::CreateImage(VulkanDevice * device, VkExtent2D extent, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage & image, VkDeviceMemory & image_memory, VkImageLayout initialLayout)
+{
+	VkImageCreateInfo create_info = VulkanInitializers::ImageCreateInfo(extent.width, extent.height, format, tiling, usage, initialLayout);
+	vkCreateImage(
+		*device->GetVulkanDevice(),
+		&create_info,
+		nullptr,
+		&image
+	);
+
+	VkMemoryRequirements mem_requirements;
+	vkGetImageMemoryRequirements(
+		*device->GetVulkanDevice(),
+		image,
+		&mem_requirements
+	);
+
+	VkMemoryAllocateInfo alloc_info = VulkanInitializers::MemoryAllocateInfo(mem_requirements.size, FindMemoryType(
+		device->GetVulkanPhysicalDevice(),
+		mem_requirements.memoryTypeBits,
+		properties
+	));
+
+	vkAllocateMemory(
+		*device->GetVulkanDevice(),
+		&alloc_info,
+		nullptr,
+		&image_memory
+	);
+
+	vkBindImageMemory(
+		*device->GetVulkanDevice(),
+		image,
+		image_memory,
+		0
+	);
+}
+
 uint32_t VulkanCommon::FindMemoryType(VulkanPhysicalDevice * device, uint32_t type_filter, VkMemoryPropertyFlags properties)
 {
 	for (uint32_t i = 0; i < device->GetPhysicalDeviceMemoryProperties()->memoryTypeCount; i++)
@@ -321,6 +359,11 @@ void Renderer::Vulkan::VulkanCommon::CopyBuffer(VulkanDevice * device, VkBuffer 
 		&command_buffer
 	);
 
+	VkFence m_fence;
+	VkFenceCreateInfo fenceCreateInfo = VulkanInitializers::CreateFenceInfo();
+	VkResult res = vkCreateFence(*device->GetVulkanDevice(), &fenceCreateInfo, NULL, &m_fence);
+	assert(res == VK_SUCCESS);
+
 	VkCommandBufferBeginInfo begin_info = VulkanInitializers::CommandBufferBeginInfo(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
 
 	vkBeginCommandBuffer(
@@ -351,12 +394,18 @@ void Renderer::Vulkan::VulkanCommon::CopyBuffer(VulkanDevice * device, VkBuffer 
 		*device->GetGraphicsQueue(),
 		1,
 		&submit_info,
-		VK_NULL_HANDLE
-	);
-	vkQueueWaitIdle(
-		*device->GetGraphicsQueue()
+		m_fence
 	);
 
+	res = vkWaitForFences(*device->GetVulkanDevice(), 1, &m_fence, VK_TRUE, LONG_MAX);
+	assert(res == VK_SUCCESS && "Unable to wait for fence");
+
+	res = vkQueueWaitIdle(
+		*device->GetGraphicsQueue()
+	);
+	assert(res == VK_SUCCESS);
+
+	vkDestroyFence(*device->GetVulkanDevice(), m_fence, NULL);
 	vkFreeCommandBuffers(
 		*device->GetVulkanDevice(),
 		*device->GetGraphicsCommandPool(),

@@ -182,6 +182,8 @@ void main()
   normalMatrix = transpose(normalMatrix);
   vec3 normal = normalize(f_normal * normalMatrix);
 
+  rayPayload.color = normal;
+  return;
   rayPayload.normal = normal;
 
   vec2 texCoord = v0.texCoord * barycentrics.x + v1.texCoord * barycentrics.y +
