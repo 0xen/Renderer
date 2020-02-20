@@ -188,6 +188,8 @@ bool Renderer::Vulkan::VulkanRaytracePipeline::CreatePipeline()
 		m_shader_groupIndex++;
 	}
 
+
+
 	VkRayTracingPipelineCreateInfoNV create_info = VulkanInitializers::RayTracePipelineCreateInfoNV(m_shader_stages, m_shader_groups, m_pipeline_layout, m_max_depth);
 	
 	ErrorCheck(vkCreateRayTracingPipelinesNV(

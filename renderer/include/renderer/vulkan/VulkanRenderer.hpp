@@ -42,6 +42,9 @@ namespace Renderer
 
 			void Stop();
 			void Rebuild();
+
+			VulkanDevice* GetDevice();
+
 			VulkanUniformBuffer* CreateUniformBuffer(void* dataPtr, BufferChain level, unsigned int indexSize, unsigned int elementCount, bool modifiable);
 
 			VulkanVertexBuffer* CreateVertexBuffer(void* dataPtr, unsigned int indexSize, unsigned int elementCount);

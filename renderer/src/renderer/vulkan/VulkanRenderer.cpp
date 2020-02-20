@@ -81,6 +81,11 @@ void Renderer::Vulkan::VulkanRenderer::Rebuild()
 	m_swapchain->RebuildSwapchain();
 }
 
+VulkanDevice * Renderer::Vulkan::VulkanRenderer::GetDevice()
+{
+	return m_device;
+}
+
 VulkanUniformBuffer * Renderer::Vulkan::VulkanRenderer::CreateUniformBuffer(void * dataPtr, BufferChain level, unsigned int indexSize, unsigned int elementCount, bool modifiable)
 {
 	return new VulkanUniformBuffer(m_device, level, dataPtr, indexSize, elementCount, modifiable);

@@ -484,6 +484,8 @@ void Renderer::Vulkan::VulkanAcceleration::UpdateAsInstance()
 		for (auto& it : m_model_pools[i].model_pool->GetModels())
 		{
 			static const int position_buffer_index = 0;
+			// sometimes in threading this is a issue, not sure where it is coming from but its a patch
+			if (m_bottom_level_as.size() <= i)return;
 			// we set the hit group to 2 * i as there are two types of rays being used in this example, shadow rays and camera rays.
 			m_as_instance.push_back({ m_bottom_level_as[i].structure,it.second->GetData<glm::mat4>(position_buffer_index), i, m_model_pools[i].hitGroupOffset });
 		}
