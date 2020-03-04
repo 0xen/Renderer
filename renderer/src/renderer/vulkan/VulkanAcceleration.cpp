@@ -375,6 +375,12 @@ void Renderer::Vulkan::VulkanAcceleration::CreateTopLevelAS(VkCommandBuffer comm
 
 	m_acceleration_structure_definition = VulkanInitializers::WriteDescriptorSetAccelerator(m_top_level_as.structure);
 
+
+
+	// Bind top level memory on creation
+	VkBindAccelerationStructureMemoryInfoNV bindInfo = VulkanInitializers::AccelerationStructureMemoryInfoNV(m_top_level_as.structure, m_top_level_as.result.buffer_memory);
+
+	VkResult code = vkBindAccelerationStructureMemoryNV(*m_device->GetVulkanDevice(), 1, &bindInfo);
 }
 
 void Renderer::Vulkan::VulkanAcceleration::BuildTopLevelAS(VkCommandBuffer commandBuffer)
@@ -383,11 +389,6 @@ void Renderer::Vulkan::VulkanAcceleration::BuildTopLevelAS(VkCommandBuffer comma
 
 	unsigned int geometryInstanceCount = UpdateGeometryInstances();
 
-
-	VkBindAccelerationStructureMemoryInfoNV bindInfo = VulkanInitializers::AccelerationStructureMemoryInfoNV(m_top_level_as.structure, m_top_level_as.result.buffer_memory);
-
-
-	VkResult code = vkBindAccelerationStructureMemoryNV(*m_device->GetVulkanDevice(), 1, &bindInfo);
 
 
 	VkAccelerationStructureInfoNV acceleration_structure_info = VulkanInitializers::AccelerationStructureInfo(0, geometryInstanceCount);

@@ -18,6 +18,7 @@ namespace Renderer
 		class VulkanGraphicsPipeline;
 		class VulkanDescriptorPool;
 		class VulkanDescriptorSet;
+		class VulkanTextureBuffer;
 		class VulkanRenderer;
 		class VulkanSwapchain : public VulkanStatus
 		{
@@ -44,6 +45,8 @@ namespace Renderer
 			VkFormat GetSwapChainImageFormat();
 			VkExtent2D GetSwapchainExtent();
 
+			char* GetRaytraceStorageTextureData();
+			VulkanTextureBuffer* GetRayTraceStorageTexture();
 		private:
 
 			void CreateSwapchain();
@@ -94,9 +97,12 @@ namespace Renderer
 
 
 			// Raytrace Storage image
-			VkImage m_raytrace_storage_image;
-			VkDeviceMemory m_raytrace_storage_image_memory;
-			VkImageView  m_raytrace_storage_image_view;
+			//VkImage m_raytrace_storage_image;
+			//VkDeviceMemory m_raytrace_storage_image_memory;
+			//VkImageView  m_raytrace_storage_image_view;
+
+			char* m_raytrace_storage_texture_data;
+			VulkanTextureBuffer* m_raytrace_storage_texture;
 
 			// Semaphores
 			VkSemaphore m_image_available_semaphore;

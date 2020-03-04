@@ -170,8 +170,10 @@ void Renderer::Vulkan::VulkanDevice::GetGraphicsCommand(VkCommandBuffer * buffer
 void Renderer::Vulkan::VulkanDevice::SubmitGraphicsCommand(VkCommandBuffer * buffers, uint32_t count)
 {
 	VkSubmitInfo submit_info = VulkanInitializers::SubmitInfo(buffers, count);
-	ErrorCheck(vkQueueSubmit(m_graphics_queue, 1, &submit_info, VK_NULL_HANDLE));
-	ErrorCheck(vkQueueWaitIdle(m_graphics_queue));
+	bool suc = ErrorCheck(vkQueueSubmit(m_graphics_queue, 1, &submit_info, VK_NULL_HANDLE));
+	assert(!suc);
+	suc = ErrorCheck(vkQueueWaitIdle(m_graphics_queue));
+	assert(!suc);
 }
 
 void Renderer::Vulkan::VulkanDevice::FreeGraphicsCommand(VkCommandBuffer * buffers, uint32_t count)

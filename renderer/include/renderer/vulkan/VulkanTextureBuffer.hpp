@@ -16,6 +16,7 @@ namespace Renderer
 			virtual ~VulkanTextureBuffer();
 			VkImage& GetImage();
 			virtual void SetData(BufferSlot slot);
+			void GetData(BufferSlot slot);
 			virtual intptr_t GetTextureID();
 			unsigned int GetWidth();
 			unsigned int GetHeight();
@@ -23,6 +24,7 @@ namespace Renderer
 		private:
 			void InitTexture();
 			void MoveDataToImage();
+			void MoveImageToPtr();
 
 			static unsigned int GetFormatSize(VkFormat format);
 

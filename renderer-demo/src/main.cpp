@@ -598,6 +598,25 @@ int main(int argc, char **argv)
 
 	float rotate = 0.0f;
 
+
+	/*
+
+	char testImageDataWrite[4]{10,20,30,40};
+	VulkanTextureBuffer* test_texture = renderer->CreateTextureBuffer(testImageDataWrite, VkFormat::VK_FORMAT_R8G8B8A8_UNORM, 1, 1,
+		VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_LAYOUT_GENERAL);
+
+	for (int i = 0; i < 4; i++)
+	{
+		testImageDataWrite[i] = 0;
+	}
+
+	test_texture->GetData(BufferSlot::Primary);
+
+	//test_texture->set*/
+
+
+
+
 	while (renderer->IsRunning())
 	{
 		rotate += 0.001f;
@@ -605,7 +624,7 @@ int main(int argc, char **argv)
 		//lights[1].position = glm::vec3(cos(rotate)*orbit,0.0f,sin(rotate)*orbit);
 		lightBuffer->SetData(BufferSlot::Primary);
 
-		//house->SetData(POSITION_BUFFER, glm::translate(modelPosition, glm::vec3(0, sin(rotate)*3, 0)));
+		house->SetData(POSITION_BUFFER, glm::translate(house->GetData<glm::mat4>(POSITION_BUFFER), glm::vec3(0, sin(rotate)*3, 0)));
 		house->SetData(POSITION_BUFFER, glm::rotate(house->GetData<glm::mat4>(POSITION_BUFFER), 0.001f, glm::vec3(0, 1, 0)));
 
 
@@ -614,6 +633,10 @@ int main(int argc, char **argv)
 		acceleration->Update();
 
 		render_pass->Render();
+
+
+		swapchain->GetRayTraceStorageTexture()->GetData(BufferSlot::Primary);
+		char* data = swapchain->GetRaytraceStorageTextureData();
 
 		PollWindow();
 	}

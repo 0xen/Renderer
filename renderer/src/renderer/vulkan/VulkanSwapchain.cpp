@@ -9,6 +9,7 @@
 #include <renderer/vulkan/VulkanRenderer.hpp>
 #include <renderer/vulkan/VulkanDescriptorPool.hpp>
 #include <renderer/vulkan/VulkanDescriptorSet.hpp>
+#include <renderer/vulkan/VulkanTextureBuffer.hpp>
 
 #include <assert.h>
 
@@ -50,7 +51,7 @@ VkImageView Renderer::Vulkan::VulkanSwapchain::GetBackBufferImage(unsigned int i
 
 VkDescriptorImageInfo Renderer::Vulkan::VulkanSwapchain::GetRayTraceStagingBuffer()
 {
-	return VulkanInitializers::DescriptorImageInfo(nullptr, m_raytrace_storage_image_view, VK_IMAGE_LAYOUT_GENERAL);
+	return m_raytrace_storage_texture->GetDescriptorImageInfo(BufferSlot::Primary);
 }
 
 VkSubmitInfo Renderer::Vulkan::VulkanSwapchain::GetSubmitInfo()
@@ -118,7 +119,7 @@ uint32_t Renderer::Vulkan::VulkanSwapchain::GetImageCount()
 
 VkImage Renderer::Vulkan::VulkanSwapchain::GetRaytracingScratchImage()
 {
-	return m_raytrace_storage_image;
+	return m_raytrace_storage_texture->GetImage();
 }
 
 std::vector<VkImage> Renderer::Vulkan::VulkanSwapchain::GetSwapchainImages()
@@ -149,6 +150,16 @@ VkFormat Renderer::Vulkan::VulkanSwapchain::GetSwapChainImageFormat()
 VkExtent2D Renderer::Vulkan::VulkanSwapchain::GetSwapchainExtent()
 {
 	return m_swap_chain_extent;
+}
+
+char* Renderer::Vulkan::VulkanSwapchain::GetRaytraceStorageTextureData()
+{
+	return m_raytrace_storage_texture_data;
+}
+
+Renderer::Vulkan::VulkanTextureBuffer* Renderer::Vulkan::VulkanSwapchain::GetRayTraceStorageTexture()
+{
+	return m_raytrace_storage_texture;
 }
 
 void Renderer::Vulkan::VulkanSwapchain::CreateSwapchain()
@@ -371,15 +382,24 @@ void Renderer::Vulkan::VulkanSwapchain::DeInitSwapchainImages()
 
 void Renderer::Vulkan::VulkanSwapchain::InitRaytracingTempImage()
 {
-	VulkanCommon::CreateImage(m_device, m_swap_chain_extent, m_swap_chain_image_format, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_STORAGE_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_raytrace_storage_image, m_raytrace_storage_image_memory);
-	VulkanCommon::CreateImageView(m_device, m_raytrace_storage_image, m_swap_chain_image_format, VK_IMAGE_ASPECT_COLOR_BIT, m_raytrace_storage_image_view);
+	
+	m_raytrace_storage_texture_data = new char[4 * m_swap_chain_extent.width * m_swap_chain_extent.height];
+	m_raytrace_storage_texture = new VulkanTextureBuffer(m_device, BufferChain::Single, m_raytrace_storage_texture_data,
+		VkFormat::VK_FORMAT_R8G8B8A8_UNORM,m_swap_chain_extent.width, m_swap_chain_extent.height,
+		VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_LAYOUT_GENERAL);
 
-	VulkanCommon::TransitionImageLayout(m_device, m_raytrace_storage_image, m_swap_chain_image_format, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 });
+	//VulkanCommon::CreateImage(m_device, m_swap_chain_extent, m_swap_chain_image_format, VK_IMAGE_TILING_OPTIMAL, 
+	//	VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_STORAGE_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_raytrace_storage_image, m_raytrace_storage_image_memory);
+	//VulkanCommon::CreateImageView(m_device, m_raytrace_storage_image, m_swap_chain_image_format, VK_IMAGE_ASPECT_COLOR_BIT, m_raytrace_storage_image_view);
+
+	//VulkanCommon::TransitionImageLayout(m_device, m_raytrace_storage_image, m_swap_chain_image_format, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 });
 }
 
 void Renderer::Vulkan::VulkanSwapchain::DeInitRaytracingTempImage()
 {
-	vkDestroyImageView(
+	delete m_raytrace_storage_texture;
+	delete[] m_raytrace_storage_texture_data;
+	/*vkDestroyImageView(
 		*m_device->GetVulkanDevice(),
 		m_raytrace_storage_image_view,
 		nullptr
@@ -393,7 +413,7 @@ void Renderer::Vulkan::VulkanSwapchain::DeInitRaytracingTempImage()
 		*m_device->GetVulkanDevice(),
 		m_raytrace_storage_image,
 		nullptr
-	);
+	);*/
 }
 
 void Renderer::Vulkan::VulkanSwapchain::InitSemaphores()

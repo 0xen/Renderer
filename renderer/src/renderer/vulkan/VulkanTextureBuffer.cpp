@@ -8,7 +8,7 @@ using namespace Renderer::Vulkan;
 
 Renderer::Vulkan::VulkanTextureBuffer::VulkanTextureBuffer(VulkanDevice * device, BufferChain level, VkFormat format, unsigned int width, unsigned int height, VkImageUsageFlags usageFlags, VkImageLayout layout) :
 	VulkanBuffer(device, level, nullptr, GetFormatSize(format) * width * height, 1,
-		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+		VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
 {
 	m_imageUsageFlags = usageFlags;
@@ -25,7 +25,7 @@ Renderer::Vulkan::VulkanTextureBuffer::VulkanTextureBuffer(VulkanDevice * device
 
 Renderer::Vulkan::VulkanTextureBuffer::VulkanTextureBuffer(VulkanDevice * device, BufferChain level, void * dataPtr, VkFormat format, unsigned int width, unsigned int height, VkImageUsageFlags usageFlags, VkImageLayout layout) :
 	VulkanBuffer(device, level, dataPtr, GetFormatSize(format) * width * height, 1,
-		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+		VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
 {
 	m_imageUsageFlags = usageFlags;
@@ -78,6 +78,11 @@ void Renderer::Vulkan::VulkanTextureBuffer::SetData(BufferSlot slot)
 	if (m_local_allocation[(unsigned int)slot].dataPtr != nullptr)
 		VulkanBuffer::SetData(slot);
 	MoveDataToImage();
+}
+
+void Renderer::Vulkan::VulkanTextureBuffer::GetData(BufferSlot slot)
+{
+	MoveImageToPtr();
 }
 
 intptr_t Renderer::Vulkan::VulkanTextureBuffer::GetTextureID()
@@ -290,6 +295,72 @@ void Renderer::Vulkan::VulkanTextureBuffer::MoveDataToImage()
 	m_device->SubmitGraphicsCommand(&copy_cmd, 1);
 
 	m_device->FreeGraphicsCommand(&copy_cmd, 1);
+}
+
+void Renderer::Vulkan::VulkanTextureBuffer::MoveImageToPtr()
+{
+	VkCommandBuffer copy_cmd;
+	m_device->GetGraphicsCommand(&copy_cmd, true);
+
+	// The sub resource range describes the regions of the image we will be transition
+	VkImageSubresourceRange subresourceRange = {};
+	// Image only contains color data
+	subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	// Start at first mip level
+	subresourceRange.baseMipLevel = 0;
+	// We will transition on all mip levels
+	subresourceRange.levelCount = m_mipLevels;
+	// The 2D texture only has one layer
+	subresourceRange.layerCount = 1;
+
+	// Optimal image will be used as destination for the copy, so we must transfer from our
+	// initial undefined image layout to the transfer destination layout
+
+	VulkanCommon::SetImageLayout(
+		copy_cmd,
+		m_image,
+		VK_IMAGE_LAYOUT_UNDEFINED,
+		VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+		subresourceRange//,
+		//VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+		//VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT
+	);
+
+
+	// Copy mip levels from staging buffer
+	vkCmdCopyImageToBuffer(
+		copy_cmd,
+		m_image,
+		VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+		GetBufferData(BufferSlot::Primary)->buffer,
+		static_cast<uint32_t>(m_bufferCopyRegions.size()),
+		m_bufferCopyRegions.data());
+
+
+	VulkanCommon::SetImageLayout(
+		copy_cmd,
+		m_image,
+		VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+		m_image_layout,
+		subresourceRange//,
+		//VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+		//VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT
+	);
+
+
+	ErrorCheck(vkEndCommandBuffer(copy_cmd));
+
+
+	m_device->SubmitGraphicsCommand(&copy_cmd, 1);
+
+	m_device->FreeGraphicsCommand(&copy_cmd, 1);
+
+
+	memcpy(
+		m_local_allocation[(unsigned int)BufferSlot::Primary].dataPtr,
+		m_gpu_allocation[(unsigned int)BufferSlot::Primary].buffer.mapped_memory,
+		(::size_t)m_local_allocation[(unsigned int)BufferSlot::Primary].bufferSize
+	);
 }
 
 unsigned int Renderer::Vulkan::VulkanTextureBuffer::GetFormatSize(VkFormat format)
