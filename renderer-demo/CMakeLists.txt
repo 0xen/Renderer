@@ -15,10 +15,10 @@ set(HAVE_LIBC TRUE)
 
 # Load Lodepng
 set(lodepng_src
-    ../../lodepng/lodepng.cpp
+    ../third_party/lodepng/lodepng.cpp
 )
 set(lodepng_headers
-    ../../lodepng/lodepng.h
+    ../third_party/lodepng/lodepng.h
 )
 list(APPEND src ${lodepng_src})
 list(APPEND headers ${lodepng_headers})
