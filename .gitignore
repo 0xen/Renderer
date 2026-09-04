@@ -1,0 +1,17 @@
+# Scratch workspace (memories, skills, screenshots, artifacts) — never committed
+Scratch/
+
+# Build output
+build/
+out/
+cmake-build-*/
+
+# Visual Studio / VS Code / CLion
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+
+# CMake local caches
+CMakeUserPresets.json
