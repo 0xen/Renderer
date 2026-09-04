@@ -3,6 +3,7 @@
 add_library(rend_gpu OBJECT
     src/instance.cpp
     src/device.cpp
+    src/swapchain.cpp
 )
 add_library(rend::gpu ALIAS rend_gpu)
 

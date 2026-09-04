@@ -25,6 +25,9 @@ enum class Feature : std::uint32_t {
 
 std::string_view featureName(Feature f);
 
+// Device extension names usable without pulling in Vulkan headers.
+inline constexpr const char* kSwapchainExtension = "VK_KHR_swapchain";
+
 // A requested capability profile: required features fail device selection
 // if unsupported; optional ones are enabled when available and reported.
 struct FeatureSet {

@@ -2,6 +2,7 @@
 #include "rend/platform/backend.h"
 
 #include <SDL3/SDL.h>
+#include <SDL3/SDL_vulkan.h>
 
 namespace rend::platform {
 
@@ -65,7 +66,7 @@ public:
     }
 
     Result<std::unique_ptr<PresentationTarget>> createTarget(const TargetDesc& desc) override {
-        SDL_WindowFlags flags = 0;
+        SDL_WindowFlags flags = SDL_WINDOW_VULKAN;
         switch (desc.style) {
         case WindowStyle::Decorated:
             flags |= SDL_WINDOW_RESIZABLE;
@@ -103,6 +104,22 @@ public:
         log::info("Created presentation target '{}' ({}x{}, style {})", desc.title, desc.size.width,
                   desc.size.height, static_cast<int>(desc.style));
         return std::unique_ptr<PresentationTarget>(std::make_unique<Sdl3Target>(window, desc.style));
+    }
+
+    std::vector<const char*> requiredVulkanInstanceExtensions() const override {
+        Uint32 count = 0;
+        const char* const* names = SDL_Vulkan_GetInstanceExtensions(&count);
+        return {names, names + count};
+    }
+
+    Result<VkSurfaceKHR> createVulkanSurface(VkInstance instance, PresentationTarget& target) override {
+        // Safe: this backend only ever hands out Sdl3Target instances.
+        auto& sdlTarget = static_cast<Sdl3Target&>(target);
+        VkSurfaceKHR surface = nullptr;
+        if (!SDL_Vulkan_CreateSurface(sdlTarget.handle(), instance, nullptr, &surface)) {
+            return Error{std::string("SDL_Vulkan_CreateSurface failed: ") + SDL_GetError()};
+        }
+        return surface;
     }
 
     std::vector<Event> pumpEvents() override {

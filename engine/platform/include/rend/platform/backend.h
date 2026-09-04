@@ -8,6 +8,11 @@
 #include <memory>
 #include <vector>
 
+// Vulkan forward declarations (x64 handles) — platform headers never pull
+// in Vulkan itself; this two-function seam is the only crossing point.
+typedef struct VkInstance_T* VkInstance;
+typedef struct VkSurfaceKHR_T* VkSurfaceKHR;
+
 namespace rend::platform {
 
 enum class BackendKind {
@@ -29,10 +34,12 @@ public:
     // Drains pending OS events, translated to portable Event values.
     virtual std::vector<Event> pumpEvents() = 0;
 
-    // --- Vulkan seam (the only place platform touches Vulkan; implemented
-    // next milestone): instance extensions needed to present to this
-    // backend's targets, and surface creation. Kept out of the interface
-    // until the gpu layer exists, so nothing here depends on Vulkan headers.
+    // --- Vulkan seam: the only place platform touches Vulkan. ---
+    // Instance extensions required to present to this backend's targets.
+    virtual std::vector<const char*> requiredVulkanInstanceExtensions() const = 0;
+    // Creates a presentable surface for a target this backend created.
+    virtual Result<VkSurfaceKHR> createVulkanSurface(VkInstance instance,
+                                                     PresentationTarget& target) = 0;
 };
 
 Result<std::unique_ptr<IPlatformBackend>> createBackend(BackendKind kind);
