@@ -2,6 +2,7 @@
 # feature negotiation land in the coming milestones.
 add_library(rend_gpu STATIC
     src/instance.cpp
+    src/device.cpp
 )
 add_library(rend::gpu ALIAS rend_gpu)
 

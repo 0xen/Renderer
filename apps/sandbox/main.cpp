@@ -1,4 +1,5 @@
 #include "rend/core/log.h"
+#include "rend/gpu/device.h"
 #include "rend/gpu/instance.h"
 #include "rend/platform/backend.h"
 
@@ -13,6 +14,13 @@ int main() {
         return 1;
     }
     auto instance = std::move(instanceResult).value();
+
+    auto deviceResult = gpu::Device::create(*instance, gpu::FeatureSet::gpuDriven());
+    if (!deviceResult) {
+        log::error("Vulkan device creation failed: {}", deviceResult.error().message);
+        return 1;
+    }
+    auto device = std::move(deviceResult).value();
 
     auto backendResult = platform::createBackend(platform::BackendKind::SDL3);
     if (!backendResult) {
