@@ -45,7 +45,7 @@ Result<std::unique_ptr<DescriptorTable>> DescriptorTable::create(const Device& d
                    .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT};
     bindings[8] = {.binding = 8,
                    .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
-                   .descriptorCount = 1,
+                   .descriptorCount = 4, // shadow cascades
                    .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT};
     bindings[9] = {.binding = 9,
                    .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER,
@@ -85,7 +85,7 @@ Result<std::unique_ptr<DescriptorTable>> DescriptorTable::create(const Device& d
 
     const std::array<VkDescriptorPoolSize, 3> poolSizes{
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 6},
-        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, maxTextures + 1},
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, maxTextures + 4},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_SAMPLER, 2}};
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -201,7 +201,7 @@ void DescriptorTable::writeStorageBuffer(std::uint32_t binding, VkBuffer buffer,
     vkUpdateDescriptorSets(device_->handle(), 1, &write, 0, nullptr);
 }
 
-void DescriptorTable::writeShadowMap(VkImageView view) {
+void DescriptorTable::writeShadowMap(std::uint32_t cascade, VkImageView view) {
     VkDescriptorImageInfo info{};
     info.imageView = view;
     info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -209,6 +209,7 @@ void DescriptorTable::writeShadowMap(VkImageView view) {
     write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     write.dstSet = set_;
     write.dstBinding = 8;
+    write.dstArrayElement = cascade;
     write.descriptorCount = 1;
     write.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
     write.pImageInfo = &info;

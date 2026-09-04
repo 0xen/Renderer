@@ -233,8 +233,9 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
     }
 
     // Binds the batch's geometry/descriptors and emits its draw stream
-    // with the given pipeline — shared by the shadow and main passes.
-    auto bindAndDraw = [&](const Pipeline& p) {
+    // with the given pipeline — shared by the shadow and main passes. The
+    // cascade index only matters to the shadow pipeline.
+    auto bindAndDraw = [&](const Pipeline& p, std::uint32_t cascade) {
         const VkDeviceSize zero = 0;
         if (batch->descriptors != VK_NULL_HANDLE) {
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, p.layout(), 0, 1,
@@ -242,9 +243,10 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
         }
         vkCmdBindVertexBuffers(cmd, 0, 1, &batch->geometry, &zero);
         vkCmdBindIndexBuffer(cmd, batch->geometry, 0, VK_INDEX_TYPE_UINT32);
+        const std::uint32_t push[2] = {slot, cascade};
         vkCmdPushConstants(cmd, p.layout(),
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-                           sizeof(slot), &slot);
+                           sizeof(push), push);
         switch (batch->mode) {
         case DrawSubmitMode::IndirectCount:
             vkCmdDrawIndexedIndirectCount(cmd, batch->indirect,
@@ -272,62 +274,67 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
     shadowDependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
     shadowDependency.imageMemoryBarrierCount = 1;
 
-    if (batch && batch->shadowPipeline && batch->shadowMap) {
-        // Depth-only pass from the light's view. Contents are cleared, so
-        // the old layout is UNDEFINED; the barrier orders against the
-        // previous frame's sampling and depth writes.
-        VkImageMemoryBarrier2 toShadowWrite = imageBarrier(
-            batch->shadowMap->handle(), VK_IMAGE_LAYOUT_UNDEFINED,
-            VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-            VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
-            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-            VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
+    if (batch && batch->shadowPipeline && batch->cascadeCount > 0) {
+        for (std::uint32_t c = 0; c < batch->cascadeCount; ++c) {
+            const Image* map = batch->shadowCascades[c];
+            // Depth-only pass from the light's view. Contents are cleared,
+            // so the old layout is UNDEFINED; the barrier orders against
+            // the previous frame's sampling and depth writes.
+            VkImageMemoryBarrier2 toShadowWrite = imageBarrier(
+                map->handle(), VK_IMAGE_LAYOUT_UNDEFINED,
+                VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+                VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT |
+                    VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
+                VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
+                    VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
+                VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+                    VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT);
+            toShadowWrite.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+            shadowDependency.pImageMemoryBarriers = &toShadowWrite;
+            vkCmdPipelineBarrier2(cmd, &shadowDependency);
+
+            VkRenderingAttachmentInfo shadowDepth{};
+            shadowDepth.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+            shadowDepth.imageView = map->view();
+            shadowDepth.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+            shadowDepth.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+            shadowDepth.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+            shadowDepth.clearValue.depthStencil = {1.0f, 0};
+
+            const VkExtent2D shadowExtent{map->width(), map->height()};
+            VkRenderingInfo shadowRendering{};
+            shadowRendering.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+            shadowRendering.renderArea = {{0, 0}, shadowExtent};
+            shadowRendering.layerCount = 1;
+            shadowRendering.pDepthAttachment = &shadowDepth;
+            vkCmdBeginRendering(cmd, &shadowRendering);
+
+            const VkViewport shadowViewport{0.0f,
+                                            0.0f,
+                                            static_cast<float>(shadowExtent.width),
+                                            static_cast<float>(shadowExtent.height),
+                                            0.0f,
+                                            1.0f};
+            const VkRect2D shadowScissor{{0, 0}, shadowExtent};
+            vkCmdSetViewport(cmd, 0, 1, &shadowViewport);
+            vkCmdSetScissor(cmd, 0, 1, &shadowScissor);
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                              batch->shadowPipeline->handle());
+            bindAndDraw(*batch->shadowPipeline, c);
+            vkCmdEndRendering(cmd);
+
+            // Written depth becomes sampleable by the main pass's fragments.
+            VkImageMemoryBarrier2 toShadowRead = imageBarrier(
+                map->handle(), VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                 VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
-            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
-                VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT);
-        toShadowWrite.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-        shadowDependency.pImageMemoryBarriers = &toShadowWrite;
-        vkCmdPipelineBarrier2(cmd, &shadowDependency);
-
-        VkRenderingAttachmentInfo shadowDepth{};
-        shadowDepth.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        shadowDepth.imageView = batch->shadowMap->view();
-        shadowDepth.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-        shadowDepth.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        shadowDepth.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-        shadowDepth.clearValue.depthStencil = {1.0f, 0};
-
-        const VkExtent2D shadowExtent{batch->shadowMap->width(), batch->shadowMap->height()};
-        VkRenderingInfo shadowRendering{};
-        shadowRendering.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-        shadowRendering.renderArea = {{0, 0}, shadowExtent};
-        shadowRendering.layerCount = 1;
-        shadowRendering.pDepthAttachment = &shadowDepth;
-        vkCmdBeginRendering(cmd, &shadowRendering);
-
-        const VkViewport shadowViewport{0.0f,
-                                        0.0f,
-                                        static_cast<float>(shadowExtent.width),
-                                        static_cast<float>(shadowExtent.height),
-                                        0.0f,
-                                        1.0f};
-        const VkRect2D shadowScissor{{0, 0}, shadowExtent};
-        vkCmdSetViewport(cmd, 0, 1, &shadowViewport);
-        vkCmdSetScissor(cmd, 0, 1, &shadowScissor);
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, batch->shadowPipeline->handle());
-        bindAndDraw(*batch->shadowPipeline);
-        vkCmdEndRendering(cmd);
-
-        // Written depth becomes sampleable by the main pass's fragments.
-        VkImageMemoryBarrier2 toShadowRead = imageBarrier(
-            batch->shadowMap->handle(), VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-            VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
-            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-            VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
-        toShadowRead.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-        shadowDependency.pImageMemoryBarriers = &toShadowRead;
-        vkCmdPipelineBarrier2(cmd, &shadowDependency);
+                VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
+            toShadowRead.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+            shadowDependency.pImageMemoryBarriers = &toShadowRead;
+            vkCmdPipelineBarrier2(cmd, &shadowDependency);
+        }
     }
 
     VkImage image = swapchain_->images()[imageIndex];
@@ -396,7 +403,7 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.handle());
     if (batch) {
         // The whole scene: geometry pool bound once, one indirect stream.
-        bindAndDraw(pipeline);
+        bindAndDraw(pipeline, 0);
     } else {
         vkCmdDraw(cmd, 3, 1, 0, 0);
     }

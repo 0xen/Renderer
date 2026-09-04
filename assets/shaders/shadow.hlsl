@@ -3,21 +3,23 @@
 // so their shadows match their silhouettes instead of their quads.
 
 struct PushConstants {
-    uint slot; // frame-in-flight index into the light buffer
+    uint slot;    // frame-in-flight index into the light buffer
+    uint cascade; // which cascade this pass renders
 };
 [[vk::push_constant]] PushConstants pc;
 
 // Must match LightData in the viewer / scene.hlsl.
 struct LightData {
-    column_major float4x4 viewProj;
+    column_major float4x4 cascadeViewProj[4];
+    float4 splitDepths;
     float3 direction;
     float intensity;
     float3 color;
     float pcfRadius;
     float biasBase;
     float mapSize;
-    float pad0;
-    float pad1;
+    uint cascadeCount;
+    uint debugTint;
 };
 
 struct ObjectData {
@@ -47,7 +49,7 @@ struct VSOutput {
 
 VSOutput VSMain(VSInput input) {
     VSOutput output;
-    output.position = mul(lights[pc.slot].viewProj, float4(input.position, 1.0f));
+    output.position = mul(lights[pc.slot].cascadeViewProj[pc.cascade], float4(input.position, 1.0f));
     output.uv = input.uv;
     output.objectIndex = input.instanceId;
     return output;

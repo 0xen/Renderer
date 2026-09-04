@@ -27,7 +27,7 @@ class Device;
 //   5 — draw counts SSBO (compute: one uint32 per frame slot)
 //   6 — camera SSBO (vertex + compute: one viewProj per frame slot)
 //   7 — light SSBO (vertex + fragment: per-slot light data + matrix)
-//   8 — shadow map (fragment; depth image sampled by the scene pass)
+//   8 — shadow cascade maps [4] (fragment; depth images the scene samples)
 //   9 — shadow comparison sampler (fragment; PCF, owned here)
 class DescriptorTable {
 public:
@@ -45,8 +45,8 @@ public:
     void writeTexture(std::uint32_t index, VkImageView view);
     // Storage-buffer bindings (3-7); binding picks which, see class comment.
     void writeStorageBuffer(std::uint32_t binding, VkBuffer buffer, std::uint64_t range);
-    // Binding 8: the depth image the scene pass samples for shadows.
-    void writeShadowMap(VkImageView view);
+    // Binding 8: one cascade's depth image the scene pass samples.
+    void writeShadowMap(std::uint32_t cascade, VkImageView view);
 
 private:
     DescriptorTable() = default;

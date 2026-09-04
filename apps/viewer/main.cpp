@@ -54,22 +54,29 @@ struct ObjectData {
 constexpr std::uint32_t kVertexStride = 8 * sizeof(float);
 
 constexpr std::uint32_t kShadowMapSize = 2048;
+constexpr std::uint32_t kShadowCascades = 3;
 constexpr float kPi = 3.14159265358979323846f;
+
+math::Vec3 vadd(const math::Vec3& a, const math::Vec3& b) {
+    return {a.x + b.x, a.y + b.y, a.z + b.z};
+}
+math::Vec3 vmul(const math::Vec3& v, float s) { return {v.x * s, v.y * s, v.z * s}; }
 
 // One region per frame slot in the light buffer (bindless binding 7).
 // Must match LightData in scene.hlsl / shadow.hlsl.
 struct LightData {
-    math::Mat4 viewProj{};
+    std::array<math::Mat4, 4> cascadeViewProj{};
+    std::array<float, 4> splitDepths{};
     std::array<float, 3> direction{0.0f, -1.0f, 0.0f};
     float intensity = 1.0f;
     std::array<float, 3> color{1.0f, 1.0f, 1.0f};
     float pcfRadius = 1.0f;
     float biasBase = 0.0015f;
     float mapSize = static_cast<float>(kShadowMapSize);
-    float pad0 = 0.0f;
-    float pad1 = 0.0f;
+    std::uint32_t cascadeCount = 0;
+    std::uint32_t debugTint = 0;
 };
-static_assert(sizeof(LightData) == 112);
+static_assert(sizeof(LightData) == 320);
 
 // Live-tunable sun state behind the ImGui panel; direction is stored as
 // angles so the sliders stay intuitive.
@@ -80,6 +87,8 @@ struct SunControls {
     std::array<float, 3> color{1.0f, 1.0f, 1.0f};
     float pcfRadius = 1.0f;
     float biasBase = 0.0015f;
+    float shadowDistance = 30.0f; // view-space reach of the cascades
+    bool debugTint = false;
 
     math::Vec3 direction() const {
         const float az = azimuthDeg * kPi / 180.0f;
@@ -99,24 +108,87 @@ struct SunControls {
     }
 };
 
-// Directional-light matrix fitted around the scene's bounding sphere: a
-// crude fit (cascades tighten it later), but it guarantees every caster
-// is inside the map.
-math::Mat4 lightViewProj(const math::Vec3& direction, const math::Vec3& aabbMin,
-                         const math::Vec3& aabbMax) {
-    const math::Vec3 center{(aabbMin.x + aabbMax.x) * 0.5f, (aabbMin.y + aabbMax.y) * 0.5f,
-                            (aabbMin.z + aabbMax.z) * 0.5f};
-    const math::Vec3 extent = math::sub(aabbMax, aabbMin);
-    const float radius = 0.5f * std::sqrt(math::dot(extent, extent));
-    const math::Vec3 d = math::normalize(direction);
-    const math::Vec3 eye{center.x - d.x * radius * 1.5f, center.y - d.y * radius * 1.5f,
-                         center.z - d.z * radius * 1.5f};
-    const math::Vec3 up = std::fabs(d.y) > 0.99f ? math::Vec3{1.0f, 0.0f, 0.0f}
-                                                 : math::Vec3{0.0f, 1.0f, 0.0f};
-    const math::Mat4 view = math::lookAt(eye, center, up);
-    const math::Mat4 proj =
-        math::orthographic(-radius, radius, -radius, radius, 0.1f, radius * 3.0f);
-    return math::mul(proj, view);
+struct CascadeFit {
+    std::array<math::Mat4, 4> viewProj{};
+    std::array<float, 4> splits{};
+};
+
+// Cascaded shadow fitting: split the camera frustum up to maxDistance
+// (log/linear blend), wrap each slice's bounding sphere in a light-space
+// ortho, snap the center to the texel grid (kills edge shimmer while
+// moving), and pull the near plane back by the scene radius so casters
+// outside the slice (roofs, walls) still land in the map.
+CascadeFit fitCascades(const math::Vec3& camPos, const math::Vec3& camForward, float fovDegrees,
+                       float aspect, const math::Vec3& lightDir, const math::Vec3& sceneMin,
+                       const math::Vec3& sceneMax, float maxDistance) {
+    CascadeFit out{};
+    constexpr float kNear = 0.1f;
+    constexpr float kLogBlend = 0.7f;
+
+    const math::Vec3 sceneExtent = math::sub(sceneMax, sceneMin);
+    const float sceneRadius = 0.5f * std::sqrt(math::dot(sceneExtent, sceneExtent));
+    const math::Vec3 d = math::normalize(lightDir);
+    const math::Vec3 lightUp0 = std::fabs(d.y) > 0.99f ? math::Vec3{1.0f, 0.0f, 0.0f}
+                                                       : math::Vec3{0.0f, 1.0f, 0.0f};
+    const math::Vec3 lightRight = math::normalize(math::cross(d, lightUp0));
+    const math::Vec3 lightUp = math::cross(lightRight, d);
+
+    const math::Vec3 forward = camForward;
+    const math::Vec3 right = math::normalize(math::cross(forward, {0.0f, 1.0f, 0.0f}));
+    const math::Vec3 up = math::cross(right, forward);
+    const float tanHalf = std::tan(fovDegrees * kPi / 180.0f * 0.5f);
+
+    float sliceNear = kNear;
+    for (std::uint32_t i = 0; i < kShadowCascades; ++i) {
+        const float t = static_cast<float>(i + 1) / kShadowCascades;
+        const float linear = kNear + (maxDistance - kNear) * t;
+        const float logarithmic = kNear * std::pow(maxDistance / kNear, t);
+        const float sliceFar = linear * (1.0f - kLogBlend) + logarithmic * kLogBlend;
+
+        // Bounding sphere of the slice's 8 corners.
+        math::Vec3 corners[8];
+        int corner = 0;
+        for (float depth : {sliceNear, sliceFar}) {
+            const float hh = tanHalf * depth;
+            const float hw = hh * aspect;
+            const math::Vec3 at = vadd(camPos, vmul(forward, depth));
+            for (int sy = -1; sy <= 1; sy += 2) {
+                for (int sx = -1; sx <= 1; sx += 2) {
+                    corners[corner++] = vadd(
+                        at, vadd(vmul(right, hw * static_cast<float>(sx)),
+                                 vmul(up, hh * static_cast<float>(sy))));
+                }
+            }
+        }
+        math::Vec3 center{};
+        for (const math::Vec3& c : corners) {
+            center = vadd(center, vmul(c, 1.0f / 8.0f));
+        }
+        float radius = 0.0f;
+        for (const math::Vec3& c : corners) {
+            const math::Vec3 delta = math::sub(c, center);
+            radius = std::max(radius, std::sqrt(math::dot(delta, delta)));
+        }
+
+        // Texel snap in the light's XY plane.
+        const float worldPerTexel = 2.0f * radius / static_cast<float>(kShadowMapSize);
+        const float cx =
+            std::round(math::dot(center, lightRight) / worldPerTexel) * worldPerTexel;
+        const float cy = std::round(math::dot(center, lightUp) / worldPerTexel) * worldPerTexel;
+        const float cz = math::dot(center, d);
+        const math::Vec3 snapped =
+            vadd(vadd(vmul(lightRight, cx), vmul(lightUp, cy)), vmul(d, cz));
+
+        const float backup = sceneRadius;
+        const math::Vec3 eye = math::sub(snapped, vmul(d, radius + backup));
+        const math::Mat4 view = math::lookAt(eye, snapped, lightUp0);
+        const math::Mat4 proj = math::orthographic(-radius, radius, -radius, radius, 0.05f,
+                                                   backup + radius * 3.0f);
+        out.viewProj[i] = math::mul(proj, view);
+        out.splits[i] = sliceFar;
+        sliceNear = sliceFar;
+    }
+    return out;
 }
 
 // Free-fly camera: yaw/pitch angles plus position, driven by RMB mouselook
@@ -301,7 +373,7 @@ int main(int argc, char** argv) {
     std::unique_ptr<gpu::Buffer> countBuffer;
     std::unique_ptr<gpu::Buffer> cameraBuffer; // one viewProj per frame slot, CPU-written
     std::unique_ptr<gpu::Buffer> lightBuffer;  // one LightData per frame slot, CPU-written
-    std::unique_ptr<gpu::Image> shadowMap;
+    std::vector<std::unique_ptr<gpu::Image>> shadowMaps; // one per cascade
     math::Vec3 sceneMin{1e30f, 1e30f, 1e30f};
     math::Vec3 sceneMax{-1e30f, -1e30f, -1e30f};
     std::vector<gpu::DrawIndexedIndirect> draws; // outlives the loop: Direct mode records from it
@@ -483,19 +555,21 @@ int main(int argc, char** argv) {
         }
         lightBuffer = std::move(lightResult).value();
 
-        auto shadowResult = gpu::Image::create(
-            *device, {
-                         .width = kShadowMapSize,
-                         .height = kShadowMapSize,
-                         .format = gpu::kFormatD32Sfloat,
-                         .usage = gpu::kImageUsageDepthAttachment | gpu::kImageUsageSampled,
-                         .depth = true,
-                     });
-        if (!shadowResult) {
-            log::error("Shadow map creation failed: {}", shadowResult.error().message);
-            return 1;
+        for (std::uint32_t c = 0; c < kShadowCascades; ++c) {
+            auto shadowResult = gpu::Image::create(
+                *device, {
+                             .width = kShadowMapSize,
+                             .height = kShadowMapSize,
+                             .format = gpu::kFormatD32Sfloat,
+                             .usage = gpu::kImageUsageDepthAttachment | gpu::kImageUsageSampled,
+                             .depth = true,
+                         });
+            if (!shadowResult) {
+                log::error("Shadow map creation failed: {}", shadowResult.error().message);
+                return 1;
+            }
+            shadowMaps.push_back(std::move(shadowResult).value());
         }
-        shadowMap = std::move(shadowResult).value();
 
         auto objectResult = gpu::Buffer::create(
             *device, {
@@ -547,7 +621,9 @@ int main(int argc, char** argv) {
         descriptorTable->writeStorageBuffer(5, countBuffer->handle(), countBuffer->size());
         descriptorTable->writeStorageBuffer(6, cameraBuffer->handle(), cameraBuffer->size());
         descriptorTable->writeStorageBuffer(7, lightBuffer->handle(), lightBuffer->size());
-        descriptorTable->writeShadowMap(shadowMap->view());
+        for (std::uint32_t c = 0; c < kShadowCascades; ++c) {
+            descriptorTable->writeShadowMap(c, shadowMaps[c]->view());
+        }
 
         auto uploaderResult = gpu::TextureUploader::create(*device);
         if (!uploaderResult) {
@@ -672,7 +748,7 @@ int main(int argc, char** argv) {
                                               {1, gpu::kFormatR32G32B32Sfloat, 12},
                                               {2, gpu::kFormatR32G32Sfloat, 24}},
                          .depthFormat = gpu::kFormatD32Sfloat,
-                         .pushConstantBytes = sizeof(std::uint32_t), // camera slot index
+                         .pushConstantBytes = 2 * sizeof(std::uint32_t), // {slot, cascade}
                          .descriptorLayout = descriptorTable->layout(),
                      });
         if (!sceneResult) {
@@ -718,7 +794,7 @@ int main(int argc, char** argv) {
                                                   {1, gpu::kFormatR32G32B32Sfloat, 12},
                                                   {2, gpu::kFormatR32G32Sfloat, 24}},
                              .depthFormat = gpu::kFormatD32Sfloat,
-                             .pushConstantBytes = sizeof(std::uint32_t),
+                             .pushConstantBytes = 2 * sizeof(std::uint32_t), // {slot, cascade}
                              .descriptorLayout = descriptorTable->layout(),
                          });
             if (shadowPipeResult) {
@@ -775,10 +851,13 @@ int main(int argc, char** argv) {
         batch.countRegionStride = sizeof(std::uint32_t);
         batch.cpuDraws = draws.data();
         batch.descriptors = descriptorTable->set();
-        if (shadowPipeline && shadowMap &&
+        if (shadowPipeline && !shadowMaps.empty() &&
             (scene->lights.empty() || scene->lights.front().castsShadows)) {
             batch.shadowPipeline = shadowPipeline.get();
-            batch.shadowMap = shadowMap.get();
+            for (std::uint32_t c = 0; c < kShadowCascades; ++c) {
+                batch.shadowCascades[c] = shadowMaps[c].get();
+            }
+            batch.cascadeCount = kShadowCascades;
         }
 
         const char* modeName = batch.mode == gpu::DrawSubmitMode::IndirectCount
@@ -937,12 +1016,20 @@ int main(int argc, char** argv) {
                         viewProj.data(), sizeof(math::Mat4));
             LightData lightData;
             const math::Vec3 direction = sun.direction();
-            lightData.viewProj = lightViewProj(direction, sceneMin, sceneMax);
+            const float aspect =
+                viewHeight > 0 ? static_cast<float>(viewWidth) / viewHeight : 1.0f;
+            const CascadeFit fit =
+                fitCascades(camera.position, camera.forward(), camera.fovDegrees, aspect,
+                            direction, sceneMin, sceneMax, sun.shadowDistance);
+            lightData.cascadeViewProj = fit.viewProj;
+            lightData.splitDepths = fit.splits;
             lightData.direction = {direction.x, direction.y, direction.z};
             lightData.intensity = sun.intensity;
             lightData.color = sun.color;
             lightData.pcfRadius = sun.pcfRadius;
             lightData.biasBase = sun.biasBase;
+            lightData.cascadeCount = batch.cascadeCount;
+            lightData.debugTint = sun.debugTint ? 1u : 0u;
             std::memcpy(static_cast<std::byte*>(lightBuffer->mapped()) +
                             renderer->frameSlot() * sizeof(LightData),
                         &lightData, sizeof(LightData));
@@ -961,6 +1048,8 @@ int main(int argc, char** argv) {
                 ImGui::ColorEdit3("Color", sun.color.data());
                 ImGui::SliderFloat("PCF radius", &sun.pcfRadius, 0.0f, 4.0f, "%.1f texels");
                 ImGui::SliderFloat("Bias", &sun.biasBase, 0.0002f, 0.0060f, "%.4f");
+                ImGui::SliderFloat("Shadow dist", &sun.shadowDistance, 5.0f, 60.0f, "%.0f m");
+                ImGui::Checkbox("Show cascades", &sun.debugTint);
                 ImGui::End();
             }
         }
