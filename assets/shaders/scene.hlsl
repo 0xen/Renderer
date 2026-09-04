@@ -1,12 +1,22 @@
 // Scene pass: geometry from the memory pool via indirect draws, camera via
-// push constant, materials through the bindless table. Each indirect
-// entry's firstInstance is the object index (dxc maps SV_InstanceID to
-// SPIR-V InstanceIndex, which includes firstInstance).
+// a per-frame-slot buffer (so a moving camera never touches the static
+// command buffers — only the slot index is baked as a push constant),
+// materials through the bindless table. Each indirect entry's
+// firstInstance is the object index (dxc maps SV_InstanceID to SPIR-V
+// InstanceIndex, which includes firstInstance).
 
 struct PushConstants {
-    float4x4 viewProj; // column_major (HLSL default), matches rend::math
+    uint cameraSlot; // frame-in-flight index into the camera buffer
 };
 [[vk::push_constant]] PushConstants pc;
+
+// Explicitly column_major: dxc does NOT apply the cbuffer default to
+// matrices inside structured buffers, so an unqualified float4x4 here
+// reads transposed (wrong camera position/orientation).
+struct CameraData {
+    column_major float4x4 viewProj; // matches rend::math memcpy
+};
+[[vk::binding(6, 0)]] StructuredBuffer<CameraData> cameras;
 
 struct ObjectData {
     uint textureIndex; // into the bindless texture array
@@ -35,7 +45,7 @@ struct VSOutput {
 
 VSOutput VSMain(VSInput input) {
     VSOutput output;
-    output.position = mul(pc.viewProj, float4(input.position, 1.0f));
+    output.position = mul(cameras[pc.cameraSlot].viewProj, float4(input.position, 1.0f));
     output.normal = input.normal;
     output.uv = input.uv;
     output.objectIndex = input.instanceId;

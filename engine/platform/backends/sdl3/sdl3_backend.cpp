@@ -14,7 +14,24 @@ Key translateKey(SDL_Keycode code) {
     case SDLK_SPACE: return Key::Space;
     case SDLK_RETURN: return Key::Enter;
     case SDLK_F11: return Key::F11;
+    case SDLK_W: return Key::W;
+    case SDLK_A: return Key::A;
+    case SDLK_S: return Key::S;
+    case SDLK_D: return Key::D;
+    case SDLK_Q: return Key::Q;
+    case SDLK_E: return Key::E;
+    case SDLK_LSHIFT: return Key::LeftShift;
+    case SDLK_LCTRL: return Key::LeftCtrl;
     default: return Key::Unknown;
+    }
+}
+
+MouseButton translateButton(Uint8 button) {
+    switch (button) {
+    case SDL_BUTTON_LEFT: return MouseButton::Left;
+    case SDL_BUTTON_RIGHT: return MouseButton::Right;
+    case SDL_BUTTON_MIDDLE: return MouseButton::Middle;
+    default: return MouseButton::Unknown;
     }
 }
 
@@ -106,6 +123,11 @@ public:
         return std::unique_ptr<PresentationTarget>(std::make_unique<Sdl3Target>(window, desc.style));
     }
 
+    void setRelativeMouseMode(PresentationTarget& target, bool enabled) override {
+        auto& sdlTarget = static_cast<Sdl3Target&>(target);
+        SDL_SetWindowRelativeMouseMode(sdlTarget.handle(), enabled);
+    }
+
     std::vector<const char*> requiredVulkanInstanceExtensions() const override {
         Uint32 count = 0;
         const char* const* names = SDL_Vulkan_GetInstanceExtensions(&count);
@@ -141,6 +163,25 @@ public:
                 break;
             case SDL_EVENT_KEY_UP:
                 events.push_back({.type = Event::Type::KeyUp, .key = translateKey(e.key.key)});
+                break;
+            case SDL_EVENT_MOUSE_MOTION:
+                events.push_back({.type = Event::Type::MouseMoved,
+                                  .mouseX = e.motion.x,
+                                  .mouseY = e.motion.y,
+                                  .mouseDeltaX = e.motion.xrel,
+                                  .mouseDeltaY = e.motion.yrel});
+                break;
+            case SDL_EVENT_MOUSE_BUTTON_DOWN:
+            case SDL_EVENT_MOUSE_BUTTON_UP:
+                events.push_back({.type = e.type == SDL_EVENT_MOUSE_BUTTON_DOWN
+                                              ? Event::Type::MouseButtonDown
+                                              : Event::Type::MouseButtonUp,
+                                  .button = translateButton(e.button.button),
+                                  .mouseX = e.button.x,
+                                  .mouseY = e.button.y});
+                break;
+            case SDL_EVENT_MOUSE_WHEEL:
+                events.push_back({.type = Event::Type::MouseWheel, .wheelDelta = e.wheel.y});
                 break;
             default:
                 break;

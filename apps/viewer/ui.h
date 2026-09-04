@@ -11,6 +11,10 @@ class Instance;
 class Swapchain;
 } // namespace rend::gpu
 
+namespace rend::platform {
+struct Event;
+} // namespace rend::platform
+
 namespace viewer {
 
 // Dear ImGui debug UI: lives entirely in the viewer app (the engine only
@@ -25,6 +29,10 @@ public:
 
     Ui(const Ui&) = delete;
     Ui& operator=(const Ui&) = delete;
+
+    // Feeds a platform event into ImGui (mouse position, buttons, wheel)
+    // so future interactive widgets work. Call for every pumped event.
+    void handleEvent(const rend::platform::Event& event);
 
     // Starts the ImGui frame and lays out the overlay widgets (currently
     // the FPS counter). Call once per frame before FrameRenderer::drawFrame.

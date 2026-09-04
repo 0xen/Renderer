@@ -14,7 +14,7 @@ Result<std::unique_ptr<DescriptorTable>> DescriptorTable::create(const Device& d
     auto table = std::unique_ptr<DescriptorTable>(new DescriptorTable());
     table->device_ = &device;
 
-    std::array<VkDescriptorSetLayoutBinding, 6> bindings{};
+    std::array<VkDescriptorSetLayoutBinding, 7> bindings{};
     bindings[0] = {.binding = 0,
                    .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
                    .descriptorCount = 1,
@@ -33,14 +33,21 @@ Result<std::unique_ptr<DescriptorTable>> DescriptorTable::create(const Device& d
                        .descriptorCount = 1,
                        .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT};
     }
+    // Camera buffer: one viewProj per frame slot; compute-visible too so
+    // frustum culling can read it later.
+    bindings[6] = {.binding = 6,
+                   .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                   .descriptorCount = 1,
+                   .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT};
 
-    // The cull bindings (3-5) are partially bound: only written when the
-    // compaction pass is active, and never statically used without it.
-    const std::array<VkDescriptorBindingFlags, 6> bindingFlags{
+    // The cull (3-5) and camera (6) bindings are partially bound: only
+    // written when their passes are active, never statically used without.
+    const std::array<VkDescriptorBindingFlags, 7> bindingFlags{
         0,
         VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT |
             VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT,
         0,
+        VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT,
         VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT,
         VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT,
         VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT};
@@ -62,7 +69,7 @@ Result<std::unique_ptr<DescriptorTable>> DescriptorTable::create(const Device& d
     }
 
     const std::array<VkDescriptorPoolSize, 3> poolSizes{
-        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 4},
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 5},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, maxTextures},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_SAMPLER, 1}};
     VkDescriptorPoolCreateInfo poolInfo{};

@@ -17,8 +17,10 @@
 
 #include "ui.h"
 
+#include <algorithm>
 #include <charconv>
 #include <chrono>
+#include <cmath>
 #include <format>
 #include <cstddef>
 #include <cstring>
@@ -49,18 +51,41 @@ struct ObjectData {
 // Interleaved vertex layout of the scene pass: position, normal, uv.
 constexpr std::uint32_t kVertexStride = 8 * sizeof(float);
 
-math::Mat4 cameraViewProj(const assetio::CameraDesc& camera, std::uint32_t width,
-                          std::uint32_t height) {
-    constexpr float kPi = 3.14159265358979323846f;
-    const auto& p = camera.position;
-    const auto& t = camera.target;
-    const math::Mat4 view =
-        math::lookAt({p[0], p[1], p[2]}, {t[0], t[1], t[2]}, {0.0f, 1.0f, 0.0f});
-    const float aspect = height > 0 ? static_cast<float>(width) / static_cast<float>(height) : 1.0f;
-    const math::Mat4 proj =
-        math::perspective(camera.fovDegrees * kPi / 180.0f, aspect, 0.1f, 300.0f);
-    return math::mul(proj, view);
-}
+constexpr float kPi = 3.14159265358979323846f;
+
+// Free-fly camera: yaw/pitch angles plus position, driven by RMB mouselook
+// and WASD/QE. Yaw 0 looks down -Z (matching math::lookAt's convention).
+struct FlyCamera {
+    math::Vec3 position{};
+    float yaw = 0.0f;   // radians, positive turns right (+X)
+    float pitch = 0.0f; // radians, positive looks up; clamped near +/-90
+    float fovDegrees = 60.0f;
+
+    math::Vec3 forward() const {
+        const float cp = std::cos(pitch);
+        return {cp * std::sin(yaw), std::sin(pitch), -cp * std::cos(yaw)};
+    }
+
+    math::Mat4 viewProj(std::uint32_t width, std::uint32_t height) const {
+        const math::Vec3 f = forward();
+        const math::Mat4 view = math::lookAt(
+            position, {position.x + f.x, position.y + f.y, position.z + f.z}, {0.0f, 1.0f, 0.0f});
+        const float aspect =
+            height > 0 ? static_cast<float>(width) / static_cast<float>(height) : 1.0f;
+        return math::mul(math::perspective(fovDegrees * kPi / 180.0f, aspect, 0.1f, 300.0f), view);
+    }
+
+    static FlyCamera fromScene(const assetio::CameraDesc& camera) {
+        FlyCamera out;
+        out.position = {camera.position[0], camera.position[1], camera.position[2]};
+        const math::Vec3 d = math::normalize(math::sub(
+            {camera.target[0], camera.target[1], camera.target[2]}, out.position));
+        out.yaw = std::atan2(d.x, -d.z);
+        out.pitch = std::asin(std::clamp(d.y, -1.0f, 1.0f));
+        out.fovDegrees = camera.fovDegrees;
+        return out;
+    }
+};
 
 // Interleave the assetio streams into the vertex layout the scene pass will
 // consume: position (3f), normal (3f), uv (2f). Missing streams pad with
@@ -208,6 +233,7 @@ int main(int argc, char** argv) {
     std::unique_ptr<gpu::Buffer> indirectBuffer;
     std::unique_ptr<gpu::Buffer> compactedBuffer;
     std::unique_ptr<gpu::Buffer> countBuffer;
+    std::unique_ptr<gpu::Buffer> cameraBuffer; // one viewProj per frame slot, CPU-written
     std::vector<gpu::DrawIndexedIndirect> draws; // outlives the loop: Direct mode records from it
     std::unique_ptr<gpu::Buffer> objectBuffer;
     std::unique_ptr<gpu::DescriptorTable> descriptorTable;
@@ -349,6 +375,22 @@ int main(int argc, char** argv) {
         }
         countBuffer = std::move(countResult).value();
 
+        // Camera matrices, one region per frame slot: rewritten by the CPU
+        // every frame (after waitFrameSlot), read by the vertex shader via
+        // the slot index push constant. This is what keeps static command
+        // buffers valid while the camera moves.
+        auto cameraResult = gpu::Buffer::create(
+            *device, {
+                         .size = sizeof(math::Mat4) * gpu::FrameRenderer::kFramesInFlight,
+                         .usage = gpu::kUsageStorage,
+                         .location = gpu::MemoryLocation::HostVisible,
+                     });
+        if (!cameraResult) {
+            log::error("Camera buffer creation failed: {}", cameraResult.error().message);
+            return 1;
+        }
+        cameraBuffer = std::move(cameraResult).value();
+
         auto objectResult = gpu::Buffer::create(
             *device, {
                          .size = objectData.size() * sizeof(ObjectData),
@@ -397,6 +439,7 @@ int main(int argc, char** argv) {
         descriptorTable->writeStorageBuffer(4, compactedBuffer->handle(),
                                             compactedBuffer->size());
         descriptorTable->writeStorageBuffer(5, countBuffer->handle(), countBuffer->size());
+        descriptorTable->writeStorageBuffer(6, cameraBuffer->handle(), cameraBuffer->size());
 
         auto uploaderResult = gpu::TextureUploader::create(*device);
         if (!uploaderResult) {
@@ -520,7 +563,7 @@ int main(int argc, char** argv) {
                                               {1, gpu::kFormatR32G32B32Sfloat, 12},
                                               {2, gpu::kFormatR32G32Sfloat, 24}},
                          .depthFormat = gpu::kFormatD32Sfloat,
-                         .pushConstantBytes = 64,
+                         .pushConstantBytes = sizeof(std::uint32_t), // camera slot index
                          .descriptorLayout = descriptorTable->layout(),
                      });
         if (!sceneResult) {
@@ -593,7 +636,6 @@ int main(int argc, char** argv) {
         batch.countRegionStride = sizeof(std::uint32_t);
         batch.cpuDraws = draws.data();
         batch.descriptors = descriptorTable->set();
-        batch.viewProj = cameraViewProj(scene->camera, extent.width, extent.height);
 
         const char* modeName = batch.mode == gpu::DrawSubmitMode::IndirectCount
                                    ? "indirect-count + GPU compaction"
@@ -635,6 +677,17 @@ int main(int argc, char** argv) {
                   stats.prerecords > 0 ? std::format(" | {} prerecords", stats.prerecords) : "");
     };
 
+    FlyCamera camera;
+    if (scene) {
+        camera = FlyCamera::fromScene(scene->camera);
+    }
+    // Held-key state for camera movement; mouselook while RMB is held.
+    bool keyHeld[static_cast<int>(platform::Key::LeftCtrl) + 1] = {};
+    bool mouselook = false;
+    constexpr float kLookSensitivity = 0.0025f; // radians per pixel
+    constexpr float kMoveSpeed = 3.0f;          // units per second
+    constexpr float kFastMultiplier = 5.0f;
+
     bool running = true;
     std::uint64_t frame = 0;
     std::uint32_t viewWidth = extent.width;
@@ -642,11 +695,15 @@ int main(int argc, char** argv) {
     auto lastFrameTime = std::chrono::steady_clock::now();
     while (running) {
         for (const auto& event : backend->pumpEvents()) {
+            if (ui) {
+                ui->handleEvent(event);
+            }
             switch (event.type) {
             case platform::Event::Type::CloseRequested:
                 running = false;
                 break;
             case platform::Event::Type::KeyDown:
+                keyHeld[static_cast<int>(event.key)] = true;
                 if (event.key == platform::Key::Escape) {
                     running = false;
                 }
@@ -657,14 +714,32 @@ int main(int argc, char** argv) {
                               renderer->staticRecording() ? "static" : "per-frame");
                 }
                 break;
+            case platform::Event::Type::KeyUp:
+                keyHeld[static_cast<int>(event.key)] = false;
+                break;
+            case platform::Event::Type::MouseButtonDown:
+                if (event.button == platform::MouseButton::Right) {
+                    mouselook = true;
+                    backend->setRelativeMouseMode(*target, true);
+                }
+                break;
+            case platform::Event::Type::MouseButtonUp:
+                if (event.button == platform::MouseButton::Right) {
+                    mouselook = false;
+                    backend->setRelativeMouseMode(*target, false);
+                }
+                break;
+            case platform::Event::Type::MouseMoved:
+                if (mouselook) {
+                    camera.yaw += event.mouseDeltaX * kLookSensitivity;
+                    camera.pitch = std::clamp(camera.pitch - event.mouseDeltaY * kLookSensitivity,
+                                              -0.49f * kPi, 0.49f * kPi);
+                }
+                break;
             case platform::Event::Type::Resized:
                 renderer->resize(event.size.width, event.size.height);
                 viewWidth = event.size.width;
                 viewHeight = event.size.height;
-                if (drawScene && event.size.width > 0 && event.size.height > 0) {
-                    batch.viewProj =
-                        cameraViewProj(scene->camera, event.size.width, event.size.height);
-                }
                 break;
             default:
                 break;
@@ -677,6 +752,39 @@ int main(int argc, char** argv) {
         const auto now = std::chrono::steady_clock::now();
         const float deltaSeconds = std::chrono::duration<float>(now - lastFrameTime).count();
         lastFrameTime = now;
+
+        // Camera movement from held keys (fly style: WASD in the view
+        // plane, Q/E down/up, Shift fast).
+        if (drawScene) {
+            auto held = [&](platform::Key k) { return keyHeld[static_cast<int>(k)]; };
+            const float speed = kMoveSpeed *
+                                (held(platform::Key::LeftShift) ? kFastMultiplier : 1.0f) *
+                                deltaSeconds;
+            const math::Vec3 f = camera.forward();
+            const math::Vec3 right = math::normalize(math::cross(f, {0.0f, 1.0f, 0.0f}));
+            auto move = [&](const math::Vec3& d, float s) {
+                camera.position = {camera.position.x + d.x * s, camera.position.y + d.y * s,
+                                   camera.position.z + d.z * s};
+            };
+            if (held(platform::Key::W)) move(f, speed);
+            if (held(platform::Key::S)) move(f, -speed);
+            if (held(platform::Key::D)) move(right, speed);
+            if (held(platform::Key::A)) move(right, -speed);
+            if (held(platform::Key::E)) move({0.0f, 1.0f, 0.0f}, speed);
+            if (held(platform::Key::Q)) move({0.0f, 1.0f, 0.0f}, -speed);
+
+            // Publish this frame's camera into the slot's region: safe to
+            // write once the slot's previous submission retired.
+            if (auto r = renderer->waitFrameSlot(); !r) {
+                log::error("Frame failed: {}", r.error().message);
+                break;
+            }
+            const math::Mat4 viewProj = camera.viewProj(viewWidth, viewHeight);
+            std::memcpy(static_cast<std::byte*>(cameraBuffer->mapped()) +
+                            renderer->frameSlot() * sizeof(math::Mat4),
+                        viewProj.data(), sizeof(math::Mat4));
+        }
+
         if (ui && viewWidth > 0 && viewHeight > 0) {
             ui->buildFrame(viewWidth, viewHeight, deltaSeconds);
         }

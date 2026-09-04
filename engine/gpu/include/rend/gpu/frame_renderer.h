@@ -78,7 +78,9 @@ struct DrawBatch {
     // (host-visible buffer) while the other slot's region is in flight —
     // the instanceCount 0/1 toggle path. 0 = one shared region.
     std::uint64_t indirectRegionStride = 0;
-    std::array<float, 16> viewProj{};       // pushed to the pipeline (64 bytes)
+    // The camera matrix lives in the bindless table's per-slot camera
+    // buffer (binding 6); only the slot index is pushed, so a moving
+    // camera never invalidates static recordings.
     VkDescriptorSet descriptors = nullptr;  // bindless table set, bound once if set
 };
 

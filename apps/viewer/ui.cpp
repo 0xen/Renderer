@@ -4,6 +4,7 @@
 #include "rend/gpu/device.h"
 #include "rend/gpu/instance.h"
 #include "rend/gpu/swapchain.h"
+#include "rend/platform/events.h"
 
 #include <volk.h>
 
@@ -116,6 +117,30 @@ std::unique_ptr<Ui> Ui::create(const rend::gpu::Instance& instance,
 Ui::~Ui() {
     ImGui_ImplVulkan_Shutdown();
     ImGui::DestroyContext();
+}
+
+void Ui::handleEvent(const rend::platform::Event& event) {
+    using rend::platform::Event;
+    using rend::platform::MouseButton;
+    ImGuiIO& io = ImGui::GetIO();
+    switch (event.type) {
+    case Event::Type::MouseMoved:
+        io.AddMousePosEvent(event.mouseX, event.mouseY);
+        break;
+    case Event::Type::MouseButtonDown:
+    case Event::Type::MouseButtonUp: {
+        const int button = event.button == MouseButton::Left    ? ImGuiMouseButton_Left
+                           : event.button == MouseButton::Right ? ImGuiMouseButton_Right
+                                                                : ImGuiMouseButton_Middle;
+        io.AddMouseButtonEvent(button, event.type == Event::Type::MouseButtonDown);
+        break;
+    }
+    case Event::Type::MouseWheel:
+        io.AddMouseWheelEvent(0.0f, event.wheelDelta);
+        break;
+    default:
+        break;
+    }
 }
 
 void Ui::buildFrame(std::uint32_t width, std::uint32_t height, float deltaSeconds) {

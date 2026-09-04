@@ -307,7 +307,7 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
         vkCmdBindIndexBuffer(cmd, batch->geometry, 0, VK_INDEX_TYPE_UINT32);
         vkCmdPushConstants(cmd, pipeline.layout(),
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-                           sizeof(batch->viewProj), batch->viewProj.data());
+                           sizeof(slot), &slot);
         switch (batch->mode) {
         case DrawSubmitMode::IndirectCount:
             vkCmdDrawIndexedIndirectCount(cmd, batch->indirect,

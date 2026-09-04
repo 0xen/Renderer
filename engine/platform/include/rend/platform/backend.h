@@ -34,6 +34,10 @@ public:
     // Drains pending OS events, translated to portable Event values.
     virtual std::vector<Event> pumpEvents() = 0;
 
+    // Relative mouse mode (mouselook): hides the cursor and delivers
+    // unbounded MouseMoved deltas until disabled.
+    virtual void setRelativeMouseMode(PresentationTarget& target, bool enabled) = 0;
+
     // --- Vulkan seam: the only place platform touches Vulkan. ---
     // Instance extensions required to present to this backend's targets.
     virtual std::vector<const char*> requiredVulkanInstanceExtensions() const = 0;
