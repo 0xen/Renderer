@@ -77,6 +77,42 @@ Plain C Vulkan API loaded via **volk**. Feature/extension requirements declared 
 (`FeatureSet`); physical-device selection scores adapters against it, so supporting
 multiple feature tiers stays declarative.
 
+### Static command buffer / GPU-driven rendering model (agreed direction, 2026-09-04)
+
+Goal: **avoid rebuilding command buffers** — ideally record once and reuse every frame
+(screen resize excepted), with the CPU only writing buffers.
+
+- **Indirect scene pass** — one `vkCmdDrawIndexedIndirect` stream with an entry per
+  unique object. Loading/unloading an object toggles its `instanceCount` 0↔1 and never
+  touches the command buffer. Each entry's `firstInstance` indexes a big per-object
+  SSBO (in Vulkan `gl_InstanceIndex` starts at `firstInstance`), so every object finds
+  its transforms/material data with no per-draw binds.
+- **Evolution: compaction** — `vkCmdDrawIndexedIndirectCount` + a compute pass that
+  compacts live/visible entries and writes the count; removes the zero-instance draw
+  overhead at scale, command buffer still static.
+- **Geometry mega-buffer** — all vertex/index data suballocated (free lists, size
+  buckets) from one large device-local buffer, bound once; indirect entries carry
+  `firstIndex`/`vertexOffset`. Defrag is a background task on the async transfer queue
+  (move slices, patch indirect entries) — investigated as its own experiment, kept rare
+  via suballocation rather than run per-frame.
+- **Bindless textures** — descriptor indexing (core 1.2): one descriptor array bound
+  once; per-object data holds texture indices. Prerequisite for static buffers.
+- **Few pipelines** — über-shader-leaning, draws grouped per pipeline, since pipeline
+  switches are recorded commands.
+- **Sync model** — per-frame-in-flight regions for CPU-written data (indirect + object
+  SSBO); the guarding barriers are identical each frame and live in the prerecorded
+  buffer.
+- **Secondary command buffers** — considered for prerecorded static passes (e.g. post
+  process); to be measured in the experiment, not assumed (driver overhead varies, and
+  post-process is few draws anyway).
+- **Feature requirements** (declared via FeatureSet): `multiDrawIndirect`,
+  `drawIndirectFirstInstance`, `shaderDrawParameters`, descriptor indexing,
+  draw-indirect-count.
+
+An early rendering-test milestone validates this end-to-end: N objects in the
+mega-buffer, add/remove/toggle without re-recording, measured against a naive
+re-record-per-frame baseline.
+
 ## Conventions
 
 - C++20, MSVC `/W4 /permissive-`, `.clang-format` (LLVM-derived, 4-space).
