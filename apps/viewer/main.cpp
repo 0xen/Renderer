@@ -7,7 +7,7 @@
 #include "rend/gpu/pipeline.h"
 #include "rend/gpu/shader.h"
 #include "rend/gpu/swapchain.h"
-#include "rend/gpu/mega_buffer.h"
+#include "rend/gpu/memory_pool.h"
 #include "rend/gpu/transfer.h"
 #include "rend/platform/backend.h"
 
@@ -18,7 +18,7 @@ using namespace rend;
 
 namespace {
 
-// Where a mesh landed in the mega-buffer. Step 2 of milestone 7 turns
+// Where a mesh landed in the geometry pool. Step 2 of milestone 7 turns
 // these into indirect draw entries.
 struct GeometryLocation {
     gpu::BufferSlice vertices;
@@ -139,18 +139,18 @@ int main(int argc, char** argv) {
     auto device = std::move(deviceResult).value();
 
     // Milestone 7 step 1: everything the scene pass will draw lives in one
-    // device-local mega-buffer, filled through the transfer queue. Indirect
+    // device-local memory pool, filled through the transfer queue. Indirect
     // draw entries over these slices come next.
-    std::unique_ptr<gpu::MegaBuffer> megaBuffer;
+    std::unique_ptr<gpu::MemoryPool> geometryPool;
     std::vector<GeometryLocation> geometry;
     if (scene) {
         const auto start = std::chrono::steady_clock::now();
-        auto megaResult = gpu::MegaBuffer::create(*device, 128ull * 1024 * 1024);
-        if (!megaResult) {
-            log::error("Mega-buffer creation failed: {}", megaResult.error().message);
+        auto poolResult = gpu::MemoryPool::create(*device, 128ull * 1024 * 1024);
+        if (!poolResult) {
+            log::error("Memory pool creation failed: {}", poolResult.error().message);
             return 1;
         }
-        megaBuffer = std::move(megaResult).value();
+        geometryPool = std::move(poolResult).value();
 
         auto transferResult = gpu::TransferContext::create(*device);
         if (!transferResult) {
@@ -163,19 +163,19 @@ int main(int argc, char** argv) {
             for (const auto& mesh : model.data.meshes) {
                 const std::vector<float> vertexData = interleave(mesh);
                 auto vertexSlice =
-                    megaBuffer->allocate(vertexData.size() * sizeof(float));
+                    geometryPool->allocate(vertexData.size() * sizeof(float));
                 auto indexSlice =
-                    megaBuffer->allocate(mesh.indices.size() * sizeof(std::uint32_t), 4);
+                    geometryPool->allocate(mesh.indices.size() * sizeof(std::uint32_t), 4);
                 if (!vertexSlice || !indexSlice) {
-                    log::error("Mega-buffer allocation failed: {}",
+                    log::error("Memory pool allocation failed: {}",
                                (!vertexSlice ? vertexSlice.error() : indexSlice.error()).message);
                     return 1;
                 }
                 auto stagedVerts =
-                    transfer->stage(megaBuffer->buffer(), vertexSlice.value().offset,
+                    transfer->stage(geometryPool->buffer(), vertexSlice.value().offset,
                                     vertexData.data(), vertexSlice.value().size);
                 auto stagedIndices =
-                    transfer->stage(megaBuffer->buffer(), indexSlice.value().offset,
+                    transfer->stage(geometryPool->buffer(), indexSlice.value().offset,
                                     mesh.indices.data(), indexSlice.value().size);
                 if (!stagedVerts || !stagedIndices) {
                     log::error("Staging failed: {}",
@@ -196,9 +196,9 @@ int main(int argc, char** argv) {
                             std::chrono::steady_clock::now() - start)
                             .count();
         log::info("Geometry uploaded in {} ms: {} slices, {:.1f} MiB of {} MiB used ({} queue)",
-                  ms, megaBuffer->allocationCount(),
-                  static_cast<double>(megaBuffer->usedBytes()) / (1024.0 * 1024.0),
-                  megaBuffer->capacity() / (1024 * 1024),
+                  ms, geometryPool->allocationCount(),
+                  static_cast<double>(geometryPool->usedBytes()) / (1024.0 * 1024.0),
+                  geometryPool->capacity() / (1024 * 1024),
                   device->hasDedicatedTransfer() ? "dedicated transfer" : "graphics");
     }
 

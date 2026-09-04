@@ -119,7 +119,7 @@ Goal: **avoid rebuilding command buffers** — ideally record once and reuse eve
 - **Evolution: compaction** — `vkCmdDrawIndexedIndirectCount` + a compute pass that
   compacts live/visible entries and writes the count; removes the zero-instance draw
   overhead at scale, command buffer still static.
-- **Geometry mega-buffer** — all vertex/index data suballocated (free lists, size
+- **Geometry memory pool** (`gpu::MemoryPool`) — all vertex/index data suballocated (free lists, size
   buckets) from one large device-local buffer, bound once; indirect entries carry
   `firstIndex`/`vertexOffset`. Defrag is a background task on the async transfer queue
   (move slices, patch indirect entries) — investigated as its own experiment, kept rare
@@ -140,7 +140,7 @@ Goal: **avoid rebuilding command buffers** — ideally record once and reuse eve
   draw-indirect-count.
 
 An early rendering-test milestone validates this end-to-end: N objects in the
-mega-buffer, add/remove/toggle without re-recording, measured against a naive
+memory pool, add/remove/toggle without re-recording, measured against a naive
 re-record-per-frame baseline.
 
 ## Conventions

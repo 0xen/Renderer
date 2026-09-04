@@ -11,21 +11,21 @@ namespace rend::gpu {
 
 class Device;
 
-// A suballocation out of the mega-buffer. Plain offsets — draw commands
+// A suballocation out of a memory pool. Plain offsets — draw commands
 // carry them as firstIndex/vertexOffset, so no per-object binds.
 struct BufferSlice {
     std::uint64_t offset = 0;
     std::uint64_t size = 0;
 };
 
-// The geometry mega-buffer (see ARCHITECTURE.md): all vertex/index data
+// The geometry memory pool (see ARCHITECTURE.md): all vertex/index data
 // suballocated from one device-local buffer that is bound once. First-fit
 // free list with coalescing on free; defrag is a later, separate concern
 // (roadmap #9). Fixed capacity — growing would invalidate every offset the
 // indirect entries reference.
-class MegaBuffer {
+class MemoryPool {
 public:
-    static Result<std::unique_ptr<MegaBuffer>> create(const Device& device, std::uint64_t capacity);
+    static Result<std::unique_ptr<MemoryPool>> create(const Device& device, std::uint64_t capacity);
 
     Result<BufferSlice> allocate(std::uint64_t size, std::uint64_t alignment = 16);
     void free(const BufferSlice& slice);
@@ -36,7 +36,7 @@ public:
     std::uint32_t allocationCount() const { return allocationCount_; }
 
 private:
-    MegaBuffer() = default;
+    MemoryPool() = default;
 
     struct FreeBlock {
         std::uint64_t offset = 0;

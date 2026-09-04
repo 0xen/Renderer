@@ -4,7 +4,7 @@ add_library(rend_gpu OBJECT
     src/buffer.cpp
     src/instance.cpp
     src/device.cpp
-    src/mega_buffer.cpp
+    src/memory_pool.cpp
     src/swapchain.cpp
     src/shader.cpp
     src/pipeline.cpp

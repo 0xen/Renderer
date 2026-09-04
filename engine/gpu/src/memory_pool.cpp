@@ -1,4 +1,4 @@
-#include "rend/gpu/mega_buffer.h"
+#include "rend/gpu/memory_pool.h"
 
 #include "rend/core/log.h"
 #include "rend/gpu/device.h"
@@ -10,7 +10,7 @@
 
 namespace rend::gpu {
 
-Result<std::unique_ptr<MegaBuffer>> MegaBuffer::create(const Device& device,
+Result<std::unique_ptr<MemoryPool>> MemoryPool::create(const Device& device,
                                                        std::uint64_t capacity) {
     auto bufferResult =
         Buffer::create(device, {
@@ -29,16 +29,16 @@ Result<std::unique_ptr<MegaBuffer>> MegaBuffer::create(const Device& device,
         return bufferResult.error();
     }
 
-    auto mega = std::unique_ptr<MegaBuffer>(new MegaBuffer());
-    mega->buffer_ = std::move(bufferResult).value();
-    mega->freeList_.push_back({.offset = 0, .size = capacity});
-    log::info("Geometry mega-buffer created: {} MiB device-local", capacity / (1024 * 1024));
-    return mega;
+    auto pool = std::unique_ptr<MemoryPool>(new MemoryPool());
+    pool->buffer_ = std::move(bufferResult).value();
+    pool->freeList_.push_back({.offset = 0, .size = capacity});
+    log::info("Geometry memory pool created: {} MiB device-local", capacity / (1024 * 1024));
+    return pool;
 }
 
-Result<BufferSlice> MegaBuffer::allocate(std::uint64_t size, std::uint64_t alignment) {
+Result<BufferSlice> MemoryPool::allocate(std::uint64_t size, std::uint64_t alignment) {
     if (size == 0) {
-        return Error{"Mega-buffer allocation size must be non-zero"};
+        return Error{"Memory pool allocation size must be non-zero"};
     }
     for (std::size_t i = 0; i < freeList_.size(); ++i) {
         FreeBlock& block = freeList_[i];
@@ -68,11 +68,11 @@ Result<BufferSlice> MegaBuffer::allocate(std::uint64_t size, std::uint64_t align
         return slice;
     }
     return Error{std::format(
-        "Geometry mega-buffer exhausted: {} bytes requested, {} of {} in use ({} free blocks)",
+        "Geometry memory pool exhausted: {} bytes requested, {} of {} in use ({} free blocks)",
         size, usedBytes_, capacity(), freeList_.size())};
 }
 
-void MegaBuffer::free(const BufferSlice& slice) {
+void MemoryPool::free(const BufferSlice& slice) {
     if (slice.size == 0) {
         return;
     }
