@@ -102,9 +102,10 @@ Goal: **avoid rebuilding command buffers** — ideally record once and reuse eve
 - **Sync model** — per-frame-in-flight regions for CPU-written data (indirect + object
   SSBO); the guarding barriers are identical each frame and live in the prerecorded
   buffer.
-- **Secondary command buffers** — considered for prerecorded static passes (e.g. post
-  process); to be measured in the experiment, not assumed (driver overhead varies, and
-  post-process is few draws anyway).
+- **No secondary command buffers by default** — everything (scene pass, post-process)
+  is prerecorded into the reused primary command buffer. Since nothing is re-recorded
+  per frame, secondaries buy little and carry driver-dependent overhead; they are only
+  revisited if the experiments surface a concrete need.
 - **Feature requirements** (declared via FeatureSet): `multiDrawIndirect`,
   `drawIndirectFirstInstance`, `shaderDrawParameters`, descriptor indexing,
   draw-indirect-count.
