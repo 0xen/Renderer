@@ -77,9 +77,9 @@ Result<void> FrameRenderer::createSyncObjects() {
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     allocInfo.commandPool = commandPool_;
     allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    allocInfo.commandBufferCount = kFramesInFlight;
+    allocInfo.commandBufferCount = kFramesInFlight * 2; // scene + overlay per slot
 
-    VkCommandBuffer buffers[kFramesInFlight] = {};
+    VkCommandBuffer buffers[kFramesInFlight * 2] = {};
     if (VkResult r = vkAllocateCommandBuffers(device_->handle(), &allocInfo, buffers); r != VK_SUCCESS) {
         return Error{std::format("vkAllocateCommandBuffers failed ({})", static_cast<int>(r))};
     }
@@ -92,6 +92,7 @@ Result<void> FrameRenderer::createSyncObjects() {
 
     for (std::uint32_t i = 0; i < kFramesInFlight; ++i) {
         frames_[i].commandBuffer = buffers[i];
+        frames_[i].overlayCommandBuffer = buffers[kFramesInFlight + i];
         if (VkResult r =
                 vkCreateSemaphore(device_->handle(), &semaphoreInfo, nullptr, &frames_[i].imageAvailable);
             r != VK_SUCCESS) {
@@ -334,6 +335,66 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
 
     vkCmdEndRendering(cmd);
 
+    // The image stays in COLOR_ATTACHMENT_OPTIMAL: the per-frame overlay
+    // command buffer draws the UI on top and owns the present transition.
+    if (VkResult r = vkEndCommandBuffer(cmd); r != VK_SUCCESS) {
+        return Error{std::format("vkEndCommandBuffer failed ({})", static_cast<int>(r))};
+    }
+    return {};
+}
+
+Result<void> FrameRenderer::recordOverlay(VkCommandBuffer cmd, std::uint32_t imageIndex) const {
+    VkCommandBufferBeginInfo begin{};
+    begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    if (VkResult r = vkBeginCommandBuffer(cmd, &begin); r != VK_SUCCESS) {
+        return Error{std::format("vkBeginCommandBuffer (overlay) failed ({})", static_cast<int>(r))};
+    }
+
+    VkImage image = swapchain_->images()[imageIndex];
+    VkDependencyInfo dependency{};
+    dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+    dependency.imageMemoryBarrierCount = 1;
+
+    if (overlayRecorder_) {
+        // Order against the scene buffer's color writes (same submission,
+        // no layout change) before loading the attachment.
+        VkImageMemoryBarrier2 sceneToOverlay = imageBarrier(
+            image, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+            VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+        dependency.pImageMemoryBarriers = &sceneToOverlay;
+        vkCmdPipelineBarrier2(cmd, &dependency);
+
+        VkRenderingAttachmentInfo color{};
+        color.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+        color.imageView = swapchain_->imageViews()[imageIndex];
+        color.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        color.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+        color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+
+        const VkExtent2D extent{swapchain_->width(), swapchain_->height()};
+        VkRenderingInfo rendering{};
+        rendering.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+        rendering.renderArea = {{0, 0}, extent};
+        rendering.layerCount = 1;
+        rendering.colorAttachmentCount = 1;
+        rendering.pColorAttachments = &color;
+        vkCmdBeginRendering(cmd, &rendering);
+
+        const VkViewport viewport{0.0f, 0.0f, static_cast<float>(extent.width),
+                                  static_cast<float>(extent.height), 0.0f, 1.0f};
+        const VkRect2D scissor{{0, 0}, extent};
+        vkCmdSetViewport(cmd, 0, 1, &viewport);
+        vkCmdSetScissor(cmd, 0, 1, &scissor);
+
+        overlayRecorder_(cmd);
+
+        vkCmdEndRendering(cmd);
+    }
+
     VkImageMemoryBarrier2 toPresent = imageBarrier(
         image, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
         VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
@@ -342,7 +403,7 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
     vkCmdPipelineBarrier2(cmd, &dependency);
 
     if (VkResult r = vkEndCommandBuffer(cmd); r != VK_SUCCESS) {
-        return Error{std::format("vkEndCommandBuffer failed ({})", static_cast<int>(r))};
+        return Error{std::format("vkEndCommandBuffer (overlay) failed ({})", static_cast<int>(r))};
     }
     return {};
 }
@@ -482,6 +543,13 @@ Result<void> FrameRenderer::drawFrame(const Pipeline& pipeline, const DrawBatch*
     }
     ++stats_.frames;
 
+    // The overlay tail (UI + present transition) is re-recorded every
+    // frame; the scene buffer above may be a static recording.
+    vkResetCommandBuffer(frame.overlayCommandBuffer, 0);
+    if (auto r = recordOverlay(frame.overlayCommandBuffer, imageIndex); !r) {
+        return r.error();
+    }
+
     VkSemaphoreSubmitInfo waitInfo{};
     waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
     waitInfo.semaphore = frame.imageAvailable;
@@ -492,16 +560,18 @@ Result<void> FrameRenderer::drawFrame(const Pipeline& pipeline, const DrawBatch*
     signalInfo.semaphore = renderFinished_[imageIndex];
     signalInfo.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
 
-    VkCommandBufferSubmitInfo commandInfo{};
-    commandInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
-    commandInfo.commandBuffer = cmd;
+    std::array<VkCommandBufferSubmitInfo, 2> commandInfos{};
+    commandInfos[0].sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
+    commandInfos[0].commandBuffer = cmd;
+    commandInfos[1].sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
+    commandInfos[1].commandBuffer = frame.overlayCommandBuffer;
 
     VkSubmitInfo2 submit{};
     submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
     submit.waitSemaphoreInfoCount = 1;
     submit.pWaitSemaphoreInfos = &waitInfo;
-    submit.commandBufferInfoCount = 1;
-    submit.pCommandBufferInfos = &commandInfo;
+    submit.commandBufferInfoCount = static_cast<std::uint32_t>(commandInfos.size());
+    submit.pCommandBufferInfos = commandInfos.data();
     submit.signalSemaphoreInfoCount = 1;
     submit.pSignalSemaphoreInfos = &signalInfo;
 

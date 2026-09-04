@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -111,6 +112,15 @@ public:
     void setStaticRecording(bool enabled);
     bool staticRecording() const { return staticEnabled_; }
 
+    // Per-frame overlay (UI) recorded into its own small command buffer
+    // after the scene: the callback runs inside an active dynamic rendering
+    // pass on the swapchain image (loadOp LOAD, viewport/scissor set) and
+    // records e.g. ImGui draw data. Recorded every frame regardless of
+    // static mode — overlay content is inherently dynamic; the prerecorded
+    // scene buffers stay untouched. Null disables the pass.
+    using OverlayRecorder = std::function<void(VkCommandBuffer)>;
+    void setOverlayRecorder(OverlayRecorder recorder) { overlayRecorder_ = std::move(recorder); }
+
     // Blocks until the current frame slot's previous submission finished,
     // making the slot's per-frame regions (see DrawBatch::
     // indirectRegionStride) safe to write. drawFrame's own wait then
@@ -151,9 +161,12 @@ private:
                         const Pipeline& pipeline, const DrawBatch* batch, bool reusable) const;
     Result<void> prerecordStatic(const Pipeline& pipeline, const DrawBatch* batch);
     void invalidateStatic();
+    Result<void> recordOverlay(VkCommandBuffer cmd, std::uint32_t imageIndex) const;
 
     struct FrameData {
         VkCommandBuffer commandBuffer = nullptr;
+        // The per-frame UI/present-transition tail after the scene buffer.
+        VkCommandBuffer overlayCommandBuffer = nullptr;
         VkSemaphore imageAvailable = nullptr;
         VkFence inFlight = nullptr;
     };
@@ -177,6 +190,7 @@ private:
     bool staticValid_ = false;
 
     Stats stats_{};
+    OverlayRecorder overlayRecorder_;
 
     std::array<float, 4> clearColor_{0.02f, 0.02f, 0.04f, 1.0f};
     std::uint32_t frameIndex_ = 0;

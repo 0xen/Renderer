@@ -15,6 +15,8 @@
 #include "rend/gpu/transfer.h"
 #include "rend/platform/backend.h"
 
+#include "ui.h"
+
 #include <charconv>
 #include <chrono>
 #include <format>
@@ -602,6 +604,15 @@ int main(int argc, char** argv) {
                   canCount ? "yes" : "NO");
     }
 
+    // Debug UI (ImGui): drawn through the frame renderer's overlay pass,
+    // which stays per-frame even when the scene buffers are static.
+    auto ui = viewer::Ui::create(*instance, *device, *swapchain);
+    if (ui) {
+        renderer->setOverlayRecorder([&ui](VkCommandBuffer cmd) { ui->render(cmd); });
+    } else {
+        log::warn("Debug UI unavailable; continuing without it");
+    }
+
     renderer->setStaticRecording(staticMode);
     log::info("Viewer live at {}x{} — {} recording, vsync {} — Esc quits, Space toggles mode",
               extent.width, extent.height, staticMode ? "static" : "per-frame", vsync ? "on" : "off");
@@ -626,6 +637,9 @@ int main(int argc, char** argv) {
 
     bool running = true;
     std::uint64_t frame = 0;
+    std::uint32_t viewWidth = extent.width;
+    std::uint32_t viewHeight = extent.height;
+    auto lastFrameTime = std::chrono::steady_clock::now();
     while (running) {
         for (const auto& event : backend->pumpEvents()) {
             switch (event.type) {
@@ -645,6 +659,8 @@ int main(int argc, char** argv) {
                 break;
             case platform::Event::Type::Resized:
                 renderer->resize(event.size.width, event.size.height);
+                viewWidth = event.size.width;
+                viewHeight = event.size.height;
                 if (drawScene && event.size.width > 0 && event.size.height > 0) {
                     batch.viewProj =
                         cameraViewProj(scene->camera, event.size.width, event.size.height);
@@ -656,6 +672,13 @@ int main(int argc, char** argv) {
         }
         if (!running) {
             break;
+        }
+
+        const auto now = std::chrono::steady_clock::now();
+        const float deltaSeconds = std::chrono::duration<float>(now - lastFrameTime).count();
+        lastFrameTime = now;
+        if (ui && viewWidth > 0 && viewHeight > 0) {
+            ui->buildFrame(viewWidth, viewHeight, deltaSeconds);
         }
 
         if (auto r = renderer->drawFrame(drawScene ? *scenePipeline : *pipeline,
@@ -678,6 +701,7 @@ int main(int argc, char** argv) {
 
     log::info("Shutting down");
     renderer->waitIdle();
+    ui.reset(); // ImGui's Vulkan objects go while the device is idle and alive
     // The swapchain goes first: destroying it retires presents that are still
     // waiting on the frame renderer's per-image semaphores, which the renderer
     // then destroys. It also owns the surface, so it must precede the instance.

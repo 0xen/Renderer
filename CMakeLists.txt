@@ -26,6 +26,7 @@ include(cmake/FetchVolk.cmake)
 include(cmake/FetchPugixml.cmake)
 include(cmake/FetchCgltf.cmake)
 include(cmake/FetchStb.cmake)
+include(cmake/FetchImgui.cmake)
 
 # One shared output dir so viewer.exe sits next to rend.dll.
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
