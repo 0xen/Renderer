@@ -15,7 +15,11 @@
 #include "rend/gpu/transfer.h"
 #include "rend/platform/backend.h"
 
+#include <charconv>
 #include <chrono>
+#include <format>
+#include <cstddef>
+#include <cstring>
 #include <optional>
 #include <unordered_map>
 
@@ -85,12 +89,23 @@ std::vector<float> interleave(const assetio::MeshData& mesh) {
 
 int main(int argc, char** argv) {
     bool debug = false;
+    bool vsync = true;
+    bool staticMode = false;
+    std::uint64_t benchFrames = 0; // non-zero: exit after N frames with a report
     const char* scenePath = nullptr;
     for (int i = 1; i < argc; ++i) {
-        if (std::string_view(argv[i]) == "--debug") {
+        const std::string_view arg = argv[i];
+        if (arg == "--debug") {
             debug = true;
+        } else if (arg == "--novsync") {
+            vsync = false;
+        } else if (arg == "--static") {
+            staticMode = true;
+        } else if (arg == "--bench" && i + 1 < argc) {
+            const std::string_view count = argv[++i];
+            std::from_chars(count.data(), count.data() + count.size(), benchFrames);
         } else {
-            scenePath = argv[i];
+            scenePath = arg.data();
         }
     }
 
@@ -133,7 +148,8 @@ int main(int argc, char** argv) {
         log::info("Scene '{}' loaded in {} ms: {} models, {} vertices, {} triangles", scene->name,
                   ms, scene->models.size(), vertices, triangles);
     } else {
-        log::info("No scene file given (usage: viewer [--debug] <scene.xml>)");
+        log::info("No scene file given "
+                  "(usage: viewer [--debug] [--novsync] [--static] [--bench N] <scene.xml>)");
     }
 
     auto backendResult = platform::createBackend(platform::BackendKind::SDL3);
@@ -261,23 +277,24 @@ int main(int argc, char** argv) {
                 .firstInstance = static_cast<std::uint32_t>(i),
             });
         }
+        // Host-visible with one region per frame in flight: the CPU rewrites
+        // the current slot's instanceCounts every frame (the milestone-7
+        // load/unload toggle) while the other slot's region is in flight.
+        const std::uint64_t indirectRegion = draws.size() * sizeof(gpu::DrawIndexedIndirect);
         auto indirectResult = gpu::Buffer::create(
             *device, {
-                         .size = draws.size() * sizeof(gpu::DrawIndexedIndirect),
-                         .usage = gpu::kUsageIndirect | gpu::kUsageTransferDst,
-                         .location = gpu::MemoryLocation::DeviceLocal,
-                         .sharedWithTransferQueue = true,
+                         .size = indirectRegion * gpu::FrameRenderer::kFramesInFlight,
+                         .usage = gpu::kUsageIndirect,
+                         .location = gpu::MemoryLocation::HostVisible,
                      });
         if (!indirectResult) {
             log::error("Indirect buffer creation failed: {}", indirectResult.error().message);
             return 1;
         }
         indirectBuffer = std::move(indirectResult).value();
-        if (auto staged = transfer->stage(*indirectBuffer, 0, draws.data(),
-                                          draws.size() * sizeof(gpu::DrawIndexedIndirect));
-            !staged) {
-            log::error("Indirect staging failed: {}", staged.error().message);
-            return 1;
+        for (std::uint32_t slot = 0; slot < gpu::FrameRenderer::kFramesInFlight; ++slot) {
+            std::memcpy(static_cast<std::byte*>(indirectBuffer->mapped()) + slot * indirectRegion,
+                        draws.data(), indirectRegion);
         }
 
         auto objectResult = gpu::Buffer::create(
@@ -388,7 +405,7 @@ int main(int argc, char** argv) {
                                                       .width = extent.width,
                                                       .height = extent.height,
                                                       .transparent = false,
-                                                      .vsync = true,
+                                                      .vsync = vsync,
                                                   });
     if (!swapchainResult) {
         log::error("Swapchain creation failed: {}", swapchainResult.error().message);
@@ -471,14 +488,37 @@ int main(int argc, char** argv) {
         batch.geometry = geometryPool->buffer().handle();
         batch.indirect = indirectBuffer->handle();
         batch.drawCount = static_cast<std::uint32_t>(geometry.size());
+        batch.indirectRegionStride = geometry.size() * sizeof(gpu::DrawIndexedIndirect);
         batch.descriptors = descriptorTable->set();
         batch.viewProj = cameraViewProj(scene->camera, extent.width, extent.height);
         log::info("Scene pass ready: {} indirect draws", batch.drawCount);
     }
 
-    log::info("Viewer live at {}x{} — press Esc to quit", extent.width, extent.height);
+    renderer->setStaticRecording(staticMode);
+    log::info("Viewer live at {}x{} — {} recording, vsync {} — Esc quits, Space toggles mode",
+              extent.width, extent.height, staticMode ? "static" : "per-frame", vsync ? "on" : "off");
+
+    // Stats window: wall time + renderer CPU counters, reported per mode.
+    constexpr std::uint64_t kReportInterval = 600;
+    auto reportStart = std::chrono::steady_clock::now();
+    auto report = [&](std::uint64_t windowFrames) {
+        const auto now = std::chrono::steady_clock::now();
+        const double seconds = std::chrono::duration<double>(now - reportStart).count();
+        reportStart = now;
+        const gpu::FrameRenderer::Stats stats = renderer->takeStats();
+        if (windowFrames == 0 || seconds <= 0.0) {
+            return;
+        }
+        log::info("[{}] {} frames in {:.2f} s = {:.0f} fps | record {:.1f} us/frame{}",
+                  renderer->staticRecording() ? "static" : "rerecord", windowFrames, seconds,
+                  windowFrames / seconds,
+                  stats.frames > 0 ? static_cast<double>(stats.recordMicros) / stats.frames : 0.0,
+                  stats.prerecords > 0 ? std::format(" | {} prerecords", stats.prerecords) : "");
+    };
 
     bool running = true;
+    std::uint64_t frame = 0;
+    const auto animStart = std::chrono::steady_clock::now();
     while (running) {
         for (const auto& event : backend->pumpEvents()) {
             switch (event.type) {
@@ -488,6 +528,12 @@ int main(int argc, char** argv) {
             case platform::Event::Type::KeyDown:
                 if (event.key == platform::Key::Escape) {
                     running = false;
+                }
+                if (event.key == platform::Key::Space) {
+                    report(frame % kReportInterval);
+                    renderer->setStaticRecording(!renderer->staticRecording());
+                    log::info("Switched to {} recording",
+                              renderer->staticRecording() ? "static" : "per-frame");
                 }
                 break;
             case platform::Event::Type::Resized:
@@ -504,10 +550,45 @@ int main(int argc, char** argv) {
         if (!running) {
             break;
         }
+
+        if (drawScene) {
+            // The experiment itself: visibility churn with ZERO command
+            // buffer rebuilds. A rotating eighth of the meshes is hidden by
+            // writing instanceCount 0 into the current slot's indirect
+            // region (safe once the slot's fence has been waited).
+            if (auto r = renderer->waitFrameSlot(); !r) {
+                log::error("Frame failed: {}", r.error().message);
+                break;
+            }
+            auto* slotDraws = reinterpret_cast<gpu::DrawIndexedIndirect*>(
+                static_cast<std::byte*>(indirectBuffer->mapped()) +
+                renderer->frameSlot() * batch.indirectRegionStride);
+            // Time-based (a step per half second) so the churn is watchable
+            // at any frame rate instead of strobing at thousands of fps.
+            const auto phase = static_cast<std::uint64_t>(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - animStart)
+                    .count() /
+                500);
+            for (std::uint32_t i = 0; i < batch.drawCount; ++i) {
+                slotDraws[i].instanceCount = ((i + phase) % 8 == 0) ? 0u : 1u;
+            }
+        }
+
         if (auto r = renderer->drawFrame(drawScene ? *scenePipeline : *pipeline,
                                          drawScene ? &batch : nullptr);
             !r) {
             log::error("Frame failed: {}", r.error().message);
+            running = false;
+        }
+
+        ++frame;
+        if (frame % kReportInterval == 0) {
+            report(kReportInterval);
+        }
+        if (benchFrames != 0 && frame >= benchFrames) {
+            report(frame % kReportInterval);
+            log::info("Benchmark complete after {} frames", frame);
             running = false;
         }
     }

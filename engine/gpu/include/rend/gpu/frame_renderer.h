@@ -39,6 +39,11 @@ struct DrawBatch {
     VkBuffer geometry = nullptr; // bound at offset 0 as VB and IB (uint32 indices)
     VkBuffer indirect = nullptr; // DrawIndexedIndirect[drawCount]
     std::uint32_t drawCount = 0;
+    // Byte distance between per-frame-slot copies of the indirect array
+    // inside `indirect`. Non-zero lets the CPU rewrite the slot's region
+    // (host-visible buffer) while the other slot's region is in flight —
+    // the instanceCount 0/1 toggle path. 0 = one shared region.
+    std::uint64_t indirectRegionStride = 0;
     std::array<float, 16> viewProj{};       // pushed to the pipeline (64 bytes)
     VkDescriptorSet descriptors = nullptr;  // bindless table set, bound once if set
 };
@@ -64,6 +69,31 @@ public:
     // swapchains are recreated transparently.
     Result<void> drawFrame(const Pipeline& pipeline, const DrawBatch* batch = nullptr);
 
+    // Static recording (the milestone-7 experiment): command buffers are
+    // recorded once per (frame slot, swapchain image) and reused every
+    // frame — per-frame CPU work shrinks to buffer writes + submit. The
+    // recordings are invalidated (and lazily rebuilt on the next drawFrame)
+    // by a swapchain recreate; visibility changes must go through the
+    // indirect buffer, never through re-recording.
+    void setStaticRecording(bool enabled);
+    bool staticRecording() const { return staticEnabled_; }
+
+    // Blocks until the current frame slot's previous submission finished,
+    // making the slot's per-frame regions (see DrawBatch::
+    // indirectRegionStride) safe to write. drawFrame's own wait then
+    // returns immediately.
+    Result<void> waitFrameSlot();
+    std::uint32_t frameSlot() const { return frameIndex_; }
+
+    // CPU cost counters since the last take; the record/reset time is the
+    // number the static-vs-rerecord experiment compares.
+    struct Stats {
+        std::uint64_t frames = 0;
+        std::uint64_t recordMicros = 0; // per-frame reset+record CPU time
+        std::uint64_t prerecords = 0;   // static recordings built (amortized)
+    };
+    Stats takeStats();
+
     // Requests a swapchain rebuild at the next frame; a zero size parks the
     // loop until a real size arrives (minimized window).
     void resize(std::uint32_t width, std::uint32_t height);
@@ -84,8 +114,10 @@ private:
     Result<void> createDepthBuffer();
     Result<void> recreateSwapchain();
     Result<void> waitForFence(VkFence fence, const char* what) const;
-    Result<void> record(VkCommandBuffer cmd, std::uint32_t imageIndex, const Pipeline& pipeline,
-                        const DrawBatch* batch) const;
+    Result<void> record(VkCommandBuffer cmd, std::uint32_t imageIndex, std::uint32_t slot,
+                        const Pipeline& pipeline, const DrawBatch* batch, bool reusable) const;
+    Result<void> prerecordStatic(const Pipeline& pipeline, const DrawBatch* batch);
+    void invalidateStatic();
 
     struct FrameData {
         VkCommandBuffer commandBuffer = nullptr;
@@ -103,6 +135,15 @@ private:
     // Depth buffer at swapchain extent; recreated with it. One is enough
     // for both frames in flight: rendering is serialized by the barriers.
     std::unique_ptr<Image> depth_;
+
+    // Static-mode recordings, indexed [slot * imageCount + imageIndex];
+    // empty while invalid. A (slot, image) pair is never in flight twice,
+    // so the buffers need no simultaneous-use flag.
+    std::vector<VkCommandBuffer> staticBuffers_;
+    bool staticEnabled_ = false;
+    bool staticValid_ = false;
+
+    Stats stats_{};
 
     std::array<float, 4> clearColor_{0.02f, 0.02f, 0.04f, 1.0f};
     std::uint32_t frameIndex_ = 0;

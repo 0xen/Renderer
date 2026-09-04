@@ -46,6 +46,7 @@ VkPresentModeKHR choosePresentMode(VkPhysicalDevice pd, VkSurfaceKHR surface, bo
     }
     for (VkPresentModeKHR m : modes) {
         if (m == VK_PRESENT_MODE_IMMEDIATE_KHR) {
+            log::warn("No MAILBOX present mode; using IMMEDIATE (expect tearing)");
             return m;
         }
     }

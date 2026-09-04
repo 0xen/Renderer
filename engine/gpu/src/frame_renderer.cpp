@@ -8,6 +8,8 @@
 
 #include <volk.h>
 
+#include <chrono>
+
 namespace rend::gpu {
 
 namespace {
@@ -162,6 +164,8 @@ Result<void> FrameRenderer::recreateSwapchain() {
     if (auto r = swapchain_->recreate(width, height); !r) {
         return r.error();
     }
+    // Static recordings bake image handles and extent; rebuild lazily.
+    invalidateStatic();
     // Semaphores are indexed by swapchain image; a changed count needs a
     // fresh set. The device is idle after recreate(), so this is safe.
     if (swapchain_->images().size() != previousImageCount) {
@@ -178,10 +182,11 @@ Result<void> FrameRenderer::recreateSwapchain() {
 }
 
 Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex,
-                                   const Pipeline& pipeline, const DrawBatch* batch) const {
+                                   std::uint32_t slot, const Pipeline& pipeline,
+                                   const DrawBatch* batch, bool reusable) const {
     VkCommandBufferBeginInfo begin{};
     begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    begin.flags = reusable ? 0 : VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     if (VkResult r = vkBeginCommandBuffer(cmd, &begin); r != VK_SUCCESS) {
         return Error{std::format("vkBeginCommandBuffer failed ({})", static_cast<int>(r))};
     }
@@ -262,8 +267,8 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
         vkCmdPushConstants(cmd, pipeline.layout(),
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                            sizeof(batch->viewProj), batch->viewProj.data());
-        vkCmdDrawIndexedIndirect(cmd, batch->indirect, 0, batch->drawCount,
-                                 sizeof(DrawIndexedIndirect));
+        vkCmdDrawIndexedIndirect(cmd, batch->indirect, slot * batch->indirectRegionStride,
+                                 batch->drawCount, sizeof(DrawIndexedIndirect));
     } else {
         vkCmdDraw(cmd, 3, 1, 0, 0);
     }
@@ -281,6 +286,69 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
         return Error{std::format("vkEndCommandBuffer failed ({})", static_cast<int>(r))};
     }
     return {};
+}
+
+void FrameRenderer::setStaticRecording(bool enabled) {
+    if (staticEnabled_ == enabled) {
+        return;
+    }
+    staticEnabled_ = enabled;
+    invalidateStatic();
+}
+
+void FrameRenderer::invalidateStatic() {
+    if (!staticBuffers_.empty()) {
+        vkFreeCommandBuffers(device_->handle(), commandPool_,
+                             static_cast<std::uint32_t>(staticBuffers_.size()),
+                             staticBuffers_.data());
+        staticBuffers_.clear();
+    }
+    staticValid_ = false;
+}
+
+Result<void> FrameRenderer::prerecordStatic(const Pipeline& pipeline, const DrawBatch* batch) {
+    invalidateStatic();
+
+    const auto imageCount = static_cast<std::uint32_t>(swapchain_->images().size());
+    staticBuffers_.resize(std::size_t{kFramesInFlight} * imageCount, VK_NULL_HANDLE);
+
+    VkCommandBufferAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.commandPool = commandPool_;
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandBufferCount = static_cast<std::uint32_t>(staticBuffers_.size());
+    if (VkResult r = vkAllocateCommandBuffers(device_->handle(), &allocInfo, staticBuffers_.data());
+        r != VK_SUCCESS) {
+        staticBuffers_.clear();
+        return Error{std::format("vkAllocateCommandBuffers (static) failed ({})",
+                                 static_cast<int>(r))};
+    }
+
+    for (std::uint32_t slot = 0; slot < kFramesInFlight; ++slot) {
+        for (std::uint32_t image = 0; image < imageCount; ++image) {
+            if (auto r = record(staticBuffers_[std::size_t{slot} * imageCount + image], image, slot,
+                                pipeline, batch, /*reusable=*/true);
+                !r) {
+                invalidateStatic();
+                return r.error();
+            }
+        }
+    }
+    staticValid_ = true;
+    ++stats_.prerecords;
+    log::info("Static command buffers recorded: {} ({} slots x {} images)", staticBuffers_.size(),
+              kFramesInFlight, imageCount);
+    return {};
+}
+
+Result<void> FrameRenderer::waitFrameSlot() {
+    return waitForFence(frames_[frameIndex_].inFlight, "Previous frame");
+}
+
+FrameRenderer::Stats FrameRenderer::takeStats() {
+    Stats out = stats_;
+    stats_ = {};
+    return out;
 }
 
 Result<void> FrameRenderer::waitForFence(VkFence fence, const char* what) const {
@@ -331,10 +399,29 @@ Result<void> FrameRenderer::drawFrame(const Pipeline& pipeline, const DrawBatch*
     }
 
     vkResetFences(device_->handle(), 1, &frame.inFlight);
-    vkResetCommandBuffer(frame.commandBuffer, 0);
-    if (auto r = record(frame.commandBuffer, imageIndex, pipeline, batch); !r) {
-        return r.error();
+
+    VkCommandBuffer cmd = VK_NULL_HANDLE;
+    if (staticEnabled_) {
+        if (!staticValid_) {
+            if (auto r = prerecordStatic(pipeline, batch); !r) {
+                return r.error();
+            }
+        }
+        cmd = staticBuffers_[std::size_t{frameIndex_} * swapchain_->images().size() + imageIndex];
+    } else {
+        const auto recordStart = std::chrono::steady_clock::now();
+        cmd = frame.commandBuffer;
+        vkResetCommandBuffer(cmd, 0);
+        if (auto r = record(cmd, imageIndex, frameIndex_, pipeline, batch, /*reusable=*/false);
+            !r) {
+            return r.error();
+        }
+        stats_.recordMicros += static_cast<std::uint64_t>(
+            std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() -
+                                                                  recordStart)
+                .count());
     }
+    ++stats_.frames;
 
     VkSemaphoreSubmitInfo waitInfo{};
     waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
@@ -348,7 +435,7 @@ Result<void> FrameRenderer::drawFrame(const Pipeline& pipeline, const DrawBatch*
 
     VkCommandBufferSubmitInfo commandInfo{};
     commandInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
-    commandInfo.commandBuffer = frame.commandBuffer;
+    commandInfo.commandBuffer = cmd;
 
     VkSubmitInfo2 submit{};
     submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
