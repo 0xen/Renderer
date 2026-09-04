@@ -85,18 +85,10 @@ VSOutput VSMain(VSInput input) {
     return output;
 }
 
-// Shadow visibility: pick the cascade by view depth, transform to its
-// light space, 3x3 PCF over hardware 2x2 compares. The projections bake
-// Vulkan's Y flip, so NDC y maps straight to V.
-float shadowFactor(float3 worldPos, float3 n, float viewDepth, LightData light,
-                   out uint cascade) {
-    cascade = light.cascadeCount - 1;
-    for (uint i = 0; i < light.cascadeCount; ++i) {
-        if (viewDepth < light.splitDepths[i]) {
-            cascade = i;
-            break;
-        }
-    }
+// Visibility from one cascade's map: transform to its light space, 3x3
+// PCF over hardware 2x2 compares. The projections bake Vulkan's Y flip,
+// so NDC y maps straight to V.
+float sampleCascade(float3 worldPos, float3 n, uint cascade, LightData light) {
     const float4 lightClip = mul(light.cascadeViewProj[cascade], float4(worldPos, 1.0f));
     const float2 uv = lightClip.xy * 0.5f + 0.5f;
     // Slope-scaled bias against acne on faces the light grazes.
@@ -119,6 +111,35 @@ float shadowFactor(float3 worldPos, float3 n, float viewDepth, LightData light,
         }
     }
     return sum / 9.0f;
+}
+
+// Fraction of each cascade's depth range that cross-fades into the next
+// cascade, hiding the resolution/bias jump at the split as it sweeps
+// across geometry while the camera moves.
+static const float kCascadeBlendFraction = 0.2f;
+
+// Shadow visibility: pick the cascade by view depth, then blend toward
+// the next cascade near the split so the transition never pops.
+float shadowFactor(float3 worldPos, float3 n, float viewDepth, LightData light,
+                   out uint cascade) {
+    cascade = light.cascadeCount - 1;
+    for (uint i = 0; i < light.cascadeCount; ++i) {
+        if (viewDepth < light.splitDepths[i]) {
+            cascade = i;
+            break;
+        }
+    }
+    float shadow = sampleCascade(worldPos, n, cascade, light);
+    if (cascade + 1 < light.cascadeCount) {
+        const float splitStart = cascade > 0 ? light.splitDepths[cascade - 1] : 0.0f;
+        const float splitEnd = light.splitDepths[cascade];
+        const float band = (splitEnd - splitStart) * kCascadeBlendFraction;
+        const float fade = saturate((viewDepth - (splitEnd - band)) / band);
+        if (fade > 0.0f) {
+            shadow = lerp(shadow, sampleCascade(worldPos, n, cascade + 1, light), fade);
+        }
+    }
+    return shadow;
 }
 
 #if RT_SHADOWS
