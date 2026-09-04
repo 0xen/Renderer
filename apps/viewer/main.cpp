@@ -7,11 +7,52 @@
 #include "rend/gpu/pipeline.h"
 #include "rend/gpu/shader.h"
 #include "rend/gpu/swapchain.h"
+#include "rend/gpu/mega_buffer.h"
+#include "rend/gpu/transfer.h"
 #include "rend/platform/backend.h"
 
 #include <chrono>
+#include <optional>
 
 using namespace rend;
+
+namespace {
+
+// Where a mesh landed in the mega-buffer. Step 2 of milestone 7 turns
+// these into indirect draw entries.
+struct GeometryLocation {
+    gpu::BufferSlice vertices;
+    gpu::BufferSlice indices;
+    std::uint32_t indexCount = 0;
+    std::uint32_t materialIndex = 0;
+};
+
+// Interleave the assetio streams into the vertex layout the scene pass will
+// consume: position (3f), normal (3f), uv (2f). Missing streams pad with
+// zeros so one pipeline serves every mesh.
+std::vector<float> interleave(const assetio::MeshData& mesh) {
+    const std::size_t count = mesh.vertexCount();
+    std::vector<float> out;
+    out.reserve(count * 8);
+    for (std::size_t i = 0; i < count; ++i) {
+        out.insert(out.end(), {mesh.positions[i * 3], mesh.positions[i * 3 + 1],
+                               mesh.positions[i * 3 + 2]});
+        if (mesh.normals.size() == count * 3) {
+            out.insert(out.end(),
+                       {mesh.normals[i * 3], mesh.normals[i * 3 + 1], mesh.normals[i * 3 + 2]});
+        } else {
+            out.insert(out.end(), {0.0f, 0.0f, 0.0f});
+        }
+        if (mesh.uvs.size() == count * 2) {
+            out.insert(out.end(), {mesh.uvs[i * 2], mesh.uvs[i * 2 + 1]});
+        } else {
+            out.insert(out.end(), {0.0f, 0.0f});
+        }
+    }
+    return out;
+}
+
+} // namespace
 
 int main(int argc, char** argv) {
     bool debug = false;
@@ -33,8 +74,8 @@ int main(int argc, char** argv) {
     log::info("Renderer viewer v0.1.0{}", debug ? " (debug)" : "");
 
     // The assetio project turns the scene XML + referenced model files into
-    // plain CPU-side data; feeding it to the renderer lands with the
-    // renderer layer (roadmap #7), so for now the viewer loads and reports.
+    // plain CPU-side data; the viewer feeds it to the GPU below.
+    std::optional<assetio::LoadedScene> scene;
     if (scenePath) {
         const auto start = std::chrono::steady_clock::now();
         auto sceneResult = assetio::loadScene(scenePath, assetio::ImporterRegistry::withBuiltins());
@@ -42,13 +83,13 @@ int main(int argc, char** argv) {
             log::error("Scene load failed: {}", sceneResult.error().message);
             return 1;
         }
-        const auto& scene = sceneResult.value();
+        scene = std::move(sceneResult).value();
         const auto ms =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() -
                                                                   start)
                 .count();
         std::size_t vertices = 0, triangles = 0;
-        for (const auto& model : scene.models) {
+        for (const auto& model : scene->models) {
             std::size_t modelVerts = 0, modelTris = 0;
             for (const auto& mesh : model.data.meshes) {
                 modelVerts += mesh.vertexCount();
@@ -60,8 +101,8 @@ int main(int argc, char** argv) {
             vertices += modelVerts;
             triangles += modelTris;
         }
-        log::info("Scene '{}' loaded in {} ms: {} models, {} vertices, {} triangles", scene.name,
-                  ms, scene.models.size(), vertices, triangles);
+        log::info("Scene '{}' loaded in {} ms: {} models, {} vertices, {} triangles", scene->name,
+                  ms, scene->models.size(), vertices, triangles);
     } else {
         log::info("No scene file given (usage: viewer [--debug] <scene.xml>)");
     }
@@ -96,6 +137,70 @@ int main(int argc, char** argv) {
         return 1;
     }
     auto device = std::move(deviceResult).value();
+
+    // Milestone 7 step 1: everything the scene pass will draw lives in one
+    // device-local mega-buffer, filled through the transfer queue. Indirect
+    // draw entries over these slices come next.
+    std::unique_ptr<gpu::MegaBuffer> megaBuffer;
+    std::vector<GeometryLocation> geometry;
+    if (scene) {
+        const auto start = std::chrono::steady_clock::now();
+        auto megaResult = gpu::MegaBuffer::create(*device, 128ull * 1024 * 1024);
+        if (!megaResult) {
+            log::error("Mega-buffer creation failed: {}", megaResult.error().message);
+            return 1;
+        }
+        megaBuffer = std::move(megaResult).value();
+
+        auto transferResult = gpu::TransferContext::create(*device);
+        if (!transferResult) {
+            log::error("Transfer context creation failed: {}", transferResult.error().message);
+            return 1;
+        }
+        auto transfer = std::move(transferResult).value();
+
+        for (const auto& model : scene->models) {
+            for (const auto& mesh : model.data.meshes) {
+                const std::vector<float> vertexData = interleave(mesh);
+                auto vertexSlice =
+                    megaBuffer->allocate(vertexData.size() * sizeof(float));
+                auto indexSlice =
+                    megaBuffer->allocate(mesh.indices.size() * sizeof(std::uint32_t), 4);
+                if (!vertexSlice || !indexSlice) {
+                    log::error("Mega-buffer allocation failed: {}",
+                               (!vertexSlice ? vertexSlice.error() : indexSlice.error()).message);
+                    return 1;
+                }
+                auto stagedVerts =
+                    transfer->stage(megaBuffer->buffer(), vertexSlice.value().offset,
+                                    vertexData.data(), vertexSlice.value().size);
+                auto stagedIndices =
+                    transfer->stage(megaBuffer->buffer(), indexSlice.value().offset,
+                                    mesh.indices.data(), indexSlice.value().size);
+                if (!stagedVerts || !stagedIndices) {
+                    log::error("Staging failed: {}",
+                               (!stagedVerts ? stagedVerts.error() : stagedIndices.error()).message);
+                    return 1;
+                }
+                geometry.push_back({.vertices = vertexSlice.value(),
+                                    .indices = indexSlice.value(),
+                                    .indexCount = static_cast<std::uint32_t>(mesh.indices.size()),
+                                    .materialIndex = mesh.materialIndex});
+            }
+        }
+        if (auto flushed = transfer->flush(); !flushed) {
+            log::error("Geometry upload failed: {}", flushed.error().message);
+            return 1;
+        }
+        const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::steady_clock::now() - start)
+                            .count();
+        log::info("Geometry uploaded in {} ms: {} slices, {:.1f} MiB of {} MiB used ({} queue)",
+                  ms, megaBuffer->allocationCount(),
+                  static_cast<double>(megaBuffer->usedBytes()) / (1024.0 * 1024.0),
+                  megaBuffer->capacity() / (1024 * 1024),
+                  device->hasDedicatedTransfer() ? "dedicated transfer" : "graphics");
+    }
 
     platform::TargetDesc desc{
         .style = platform::WindowStyle::Decorated,
