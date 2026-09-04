@@ -66,6 +66,18 @@ placement, upload timing, and residency.** The two sides stay maximally separate
   returns the same underlying GPU resource, reference-counted (freed only when the last
   handle is released). Resources are distinct from *instances*: many scene instances
   (transform + per-instance data) share one set of GPU resources.
+- **Intent, not implementation** — submissions are tagged with a small *semantic* stage
+  vocabulary (opaque, transparent, overlay, …) describing what an object *is*, never how
+  or in what order it is drawn. The renderer maps stages onto its current architecture
+  (deferred, forward, ray-traced, …); it may, e.g., ray-trace all opaque geometry
+  without any change to game-side submissions. Pass structure, techniques, and formats
+  are the rendering implementation's dictate.
+- **Offer-based capability negotiation** — the game *queries* available techniques
+  (e.g. shadows → {ray-traced, raycast}, with quality/cost hints) and selects among
+  what the renderer offers; it never demands features. Offers derive from the active
+  backend's negotiated FeatureSet on the actual hardware — one chain of truth flowing
+  upward. The game's selection is a preference the renderer honors; everything beneath
+  it stays renderer-owned.
 - **Two mechanisms, one philosophy** — message-style API for resource lifetime and
   streaming (create/destroy/hint: infrequent, async-friendly); structured draw
   lists / frame graph for per-frame submission (typed, batch-oriented — not generic
