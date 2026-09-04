@@ -1,3 +1,4 @@
+#include "rend/assetio/scene_loader.h"
 #include "rend/core/log.h"
 #include "rend/core/paths.h"
 #include "rend/gpu/device.h"
@@ -7,6 +8,8 @@
 #include "rend/gpu/shader.h"
 #include "rend/gpu/swapchain.h"
 #include "rend/platform/backend.h"
+
+#include <chrono>
 
 using namespace rend;
 
@@ -29,10 +32,36 @@ int main(int argc, char** argv) {
 
     log::info("Renderer viewer v0.1.0{}", debug ? " (debug)" : "");
 
-    // Scene-description XML (shaders, scene setup, models). Parsing lands
-    // with the renderer layer; the entry point is established now.
+    // The assetio project turns the scene XML + referenced model files into
+    // plain CPU-side data; feeding it to the renderer lands with the
+    // renderer layer (roadmap #7), so for now the viewer loads and reports.
     if (scenePath) {
-        log::info("Scene file requested: {} (XML scene loading not implemented yet)", scenePath);
+        const auto start = std::chrono::steady_clock::now();
+        auto sceneResult = assetio::loadScene(scenePath, assetio::ImporterRegistry::withBuiltins());
+        if (!sceneResult) {
+            log::error("Scene load failed: {}", sceneResult.error().message);
+            return 1;
+        }
+        const auto& scene = sceneResult.value();
+        const auto ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() -
+                                                                  start)
+                .count();
+        std::size_t vertices = 0, triangles = 0;
+        for (const auto& model : scene.models) {
+            std::size_t modelVerts = 0, modelTris = 0;
+            for (const auto& mesh : model.data.meshes) {
+                modelVerts += mesh.vertexCount();
+                modelTris += mesh.triangleCount();
+            }
+            log::info("  Model '{}': {} meshes, {} materials, {} vertices, {} triangles",
+                      model.desc.name, model.data.meshes.size(), model.data.materials.size(),
+                      modelVerts, modelTris);
+            vertices += modelVerts;
+            triangles += modelTris;
+        }
+        log::info("Scene '{}' loaded in {} ms: {} models, {} vertices, {} triangles", scene.name,
+                  ms, scene.models.size(), vertices, triangles);
     } else {
         log::info("No scene file given (usage: viewer [--debug] <scene.xml>)");
     }

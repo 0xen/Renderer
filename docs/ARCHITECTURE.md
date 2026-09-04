@@ -12,7 +12,8 @@ feature sets, and render techniques all live behind interfaces we own.
 | `engine/gpu` | `rend::gpu` | core | Vulkan layer (instance, adapter selection, device, swapchain, feature negotiation). *Placeholder.* |
 | `engine/renderer` | `rend::renderer` | platform, gpu | High-level rendering (frame graph, passes). *Placeholder.* |
 | `engine/` (umbrella) | `rend::engine` | all layers | The engine ships as **one DLL** (`rend.dll`); the per-layer object libraries above are linked into it. |
-| `apps/viewer` | `viewer` | rend::engine | Milestone test-bed, growing into a scene viewer: `viewer <scene.xml>` loads an XML scene description (shaders, scene setup, models — loader lands with the renderer layer; pugixml planned). |
+| `assetio/` | `rend::assetio` | rend::engine (core utilities only) | **Separate project, separate DLL.** Reads asset files (scene XML via pugixml, glTF via cgltf) into plain CPU-side structs; the engine is *fed* the data and never touches file formats. New formats plug in as `IModelImporter` implementations behind an `ImporterRegistry`. The engine never links back. |
+| `apps/viewer` | `viewer` | rend::engine, rend::assetio | Milestone test-bed, growing into a scene viewer: `viewer <scene.xml>` loads an XML scene description through assetio; feeding the data to the renderer layer follows with roadmap #7. |
 
 Dependency direction is strict and enforced by CMake link interfaces — nothing lower
 links upward. Applications link only `rend::engine` (the DLL), never the internal

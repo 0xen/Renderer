@@ -55,15 +55,24 @@ renderer supplies them, not the asset.
   descriptor references match the shader — mismatches are load-time errors, not
   silent corruption.
 
-## Scene file (planned shape)
+## Scene file
 
-The scene hierarchy contains nodes such as models; a model references a pipeline
-definition file plus its buffers/textures. Exact schema to be designed at roadmap #8.
+Loaded by the standalone `assetio` project (pugixml). Mesh paths resolve against the
+scene file's directory; `Shader` paths resolve against the engine's data root. Vector
+attributes are whitespace-separated floats. `Camera` and `Transform` are optional and
+default sensibly. Model formats are dispatched by extension through assetio's importer
+registry (currently glTF 2.0 via cgltf; new formats = new importer, nothing else changes).
+
 ```xml
-<Scene>
-    <Model name="terrain">
-        <Shader path="pipelines/TerrainBackground.xml" />
-        <!-- meshes, textures, transforms ... -->
+<Scene name="crytek_sponza">
+    <Camera position="-8 1.7 0" target="0 1.7 0" fovDegrees="60" />
+    <Model name="sponza">
+        <Shader path="pipelines/opaque.xml" />
+        <Mesh path="model/Sponza.gltf" />
+        <Transform position="0 0 0" rotation="0 0 0" scale="1 1 1" />
     </Model>
 </Scene>
 ```
+
+Example scene: `C:\github\scenes\crytek_sponza\crytek_sponza.xml` (kept outside this
+repo; Crytek Sponza in the Khronos glTF conversion).
