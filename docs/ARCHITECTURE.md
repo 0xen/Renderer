@@ -60,6 +60,12 @@ placement, upload timing, and residency.** The two sides stay maximally separate
   A per-descriptor flag (`keepMinimalResident`) requests that the minimal version be
   uploaded to VRAM at registration and pinned — guaranteeing the object can always draw
   immediately; without it, the minimal version streams on demand like any other data.
+- **Deduplication** — the renderer never holds multiple VRAM copies of the same data.
+  Each descriptor's data provider supplies a stable identity (asset ID / content hash);
+  the renderer keeps an identity → resource table, so registering the same object twice
+  returns the same underlying GPU resource, reference-counted (freed only when the last
+  handle is released). Resources are distinct from *instances*: many scene instances
+  (transform + per-instance data) share one set of GPU resources.
 - **Two mechanisms, one philosophy** — message-style API for resource lifetime and
   streaming (create/destroy/hint: infrequent, async-friendly); structured draw
   lists / frame graph for per-frame submission (typed, batch-oriented — not generic
