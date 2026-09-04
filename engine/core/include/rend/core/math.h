@@ -73,4 +73,19 @@ inline Mat4 perspective(float fovYRadians, float aspect, float nearPlane, float 
     return m;
 }
 
+// Vulkan-convention orthographic: depth 0..1, +Y-down flip baked in like
+// perspective(). Near/far follow the right-handed camera (-Z forward).
+inline Mat4 orthographic(float left, float right, float bottom, float top, float nearPlane,
+                         float farPlane) {
+    Mat4 m{};
+    m[0] = 2.0f / (right - left);
+    m[5] = -2.0f / (top - bottom);
+    m[10] = 1.0f / (nearPlane - farPlane);
+    m[12] = -(right + left) / (right - left);
+    m[13] = (top + bottom) / (top - bottom);
+    m[14] = nearPlane / (nearPlane - farPlane);
+    m[15] = 1.0f;
+    return m;
+}
+
 } // namespace rend::math

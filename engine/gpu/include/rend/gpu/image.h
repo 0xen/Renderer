@@ -13,6 +13,10 @@ namespace rend::gpu {
 
 class Device;
 
+// VkImageUsageFlags bits callers need without including Vulkan headers.
+inline constexpr std::uint32_t kImageUsageSampled = 0x4;
+inline constexpr std::uint32_t kImageUsageDepthAttachment = 0x20;
+
 struct ImageDesc {
     std::uint32_t width = 0;
     std::uint32_t height = 0;

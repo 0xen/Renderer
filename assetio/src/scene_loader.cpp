@@ -79,6 +79,25 @@ Result<SceneDesc> parseScene(const std::filesystem::path& xmlFile) {
         scene.camera.fovDegrees = camera.attribute("fovDegrees").as_float(scene.camera.fovDegrees);
     }
 
+    for (const pugi::xml_node light : root.children("Light")) {
+        LightDesc desc;
+        const char* type = light.attribute("type").as_string("directional");
+        if (std::string_view(type) != "directional") {
+            return Error{std::format("'{}': unsupported light type '{}' (directional only for now)",
+                                     xmlFile.string(), type)};
+        }
+        if (auto r = parseFloats(light.attribute("direction"), desc.direction, "Light direction");
+            !r) {
+            return r.error();
+        }
+        if (auto r = parseFloats(light.attribute("color"), desc.color, "Light color"); !r) {
+            return r.error();
+        }
+        desc.intensity = light.attribute("intensity").as_float(desc.intensity);
+        desc.castsShadows = light.attribute("castsShadows").as_bool(desc.castsShadows);
+        scene.lights.push_back(desc);
+    }
+
     const std::filesystem::path baseDir = xmlFile.parent_path();
     for (const pugi::xml_node model : root.children("Model")) {
         ModelNodeDesc desc;
@@ -114,6 +133,7 @@ Result<LoadedScene> loadScene(const std::filesystem::path& xmlFile,
     LoadedScene loaded;
     loaded.name = std::move(desc.name);
     loaded.camera = desc.camera;
+    loaded.lights = std::move(desc.lights);
     for (ModelNodeDesc& model : desc.models) {
         auto imported = importers.import(model.meshPath);
         if (!imported) {

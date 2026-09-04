@@ -66,6 +66,13 @@ struct DrawBatch {
     std::uint64_t countRegionStride = 0;
     // Direct mode: CPU-side copy of the drawCount entries.
     const DrawIndexedIndirect* cpuDraws = nullptr;
+    // Shadow pass (optional): the same draw stream rendered depth-only
+    // from the light's point of view into shadowMap before the main pass,
+    // which then samples it (descriptor bindings 7-9). The light matrix
+    // comes from the per-slot light buffer, so static recordings survive
+    // a moving sun.
+    const Pipeline* shadowPipeline = nullptr;
+    const Image* shadowMap = nullptr; // depth attachment + sampled, caller-owned
     // GPU compaction (IndirectCount mode only): a compute pipeline whose
     // shader reads the draw templates (descriptor binding 3), appends
     // visible entries to `indirect` (binding 4) and counts them into

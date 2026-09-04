@@ -66,6 +66,8 @@ registry (currently glTF 2.0 via cgltf; new formats = new importer, nothing else
 ```xml
 <Scene name="crytek_sponza">
     <Camera position="-8 1.7 0" target="0 1.7 0" fovDegrees="60" />
+    <Light type="directional" direction="0.35 -1.0 0.2" color="1.0 0.96 0.88"
+           intensity="1.0" castsShadows="true" />
     <Model name="sponza">
         <Shader path="pipelines/opaque.xml" />
         <Mesh path="model/Sponza.gltf" />
@@ -73,6 +75,13 @@ registry (currently glTF 2.0 via cgltf; new formats = new importer, nothing else
     </Model>
 </Scene>
 ```
+
+`Light` describes what the light *is* (direction points from the light toward the
+scene), never the rendering technique — shadow maps vs ray tracing is the renderer's
+offer, per the intent/offer model in ARCHITECTURE.md. `type` is `directional` only for
+now; every attribute is optional with sensible defaults. Multiple lights are parsed
+into a list (the GPU consumes lights as a buffer, so more types scale without new
+passes).
 
 Example scene: `C:\github\scenes\crytek_sponza\crytek_sponza.xml` (kept outside this
 repo; Crytek Sponza in the Khronos glTF conversion).

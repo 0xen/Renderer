@@ -170,11 +170,18 @@ Result<std::unique_ptr<Pipeline>> Pipeline::createGraphics(const Device& device,
     depthStencil.depthWriteEnable = VK_TRUE;
     depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
 
+    // colorFormat 0 = depth-only pipeline (shadow passes): no color
+    // attachment, no blend state.
     const VkFormat colorFormat = static_cast<VkFormat>(desc.colorFormat);
     VkPipelineRenderingCreateInfo rendering{};
     rendering.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
-    rendering.colorAttachmentCount = 1;
-    rendering.pColorAttachmentFormats = &colorFormat;
+    if (desc.colorFormat != 0) {
+        rendering.colorAttachmentCount = 1;
+        rendering.pColorAttachmentFormats = &colorFormat;
+    } else {
+        blend.attachmentCount = 0;
+        blend.pAttachments = nullptr;
+    }
     rendering.depthAttachmentFormat = static_cast<VkFormat>(desc.depthFormat);
 
     VkGraphicsPipelineCreateInfo info{};

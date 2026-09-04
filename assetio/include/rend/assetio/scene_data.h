@@ -17,6 +17,16 @@ struct CameraDesc {
     float fovDegrees = 60.0f;
 };
 
+// Lights describe WHAT the light is, never the technique (shadow maps vs
+// ray tracing is the renderer's offer — docs/ARCHITECTURE.md). Directional
+// only for now; position/range arrive with point/spot types.
+struct LightDesc {
+    std::array<float, 3> direction{0.3f, -1.0f, 0.2f}; // world space, toward the scene
+    std::array<float, 3> color{1.0f, 1.0f, 1.0f};
+    float intensity = 1.0f;
+    bool castsShadows = true;
+};
+
 struct TransformDesc {
     std::array<float, 3> position{0.0f, 0.0f, 0.0f};
     std::array<float, 3> rotationDegrees{0.0f, 0.0f, 0.0f};
@@ -70,6 +80,7 @@ struct ModelNodeDesc {
 struct SceneDesc {
     std::string name;
     CameraDesc camera;
+    std::vector<LightDesc> lights;
     std::vector<ModelNodeDesc> models;
 };
 
@@ -83,6 +94,7 @@ struct LoadedModel {
 struct LoadedScene {
     std::string name;
     CameraDesc camera;
+    std::vector<LightDesc> lights;
     std::vector<LoadedModel> models;
 };
 

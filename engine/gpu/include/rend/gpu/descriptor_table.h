@@ -25,6 +25,10 @@ class Device;
 //   3 — draw templates SSBO (compute: the cull pass input)
 //   4 — compacted draws SSBO (compute: the cull pass output)
 //   5 — draw counts SSBO (compute: one uint32 per frame slot)
+//   6 — camera SSBO (vertex + compute: one viewProj per frame slot)
+//   7 — light SSBO (vertex + fragment: per-slot light data + matrix)
+//   8 — shadow map (fragment; depth image sampled by the scene pass)
+//   9 — shadow comparison sampler (fragment; PCF, owned here)
 class DescriptorTable {
 public:
     static Result<std::unique_ptr<DescriptorTable>> create(const Device& device,
@@ -39,8 +43,10 @@ public:
 
     void writeObjectBuffer(VkBuffer buffer, std::uint64_t range);
     void writeTexture(std::uint32_t index, VkImageView view);
-    // Cull-pass bindings (3-5); binding picks which, see the class comment.
+    // Storage-buffer bindings (3-7); binding picks which, see class comment.
     void writeStorageBuffer(std::uint32_t binding, VkBuffer buffer, std::uint64_t range);
+    // Binding 8: the depth image the scene pass samples for shadows.
+    void writeShadowMap(VkImageView view);
 
 private:
     DescriptorTable() = default;
@@ -50,6 +56,7 @@ private:
     VkDescriptorSetLayout layout_ = nullptr;
     VkDescriptorSet set_ = nullptr;
     VkSampler sampler_ = nullptr;
+    VkSampler shadowSampler_ = nullptr; // comparison (PCF) sampler, binding 9
 };
 
 } // namespace rend::gpu

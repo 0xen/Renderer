@@ -51,6 +51,39 @@ struct ObjectData {
 // Interleaved vertex layout of the scene pass: position, normal, uv.
 constexpr std::uint32_t kVertexStride = 8 * sizeof(float);
 
+constexpr std::uint32_t kShadowMapSize = 2048;
+
+// One region per frame slot in the light buffer (bindless binding 7).
+// Must match LightData in scene.hlsl / shadow.hlsl.
+struct LightData {
+    math::Mat4 viewProj{};
+    std::array<float, 3> direction{0.0f, -1.0f, 0.0f};
+    float intensity = 1.0f;
+    std::array<float, 3> color{1.0f, 1.0f, 1.0f};
+    float pad = 0.0f;
+};
+static_assert(sizeof(LightData) == 96);
+
+// Directional-light matrix fitted around the scene's bounding sphere: a
+// crude fit (cascades tighten it later), but it guarantees every caster
+// is inside the map.
+math::Mat4 lightViewProj(const math::Vec3& direction, const math::Vec3& aabbMin,
+                         const math::Vec3& aabbMax) {
+    const math::Vec3 center{(aabbMin.x + aabbMax.x) * 0.5f, (aabbMin.y + aabbMax.y) * 0.5f,
+                            (aabbMin.z + aabbMax.z) * 0.5f};
+    const math::Vec3 extent = math::sub(aabbMax, aabbMin);
+    const float radius = 0.5f * std::sqrt(math::dot(extent, extent));
+    const math::Vec3 d = math::normalize(direction);
+    const math::Vec3 eye{center.x - d.x * radius * 1.5f, center.y - d.y * radius * 1.5f,
+                         center.z - d.z * radius * 1.5f};
+    const math::Vec3 up = std::fabs(d.y) > 0.99f ? math::Vec3{1.0f, 0.0f, 0.0f}
+                                                 : math::Vec3{0.0f, 1.0f, 0.0f};
+    const math::Mat4 view = math::lookAt(eye, center, up);
+    const math::Mat4 proj =
+        math::orthographic(-radius, radius, -radius, radius, 0.1f, radius * 3.0f);
+    return math::mul(proj, view);
+}
+
 constexpr float kPi = 3.14159265358979323846f;
 
 // Free-fly camera: yaw/pitch angles plus position, driven by RMB mouselook
@@ -234,6 +267,10 @@ int main(int argc, char** argv) {
     std::unique_ptr<gpu::Buffer> compactedBuffer;
     std::unique_ptr<gpu::Buffer> countBuffer;
     std::unique_ptr<gpu::Buffer> cameraBuffer; // one viewProj per frame slot, CPU-written
+    std::unique_ptr<gpu::Buffer> lightBuffer;  // one LightData per frame slot, CPU-written
+    std::unique_ptr<gpu::Image> shadowMap;
+    math::Vec3 sceneMin{1e30f, 1e30f, 1e30f};
+    math::Vec3 sceneMax{-1e30f, -1e30f, -1e30f};
     std::vector<gpu::DrawIndexedIndirect> draws; // outlives the loop: Direct mode records from it
     std::unique_ptr<gpu::Buffer> objectBuffer;
     std::unique_ptr<gpu::DescriptorTable> descriptorTable;
@@ -279,6 +316,15 @@ int main(int argc, char** argv) {
                     }
                 }
                 objectData.push_back(object);
+
+                for (std::size_t v = 0; v + 2 < mesh.positions.size(); v += 3) {
+                    sceneMin.x = std::min(sceneMin.x, mesh.positions[v]);
+                    sceneMin.y = std::min(sceneMin.y, mesh.positions[v + 1]);
+                    sceneMin.z = std::min(sceneMin.z, mesh.positions[v + 2]);
+                    sceneMax.x = std::max(sceneMax.x, mesh.positions[v]);
+                    sceneMax.y = std::max(sceneMax.y, mesh.positions[v + 1]);
+                    sceneMax.z = std::max(sceneMax.z, mesh.positions[v + 2]);
+                }
 
                 const std::vector<float> vertexData = interleave(mesh);
                 // Stride alignment keeps vertexOffset (= offset / stride) exact.
@@ -391,6 +437,33 @@ int main(int argc, char** argv) {
         }
         cameraBuffer = std::move(cameraResult).value();
 
+        // Light data, same per-slot scheme as the camera.
+        auto lightResult = gpu::Buffer::create(
+            *device, {
+                         .size = sizeof(LightData) * gpu::FrameRenderer::kFramesInFlight,
+                         .usage = gpu::kUsageStorage,
+                         .location = gpu::MemoryLocation::HostVisible,
+                     });
+        if (!lightResult) {
+            log::error("Light buffer creation failed: {}", lightResult.error().message);
+            return 1;
+        }
+        lightBuffer = std::move(lightResult).value();
+
+        auto shadowResult = gpu::Image::create(
+            *device, {
+                         .width = kShadowMapSize,
+                         .height = kShadowMapSize,
+                         .format = gpu::kFormatD32Sfloat,
+                         .usage = gpu::kImageUsageDepthAttachment | gpu::kImageUsageSampled,
+                         .depth = true,
+                     });
+        if (!shadowResult) {
+            log::error("Shadow map creation failed: {}", shadowResult.error().message);
+            return 1;
+        }
+        shadowMap = std::move(shadowResult).value();
+
         auto objectResult = gpu::Buffer::create(
             *device, {
                          .size = objectData.size() * sizeof(ObjectData),
@@ -440,6 +513,8 @@ int main(int argc, char** argv) {
                                             compactedBuffer->size());
         descriptorTable->writeStorageBuffer(5, countBuffer->handle(), countBuffer->size());
         descriptorTable->writeStorageBuffer(6, cameraBuffer->handle(), cameraBuffer->size());
+        descriptorTable->writeStorageBuffer(7, lightBuffer->handle(), lightBuffer->size());
+        descriptorTable->writeShadowMap(shadowMap->view());
 
         auto uploaderResult = gpu::TextureUploader::create(*device);
         if (!uploaderResult) {
@@ -543,7 +618,8 @@ int main(int argc, char** argv) {
     // depth-tested, camera via push constant.
     std::unique_ptr<gpu::Pipeline> scenePipeline;
     std::unique_ptr<gpu::Pipeline> cullPipeline;
-    std::unique_ptr<gpu::Shader> sceneVert, sceneFrag, cullShader;
+    std::unique_ptr<gpu::Pipeline> shadowPipeline;
+    std::unique_ptr<gpu::Shader> sceneVert, sceneFrag, cullShader, shadowVert, shadowFrag;
     if (scene) {
         auto vertResult = gpu::Shader::createFromFile(*device, shaderDir / "scene.vert.spv");
         auto fragResult = gpu::Shader::createFromFile(*device, shaderDir / "scene.frag.spv");
@@ -591,6 +667,36 @@ int main(int argc, char** argv) {
         } else {
             log::warn("Cull shader unavailable: {}", cullShaderResult.error().message);
         }
+
+        // Depth-only pipeline for the shadow pass: same vertex layout and
+        // bindless set, no color attachment.
+        auto shadowVertResult = gpu::Shader::createFromFile(*device, shaderDir / "shadow.vert.spv");
+        auto shadowFragResult = gpu::Shader::createFromFile(*device, shaderDir / "shadow.frag.spv");
+        if (shadowVertResult && shadowFragResult) {
+            shadowVert = std::move(shadowVertResult).value();
+            shadowFrag = std::move(shadowFragResult).value();
+            auto shadowPipeResult = gpu::Pipeline::createGraphics(
+                *device, {
+                             .vertexShader = shadowVert.get(),
+                             .fragmentShader = shadowFrag.get(),
+                             .colorFormat = 0, // depth-only
+                             .vertexStride = kVertexStride,
+                             .vertexAttributes = {{0, gpu::kFormatR32G32B32Sfloat, 0},
+                                                  {1, gpu::kFormatR32G32B32Sfloat, 12},
+                                                  {2, gpu::kFormatR32G32Sfloat, 24}},
+                             .depthFormat = gpu::kFormatD32Sfloat,
+                             .pushConstantBytes = sizeof(std::uint32_t),
+                             .descriptorLayout = descriptorTable->layout(),
+                         });
+            if (shadowPipeResult) {
+                shadowPipeline = std::move(shadowPipeResult).value();
+            } else {
+                log::warn("Shadow pipeline unavailable: {}", shadowPipeResult.error().message);
+            }
+        } else {
+            log::warn("Shadow shaders unavailable: {}",
+                      (!shadowVertResult ? shadowVertResult : shadowFragResult).error().message);
+        }
     }
 
     auto rendererResult = gpu::FrameRenderer::create(*device, *swapchain);
@@ -636,6 +742,11 @@ int main(int argc, char** argv) {
         batch.countRegionStride = sizeof(std::uint32_t);
         batch.cpuDraws = draws.data();
         batch.descriptors = descriptorTable->set();
+        if (shadowPipeline && shadowMap &&
+            (scene->lights.empty() || scene->lights.front().castsShadows)) {
+            batch.shadowPipeline = shadowPipeline.get();
+            batch.shadowMap = shadowMap.get();
+        }
 
         const char* modeName = batch.mode == gpu::DrawSubmitMode::IndirectCount
                                    ? "indirect-count + GPU compaction"
@@ -678,8 +789,21 @@ int main(int argc, char** argv) {
     };
 
     FlyCamera camera;
+    LightData lightData;
     if (scene) {
         camera = FlyCamera::fromScene(scene->camera);
+
+        const assetio::LightDesc lightDesc =
+            scene->lights.empty() ? assetio::LightDesc{} : scene->lights.front();
+        const math::Vec3 direction = math::normalize(
+            {lightDesc.direction[0], lightDesc.direction[1], lightDesc.direction[2]});
+        lightData.viewProj = lightViewProj(direction, sceneMin, sceneMax);
+        lightData.direction = {direction.x, direction.y, direction.z};
+        lightData.intensity = lightDesc.intensity;
+        lightData.color = lightDesc.color;
+        log::info("Sun: direction ({:.2f} {:.2f} {:.2f}), intensity {:.2f}, shadows {}",
+                  direction.x, direction.y, direction.z, lightDesc.intensity,
+                  batch.shadowPipeline ? "on" : "off");
     }
     // Held-key state for camera movement; mouselook while RMB is held.
     bool keyHeld[static_cast<int>(platform::Key::LeftCtrl) + 1] = {};
@@ -783,6 +907,9 @@ int main(int argc, char** argv) {
             std::memcpy(static_cast<std::byte*>(cameraBuffer->mapped()) +
                             renderer->frameSlot() * sizeof(math::Mat4),
                         viewProj.data(), sizeof(math::Mat4));
+            std::memcpy(static_cast<std::byte*>(lightBuffer->mapped()) +
+                            renderer->frameSlot() * sizeof(LightData),
+                        &lightData, sizeof(LightData));
         }
 
         if (ui && viewWidth > 0 && viewHeight > 0) {

@@ -21,6 +21,8 @@ set(REND_SHADER_STAGES
     "scene.hlsl|VSMain|vs_6_0|scene.vert.spv"
     "scene.hlsl|PSMain|ps_6_0|scene.frag.spv"
     "cull.hlsl|CSMain|cs_6_0|cull.comp.spv"
+    "shadow.hlsl|VSMain|vs_6_0|shadow.vert.spv"
+    "shadow.hlsl|PSMain|ps_6_0|shadow.frag.spv"
 )
 
 set(REND_SHADER_ARTIFACTS "")
@@ -52,9 +54,10 @@ endforeach()
 
 # The .hlsl sources are listed for IDE browsing only — Visual Studio would
 # otherwise hand them to its built-in FXC rule instead of our dxc command.
-set_source_files_properties(shaders/triangle.hlsl shaders/scene.hlsl shaders/cull.hlsl
+set_source_files_properties(
+    shaders/triangle.hlsl shaders/scene.hlsl shaders/cull.hlsl shaders/shadow.hlsl
     PROPERTIES VS_TOOL_OVERRIDE "None")
 
 add_custom_target(shaders ALL DEPENDS ${REND_SHADER_ARTIFACTS}
-    SOURCES shaders/triangle.hlsl shaders/scene.hlsl shaders/cull.hlsl)
+    SOURCES shaders/triangle.hlsl shaders/scene.hlsl shaders/cull.hlsl shaders/shadow.hlsl)
 set_target_properties(shaders PROPERTIES FOLDER "assets")

@@ -14,7 +14,7 @@ Result<std::unique_ptr<DescriptorTable>> DescriptorTable::create(const Device& d
     auto table = std::unique_ptr<DescriptorTable>(new DescriptorTable());
     table->device_ = &device;
 
-    std::array<VkDescriptorSetLayoutBinding, 7> bindings{};
+    std::array<VkDescriptorSetLayoutBinding, 10> bindings{};
     bindings[0] = {.binding = 0,
                    .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
                    .descriptorCount = 1,
@@ -39,10 +39,22 @@ Result<std::unique_ptr<DescriptorTable>> DescriptorTable::create(const Device& d
                    .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
                    .descriptorCount = 1,
                    .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_COMPUTE_BIT};
+    bindings[7] = {.binding = 7,
+                   .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                   .descriptorCount = 1,
+                   .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT};
+    bindings[8] = {.binding = 8,
+                   .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
+                   .descriptorCount = 1,
+                   .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT};
+    bindings[9] = {.binding = 9,
+                   .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER,
+                   .descriptorCount = 1,
+                   .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT};
 
-    // The cull (3-5) and camera (6) bindings are partially bound: only
-    // written when their passes are active, never statically used without.
-    const std::array<VkDescriptorBindingFlags, 7> bindingFlags{
+    // Bindings 3-8 are partially bound: only written when their passes are
+    // active, never statically used without.
+    const std::array<VkDescriptorBindingFlags, 10> bindingFlags{
         0,
         VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT |
             VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT,
@@ -50,7 +62,10 @@ Result<std::unique_ptr<DescriptorTable>> DescriptorTable::create(const Device& d
         VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT,
         VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT,
         VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT,
-        VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT};
+        VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT,
+        VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT,
+        VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT,
+        0};
     VkDescriptorSetLayoutBindingFlagsCreateInfo flagsInfo{};
     flagsInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
     flagsInfo.bindingCount = static_cast<std::uint32_t>(bindingFlags.size());
@@ -69,9 +84,9 @@ Result<std::unique_ptr<DescriptorTable>> DescriptorTable::create(const Device& d
     }
 
     const std::array<VkDescriptorPoolSize, 3> poolSizes{
-        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 5},
-        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, maxTextures},
-        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_SAMPLER, 1}};
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 6},
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, maxTextures + 1},
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_SAMPLER, 2}};
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
@@ -107,16 +122,38 @@ Result<std::unique_ptr<DescriptorTable>> DescriptorTable::create(const Device& d
         return Error{std::format("vkCreateSampler failed ({})", static_cast<int>(r))};
     }
 
-    VkDescriptorImageInfo samplerWrite{};
-    samplerWrite.sampler = table->sampler_;
-    VkWriteDescriptorSet write{};
-    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    write.dstSet = table->set_;
-    write.dstBinding = 2;
-    write.descriptorCount = 1;
-    write.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
-    write.pImageInfo = &samplerWrite;
-    vkUpdateDescriptorSets(device.handle(), 1, &write, 0, nullptr);
+    // Shadow comparison sampler: linear filtering over the compare result
+    // = free 2x2 hardware PCF; clamp-to-border white so geometry outside
+    // the shadow map counts as lit.
+    VkSamplerCreateInfo shadowInfo{};
+    shadowInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    shadowInfo.magFilter = VK_FILTER_LINEAR;
+    shadowInfo.minFilter = VK_FILTER_LINEAR;
+    shadowInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+    shadowInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+    shadowInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+    shadowInfo.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
+    shadowInfo.compareEnable = VK_TRUE;
+    shadowInfo.compareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+    if (VkResult r = vkCreateSampler(device.handle(), &shadowInfo, nullptr, &table->shadowSampler_);
+        r != VK_SUCCESS) {
+        return Error{std::format("vkCreateSampler (shadow) failed ({})", static_cast<int>(r))};
+    }
+
+    const std::array<VkDescriptorImageInfo, 2> samplerWrites{
+        VkDescriptorImageInfo{.sampler = table->sampler_},
+        VkDescriptorImageInfo{.sampler = table->shadowSampler_}};
+    std::array<VkWriteDescriptorSet, 2> writes{};
+    for (std::size_t i = 0; i < writes.size(); ++i) {
+        writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[i].dstSet = table->set_;
+        writes[i].dstBinding = i == 0 ? 2 : 9;
+        writes[i].descriptorCount = 1;
+        writes[i].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
+        writes[i].pImageInfo = &samplerWrites[i];
+    }
+    vkUpdateDescriptorSets(device.handle(), static_cast<std::uint32_t>(writes.size()),
+                           writes.data(), 0, nullptr);
 
     return table;
 }
@@ -127,6 +164,9 @@ DescriptorTable::~DescriptorTable() {
     }
     if (sampler_ != VK_NULL_HANDLE) {
         vkDestroySampler(device_->handle(), sampler_, nullptr);
+    }
+    if (shadowSampler_ != VK_NULL_HANDLE) {
+        vkDestroySampler(device_->handle(), shadowSampler_, nullptr);
     }
     if (pool_ != VK_NULL_HANDLE) {
         vkDestroyDescriptorPool(device_->handle(), pool_, nullptr);
@@ -158,6 +198,20 @@ void DescriptorTable::writeStorageBuffer(std::uint32_t binding, VkBuffer buffer,
     write.descriptorCount = 1;
     write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     write.pBufferInfo = &info;
+    vkUpdateDescriptorSets(device_->handle(), 1, &write, 0, nullptr);
+}
+
+void DescriptorTable::writeShadowMap(VkImageView view) {
+    VkDescriptorImageInfo info{};
+    info.imageView = view;
+    info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    VkWriteDescriptorSet write{};
+    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write.dstSet = set_;
+    write.dstBinding = 8;
+    write.descriptorCount = 1;
+    write.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+    write.pImageInfo = &info;
     vkUpdateDescriptorSets(device_->handle(), 1, &write, 0, nullptr);
 }
 
