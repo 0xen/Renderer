@@ -14,7 +14,7 @@ Result<std::unique_ptr<DescriptorTable>> DescriptorTable::create(const Device& d
     auto table = std::unique_ptr<DescriptorTable>(new DescriptorTable());
     table->device_ = &device;
 
-    std::array<VkDescriptorSetLayoutBinding, 3> bindings{};
+    std::array<VkDescriptorSetLayoutBinding, 6> bindings{};
     bindings[0] = {.binding = 0,
                    .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
                    .descriptorCount = 1,
@@ -27,12 +27,23 @@ Result<std::unique_ptr<DescriptorTable>> DescriptorTable::create(const Device& d
                    .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER,
                    .descriptorCount = 1,
                    .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT};
+    for (std::uint32_t i = 3; i <= 5; ++i) {
+        bindings[i] = {.binding = i,
+                       .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                       .descriptorCount = 1,
+                       .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT};
+    }
 
-    const std::array<VkDescriptorBindingFlags, 3> bindingFlags{
+    // The cull bindings (3-5) are partially bound: only written when the
+    // compaction pass is active, and never statically used without it.
+    const std::array<VkDescriptorBindingFlags, 6> bindingFlags{
         0,
         VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT |
             VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT,
-        0};
+        0,
+        VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT,
+        VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT,
+        VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT};
     VkDescriptorSetLayoutBindingFlagsCreateInfo flagsInfo{};
     flagsInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
     flagsInfo.bindingCount = static_cast<std::uint32_t>(bindingFlags.size());
@@ -51,7 +62,7 @@ Result<std::unique_ptr<DescriptorTable>> DescriptorTable::create(const Device& d
     }
 
     const std::array<VkDescriptorPoolSize, 3> poolSizes{
-        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1},
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 4},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, maxTextures},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_SAMPLER, 1}};
     VkDescriptorPoolCreateInfo poolInfo{};
@@ -124,6 +135,19 @@ void DescriptorTable::writeObjectBuffer(VkBuffer buffer, std::uint64_t range) {
     write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     write.dstSet = set_;
     write.dstBinding = 0;
+    write.descriptorCount = 1;
+    write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    write.pBufferInfo = &info;
+    vkUpdateDescriptorSets(device_->handle(), 1, &write, 0, nullptr);
+}
+
+void DescriptorTable::writeStorageBuffer(std::uint32_t binding, VkBuffer buffer,
+                                         std::uint64_t range) {
+    VkDescriptorBufferInfo info{.buffer = buffer, .offset = 0, .range = range};
+    VkWriteDescriptorSet write{};
+    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write.dstSet = set_;
+    write.dstBinding = binding;
     write.descriptorCount = 1;
     write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     write.pBufferInfo = &info;

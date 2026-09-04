@@ -47,13 +47,24 @@ struct GraphicsPipelineDesc {
     VkDescriptorSetLayout descriptorLayout = nullptr;
 };
 
-// A graphics pipeline plus the layout it was built with. Dynamic rendering
-// only (no render passes); viewport and scissor are dynamic state so a
-// resize never rebuilds the pipeline.
+struct ComputePipelineDesc {
+    const Shader* shader = nullptr;
+    const char* entryPoint = "main";
+    // Set 0 layout (the bindless DescriptorTable); null = no sets.
+    VkDescriptorSetLayout descriptorLayout = nullptr;
+    // One compute-stage push-constant range; 0 = none.
+    std::uint32_t pushConstantBytes = 0;
+};
+
+// A graphics or compute pipeline plus the layout it was built with.
+// Graphics is dynamic rendering only (no render passes); viewport and
+// scissor are dynamic state so a resize never rebuilds the pipeline.
 class Pipeline {
 public:
     static Result<std::unique_ptr<Pipeline>> createGraphics(const Device& device,
                                                             const GraphicsPipelineDesc& desc);
+    static Result<std::unique_ptr<Pipeline>> createCompute(const Device& device,
+                                                           const ComputePipelineDesc& desc);
     ~Pipeline();
 
     Pipeline(const Pipeline&) = delete;

@@ -65,6 +65,13 @@ struct DrawBatch {
     std::uint64_t countRegionStride = 0;
     // Direct mode: CPU-side copy of the drawCount entries.
     const DrawIndexedIndirect* cpuDraws = nullptr;
+    // GPU compaction (IndirectCount mode only): a compute pipeline whose
+    // shader reads the draw templates (descriptor binding 3), appends
+    // visible entries to `indirect` (binding 4) and counts them into
+    // `count` (binding 5). Recorded before the render pass: zero the
+    // slot's count, dispatch one thread per template, barrier to the
+    // indirect read. Null = no compaction pass.
+    const Pipeline* cullPipeline = nullptr;
     // Byte distance between per-frame-slot copies of the indirect array
     // inside `indirect`. Non-zero lets the CPU rewrite the slot's region
     // (host-visible buffer) while the other slot's region is in flight —

@@ -204,6 +204,7 @@ int main(int argc, char** argv) {
     // draw entries over these slices come next.
     std::unique_ptr<gpu::MemoryPool> geometryPool;
     std::unique_ptr<gpu::Buffer> indirectBuffer;
+    std::unique_ptr<gpu::Buffer> compactedBuffer;
     std::unique_ptr<gpu::Buffer> countBuffer;
     std::vector<gpu::DrawIndexedIndirect> draws; // outlives the loop: Direct mode records from it
     std::unique_ptr<gpu::Buffer> objectBuffer;
@@ -301,7 +302,9 @@ int main(int argc, char** argv) {
         auto indirectResult = gpu::Buffer::create(
             *device, {
                          .size = indirectRegion * gpu::FrameRenderer::kFramesInFlight,
-                         .usage = gpu::kUsageIndirect,
+                         // Storage too: the cull pass reads these entries as
+                         // its draw templates (descriptor binding 3).
+                         .usage = gpu::kUsageIndirect | gpu::kUsageStorage,
                          .location = gpu::MemoryLocation::HostVisible,
                      });
         if (!indirectResult) {
@@ -314,24 +317,35 @@ int main(int argc, char** argv) {
                         draws.data(), indirectRegion);
         }
 
+        // Cull-pass output: the compacted indirect list the GPU builds each
+        // frame (per-slot regions like the templates).
+        auto compactedResult = gpu::Buffer::create(
+            *device, {
+                         .size = indirectRegion * gpu::FrameRenderer::kFramesInFlight,
+                         .usage = gpu::kUsageIndirect | gpu::kUsageStorage,
+                         .location = gpu::MemoryLocation::DeviceLocal,
+                     });
+        if (!compactedResult) {
+            log::error("Compacted buffer creation failed: {}", compactedResult.error().message);
+            return 1;
+        }
+        compactedBuffer = std::move(compactedResult).value();
+
         // Draw-count buffer for IndirectCount mode: one uint32 per frame
-        // slot, initialized to "all draws". Later the compaction compute
-        // writes it on the GPU; harmless if the mode falls back.
+        // slot, written by the cull pass (zeroed via fill, incremented by
+        // the shader) and read by vkCmdDrawIndexedIndirectCount.
         auto countResult = gpu::Buffer::create(
             *device, {
                          .size = sizeof(std::uint32_t) * gpu::FrameRenderer::kFramesInFlight,
-                         .usage = gpu::kUsageIndirect,
-                         .location = gpu::MemoryLocation::HostVisible,
+                         .usage = gpu::kUsageIndirect | gpu::kUsageStorage |
+                                  gpu::kUsageTransferDst,
+                         .location = gpu::MemoryLocation::DeviceLocal,
                      });
         if (!countResult) {
             log::error("Count buffer creation failed: {}", countResult.error().message);
             return 1;
         }
         countBuffer = std::move(countResult).value();
-        auto* counts = static_cast<std::uint32_t*>(countBuffer->mapped());
-        for (std::uint32_t slot = 0; slot < gpu::FrameRenderer::kFramesInFlight; ++slot) {
-            counts[slot] = static_cast<std::uint32_t>(draws.size());
-        }
 
         auto objectResult = gpu::Buffer::create(
             *device, {
@@ -377,6 +391,10 @@ int main(int argc, char** argv) {
         descriptorTable = std::move(tableResult).value();
         descriptorTable->writeObjectBuffer(objectBuffer->handle(),
                                            objectData.size() * sizeof(ObjectData));
+        descriptorTable->writeStorageBuffer(3, indirectBuffer->handle(), indirectBuffer->size());
+        descriptorTable->writeStorageBuffer(4, compactedBuffer->handle(),
+                                            compactedBuffer->size());
+        descriptorTable->writeStorageBuffer(5, countBuffer->handle(), countBuffer->size());
 
         auto uploaderResult = gpu::TextureUploader::create(*device);
         if (!uploaderResult) {
@@ -479,7 +497,8 @@ int main(int argc, char** argv) {
     // Scene pass pipeline: interleaved vertex input from the geometry pool,
     // depth-tested, camera via push constant.
     std::unique_ptr<gpu::Pipeline> scenePipeline;
-    std::unique_ptr<gpu::Shader> sceneVert, sceneFrag;
+    std::unique_ptr<gpu::Pipeline> cullPipeline;
+    std::unique_ptr<gpu::Shader> sceneVert, sceneFrag, cullShader;
     if (scene) {
         auto vertResult = gpu::Shader::createFromFile(*device, shaderDir / "scene.vert.spv");
         auto fragResult = gpu::Shader::createFromFile(*device, shaderDir / "scene.frag.spv");
@@ -507,6 +526,26 @@ int main(int argc, char** argv) {
             return 1;
         }
         scenePipeline = std::move(sceneResult).value();
+
+        // The compaction pass (IndirectCount mode only). A failure here is
+        // not fatal: the draw-mode ladder just skips to Indirect.
+        auto cullShaderResult = gpu::Shader::createFromFile(*device, shaderDir / "cull.comp.spv");
+        if (cullShaderResult) {
+            cullShader = std::move(cullShaderResult).value();
+            auto cullResult = gpu::Pipeline::createCompute(
+                *device, {
+                             .shader = cullShader.get(),
+                             .descriptorLayout = descriptorTable->layout(),
+                             .pushConstantBytes = 2 * sizeof(std::uint32_t),
+                         });
+            if (cullResult) {
+                cullPipeline = std::move(cullResult).value();
+            } else {
+                log::warn("Cull pipeline unavailable: {}", cullResult.error().message);
+            }
+        } else {
+            log::warn("Cull shader unavailable: {}", cullShaderResult.error().message);
+        }
     }
 
     auto rendererResult = gpu::FrameRenderer::create(*device, *swapchain);
@@ -526,7 +565,10 @@ int main(int argc, char** argv) {
         // next; Direct works everywhere.
         const bool canIndirect = device->isEnabled(gpu::Feature::MultiDrawIndirect) &&
                                  device->isEnabled(gpu::Feature::DrawIndirectFirstInstance);
-        const bool canCount = canIndirect && device->isEnabled(gpu::Feature::DrawIndirectCount);
+        // The count tier now IS the compaction pass, so it also needs the
+        // cull pipeline to have built.
+        const bool canCount = canIndirect && device->isEnabled(gpu::Feature::DrawIndirectCount) &&
+                              cullPipeline != nullptr;
         batch.mode = gpu::DrawSubmitMode::Direct;
         if (canIndirect && maxDrawMode != gpu::DrawSubmitMode::Direct) {
             batch.mode = gpu::DrawSubmitMode::Indirect;
@@ -536,18 +578,25 @@ int main(int argc, char** argv) {
         }
 
         batch.geometry = geometryPool->buffer().handle();
-        batch.indirect = indirectBuffer->handle();
         batch.drawCount = static_cast<std::uint32_t>(geometry.size());
         batch.indirectRegionStride = geometry.size() * sizeof(gpu::DrawIndexedIndirect);
+        if (batch.mode == gpu::DrawSubmitMode::IndirectCount) {
+            // The GPU draws what the cull pass compacted, not the templates.
+            batch.indirect = compactedBuffer->handle();
+            batch.cullPipeline = cullPipeline.get();
+        } else {
+            batch.indirect = indirectBuffer->handle();
+        }
         batch.count = countBuffer->handle();
         batch.countRegionStride = sizeof(std::uint32_t);
         batch.cpuDraws = draws.data();
         batch.descriptors = descriptorTable->set();
         batch.viewProj = cameraViewProj(scene->camera, extent.width, extent.height);
 
-        const char* modeName = batch.mode == gpu::DrawSubmitMode::IndirectCount ? "indirect-count"
-                               : batch.mode == gpu::DrawSubmitMode::Indirect    ? "indirect"
-                                                                                : "direct";
+        const char* modeName = batch.mode == gpu::DrawSubmitMode::IndirectCount
+                                   ? "indirect-count + GPU compaction"
+                               : batch.mode == gpu::DrawSubmitMode::Indirect ? "indirect"
+                                                                             : "direct";
         log::info("Scene pass ready: {} draws, {} mode (device: indirect {}, indirect-count {})",
                   batch.drawCount, modeName, canIndirect ? "yes" : "NO",
                   canCount ? "yes" : "NO");

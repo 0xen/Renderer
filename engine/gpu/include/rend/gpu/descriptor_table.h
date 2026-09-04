@@ -22,6 +22,9 @@ class Device;
 //   1 — sampled image array [maxTextures] (fragment; partially bound,
 //       update-after-bind, so texture slots stream in over time)
 //   2 — one trilinear repeat sampler (fragment), owned here
+//   3 — draw templates SSBO (compute: the cull pass input)
+//   4 — compacted draws SSBO (compute: the cull pass output)
+//   5 — draw counts SSBO (compute: one uint32 per frame slot)
 class DescriptorTable {
 public:
     static Result<std::unique_ptr<DescriptorTable>> create(const Device& device,
@@ -36,6 +39,8 @@ public:
 
     void writeObjectBuffer(VkBuffer buffer, std::uint64_t range);
     void writeTexture(std::uint32_t index, VkImageView view);
+    // Cull-pass bindings (3-5); binding picks which, see the class comment.
+    void writeStorageBuffer(std::uint32_t binding, VkBuffer buffer, std::uint64_t range);
 
 private:
     DescriptorTable() = default;

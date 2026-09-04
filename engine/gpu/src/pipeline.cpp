@@ -11,6 +11,57 @@
 
 namespace rend::gpu {
 
+Result<std::unique_ptr<Pipeline>> Pipeline::createCompute(const Device& device,
+                                                          const ComputePipelineDesc& desc) {
+    if (!desc.shader) {
+        return Error{"Compute pipeline needs a shader"};
+    }
+
+    VkPushConstantRange pushRange{};
+    pushRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    pushRange.size = desc.pushConstantBytes;
+
+    VkPipelineLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    if (desc.pushConstantBytes > 0) {
+        layoutInfo.pushConstantRangeCount = 1;
+        layoutInfo.pPushConstantRanges = &pushRange;
+    }
+    if (desc.descriptorLayout != nullptr) {
+        layoutInfo.setLayoutCount = 1;
+        layoutInfo.pSetLayouts = &desc.descriptorLayout;
+    }
+
+    VkPipelineLayout layout = VK_NULL_HANDLE;
+    if (VkResult r = vkCreatePipelineLayout(device.handle(), &layoutInfo, nullptr, &layout);
+        r != VK_SUCCESS) {
+        return Error{std::format("vkCreatePipelineLayout failed ({})", static_cast<int>(r))};
+    }
+
+    VkComputePipelineCreateInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    info.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    info.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+    info.stage.module = desc.shader->handle();
+    info.stage.pName = desc.entryPoint;
+    info.layout = layout;
+
+    VkPipeline handle = VK_NULL_HANDLE;
+    if (VkResult r =
+            vkCreateComputePipelines(device.handle(), VK_NULL_HANDLE, 1, &info, nullptr, &handle);
+        r != VK_SUCCESS) {
+        vkDestroyPipelineLayout(device.handle(), layout, nullptr);
+        return Error{std::format("vkCreateComputePipelines failed ({})", static_cast<int>(r))};
+    }
+
+    auto pipeline = std::unique_ptr<Pipeline>(new Pipeline());
+    pipeline->device_ = &device;
+    pipeline->layout_ = layout;
+    pipeline->pipeline_ = handle;
+    log::info("Compute pipeline created");
+    return pipeline;
+}
+
 Result<std::unique_ptr<Pipeline>> Pipeline::createGraphics(const Device& device,
                                                            const GraphicsPipelineDesc& desc) {
     if (!desc.vertexShader || !desc.fragmentShader) {

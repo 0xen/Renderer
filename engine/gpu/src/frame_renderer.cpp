@@ -191,6 +191,46 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
         return Error{std::format("vkBeginCommandBuffer failed ({})", static_cast<int>(r))};
     }
 
+    if (batch && batch->cullPipeline && batch->mode == DrawSubmitMode::IndirectCount) {
+        // GPU compaction: zero the slot's draw count, run one thread per
+        // template, then make the writes visible to the indirect fetch.
+        vkCmdFillBuffer(cmd, batch->count, slot * batch->countRegionStride,
+                        sizeof(std::uint32_t), 0);
+
+        VkMemoryBarrier2 fillToCompute{};
+        fillToCompute.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+        fillToCompute.srcStageMask = VK_PIPELINE_STAGE_2_CLEAR_BIT;
+        fillToCompute.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+        fillToCompute.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        fillToCompute.dstAccessMask =
+            VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
+        VkDependencyInfo cullDependency{};
+        cullDependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        cullDependency.memoryBarrierCount = 1;
+        cullDependency.pMemoryBarriers = &fillToCompute;
+        vkCmdPipelineBarrier2(cmd, &cullDependency);
+
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, batch->cullPipeline->handle());
+        if (batch->descriptors != VK_NULL_HANDLE) {
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
+                                    batch->cullPipeline->layout(), 0, 1, &batch->descriptors, 0,
+                                    nullptr);
+        }
+        const std::uint32_t push[2] = {batch->drawCount, slot};
+        vkCmdPushConstants(cmd, batch->cullPipeline->layout(), VK_SHADER_STAGE_COMPUTE_BIT, 0,
+                           sizeof(push), push);
+        vkCmdDispatch(cmd, (batch->drawCount + 63) / 64, 1, 1);
+
+        VkMemoryBarrier2 computeToDraw{};
+        computeToDraw.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+        computeToDraw.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        computeToDraw.srcAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
+        computeToDraw.dstStageMask = VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT;
+        computeToDraw.dstAccessMask = VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT;
+        cullDependency.pMemoryBarriers = &computeToDraw;
+        vkCmdPipelineBarrier2(cmd, &cullDependency);
+    }
+
     VkImage image = swapchain_->images()[imageIndex];
 
     VkImageMemoryBarrier2 toColor =
