@@ -5,10 +5,18 @@
 
 using namespace rend;
 
-int main() {
-    log::info("Renderer sandbox v0.1.0");
+int main(int argc, char** argv) {
+    log::info("Renderer viewer v0.1.0");
 
-    auto instanceResult = gpu::Instance::create({.appName = "Renderer Sandbox"});
+    // Scene-description XML (shaders, scene setup, models). Parsing lands
+    // with the renderer layer; the entry point is established now.
+    if (argc > 1) {
+        log::info("Scene file requested: {} (XML scene loading not implemented yet)", argv[1]);
+    } else {
+        log::info("No scene file given (usage: viewer <scene.xml>)");
+    }
+
+    auto instanceResult = gpu::Instance::create({.appName = "Renderer Viewer"});
     if (!instanceResult) {
         log::error("Vulkan instance creation failed: {}", instanceResult.error().message);
         return 1;
@@ -37,7 +45,7 @@ int main() {
     platform::TargetDesc desc{
         .style = platform::WindowStyle::Borderless,
         .size = {1280, 720},
-        .title = "Renderer Sandbox",
+        .title = "Renderer Viewer",
     };
     auto targetResult = backend->createTarget(desc);
     if (!targetResult) {

@@ -1,4 +1,5 @@
-add_library(rend_core STATIC
+# Object library: compiled into the single rend engine DLL (engine/CMakeLists.txt).
+add_library(rend_core OBJECT
     src/log.cpp
 )
 add_library(rend::core ALIAS rend_core)

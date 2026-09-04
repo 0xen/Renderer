@@ -1,6 +1,6 @@
 # Vulkan layer: instance today; adapter selection, device, swapchain and
 # feature negotiation land in the coming milestones.
-add_library(rend_gpu STATIC
+add_library(rend_gpu OBJECT
     src/instance.cpp
     src/device.cpp
 )

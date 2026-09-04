@@ -1,4 +1,4 @@
-add_library(rend_platform STATIC
+add_library(rend_platform OBJECT
     src/backend_factory.cpp
     backends/sdl3/sdl3_backend.cpp
 )
