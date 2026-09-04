@@ -2,6 +2,7 @@
 # swapchain, and the base GPU objects (shader, pipeline) plus the frame loop.
 add_library(rend_gpu OBJECT
     src/buffer.cpp
+    src/image.cpp
     src/instance.cpp
     src/device.cpp
     src/memory_pool.cpp

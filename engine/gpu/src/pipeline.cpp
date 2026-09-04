@@ -7,6 +7,7 @@
 #include <volk.h>
 
 #include <array>
+#include <vector>
 
 namespace rend::gpu {
 
@@ -16,10 +17,18 @@ Result<std::unique_ptr<Pipeline>> Pipeline::createGraphics(const Device& device,
         return Error{"Graphics pipeline needs a vertex and a fragment shader"};
     }
 
-    // Empty layout for now: the triangle generates its vertices from
-    // SV_VertexID and reads no descriptors.
+    // No descriptor sets yet (bindless textures land later); per-frame data
+    // travels through push constants.
+    VkPushConstantRange pushRange{};
+    pushRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    pushRange.size = desc.pushConstantBytes;
+
     VkPipelineLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    if (desc.pushConstantBytes > 0) {
+        layoutInfo.pushConstantRangeCount = 1;
+        layoutInfo.pPushConstantRanges = &pushRange;
+    }
 
     VkPipelineLayout layout = VK_NULL_HANDLE;
     if (VkResult r = vkCreatePipelineLayout(device.handle(), &layoutInfo, nullptr, &layout);
@@ -37,9 +46,28 @@ Result<std::unique_ptr<Pipeline>> Pipeline::createGraphics(const Device& device,
     stages[1].module = desc.fragmentShader->handle();
     stages[1].pName = desc.fragmentEntryPoint;
 
-    // No vertex buffers this milestone.
+    VkVertexInputBindingDescription binding{};
+    binding.binding = 0;
+    binding.stride = desc.vertexStride;
+    binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+    std::vector<VkVertexInputAttributeDescription> attributes;
+    attributes.reserve(desc.vertexAttributes.size());
+    for (const VertexAttribute& a : desc.vertexAttributes) {
+        attributes.push_back({.location = a.location,
+                              .binding = 0,
+                              .format = static_cast<VkFormat>(a.format),
+                              .offset = a.offset});
+    }
+
     VkPipelineVertexInputStateCreateInfo vertexInput{};
     vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    if (desc.vertexStride > 0) {
+        vertexInput.vertexBindingDescriptionCount = 1;
+        vertexInput.pVertexBindingDescriptions = &binding;
+        vertexInput.vertexAttributeDescriptionCount =
+            static_cast<std::uint32_t>(attributes.size());
+        vertexInput.pVertexAttributeDescriptions = attributes.data();
+    }
 
     VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
     inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -78,11 +106,21 @@ Result<std::unique_ptr<Pipeline>> Pipeline::createGraphics(const Device& device,
     dynamic.dynamicStateCount = static_cast<std::uint32_t>(dynamicStates.size());
     dynamic.pDynamicStates = dynamicStates.data();
 
+    // Y-flip is baked into the projection matrix (math::perspective), which
+    // reverses winding — culling stays off until the winding convention is
+    // settled alongside the pipeline XML.
+    VkPipelineDepthStencilStateCreateInfo depthStencil{};
+    depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depthStencil.depthTestEnable = VK_TRUE;
+    depthStencil.depthWriteEnable = VK_TRUE;
+    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
+
     const VkFormat colorFormat = static_cast<VkFormat>(desc.colorFormat);
     VkPipelineRenderingCreateInfo rendering{};
     rendering.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
     rendering.colorAttachmentCount = 1;
     rendering.pColorAttachmentFormats = &colorFormat;
+    rendering.depthAttachmentFormat = static_cast<VkFormat>(desc.depthFormat);
 
     VkGraphicsPipelineCreateInfo info{};
     info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -94,6 +132,9 @@ Result<std::unique_ptr<Pipeline>> Pipeline::createGraphics(const Device& device,
     info.pViewportState = &viewport;
     info.pRasterizationState = &raster;
     info.pMultisampleState = &multisample;
+    if (desc.depthFormat != 0) {
+        info.pDepthStencilState = &depthStencil;
+    }
     info.pColorBlendState = &blend;
     info.pDynamicState = &dynamic;
     info.layout = layout;

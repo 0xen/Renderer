@@ -2,6 +2,7 @@
 
 #include "rend/core/log.h"
 #include "rend/gpu/device.h"
+#include "rend/gpu/image.h"
 #include "rend/gpu/pipeline.h"
 #include "rend/gpu/swapchain.h"
 
@@ -60,6 +61,9 @@ Result<std::unique_ptr<FrameRenderer>> FrameRenderer::create(const Device& devic
     if (auto r = renderer->createImageSemaphores(); !r) {
         return r.error();
     }
+    if (auto r = renderer->createDepthBuffer(); !r) {
+        return r.error();
+    }
 
     log::info("Frame renderer ready ({} frames in flight, {} per-image semaphores)", kFramesInFlight,
               renderer->renderFinished_.size());
@@ -113,6 +117,21 @@ Result<void> FrameRenderer::createImageSemaphores() {
     return {};
 }
 
+Result<void> FrameRenderer::createDepthBuffer() {
+    auto depthResult = Image::create(*device_, {
+                                                   .width = swapchain_->width(),
+                                                   .height = swapchain_->height(),
+                                                   .format = kFormatD32Sfloat,
+                                                   .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+                                                   .depth = true,
+                                               });
+    if (!depthResult) {
+        return Error{std::format("Depth buffer: {}", depthResult.error().message)};
+    }
+    depth_ = std::move(depthResult).value();
+    return {};
+}
+
 void FrameRenderer::destroyImageSemaphores() {
     for (VkSemaphore semaphore : renderFinished_) {
         if (semaphore != VK_NULL_HANDLE) {
@@ -151,11 +170,15 @@ Result<void> FrameRenderer::recreateSwapchain() {
             return r.error();
         }
     }
+    // Depth tracks the swapchain extent (device idle here, see above).
+    if (auto r = createDepthBuffer(); !r) {
+        return r.error();
+    }
     return {};
 }
 
 Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex,
-                                   const Pipeline& pipeline) const {
+                                   const Pipeline& pipeline, const DrawBatch* batch) const {
     VkCommandBufferBeginInfo begin{};
     begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
@@ -176,6 +199,22 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
     dependency.pImageMemoryBarriers = &toColor;
     vkCmdPipelineBarrier2(cmd, &dependency);
 
+    if (batch) {
+        // Depth contents are cleared each frame, so the previous frame's
+        // layout is irrelevant (UNDEFINED); the barrier orders against the
+        // prior frame's depth accesses.
+        VkImageMemoryBarrier2 toDepth = imageBarrier(
+            depth_->handle(), VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+            VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
+            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+            VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
+            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+                VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT);
+        toDepth.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+        dependency.pImageMemoryBarriers = &toDepth;
+        vkCmdPipelineBarrier2(cmd, &dependency);
+    }
+
     VkRenderingAttachmentInfo color{};
     color.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
     color.imageView = swapchain_->imageViews()[imageIndex];
@@ -184,6 +223,14 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
     color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     color.clearValue.color = {{clearColor_[0], clearColor_[1], clearColor_[2], clearColor_[3]}};
 
+    VkRenderingAttachmentInfo depth{};
+    depth.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+    depth.imageView = depth_ ? depth_->view() : VK_NULL_HANDLE;
+    depth.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+    depth.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    depth.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depth.clearValue.depthStencil = {1.0f, 0};
+
     const VkExtent2D extent{swapchain_->width(), swapchain_->height()};
     VkRenderingInfo rendering{};
     rendering.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
@@ -191,6 +238,9 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
     rendering.layerCount = 1;
     rendering.colorAttachmentCount = 1;
     rendering.pColorAttachments = &color;
+    // Depth only when drawing a batch: the attachment set must match the
+    // pipeline's declared depthFormat.
+    rendering.pDepthAttachment = batch ? &depth : nullptr;
     vkCmdBeginRendering(cmd, &rendering);
 
     const VkViewport viewport{0.0f, 0.0f, static_cast<float>(extent.width),
@@ -200,7 +250,19 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.handle());
-    vkCmdDraw(cmd, 3, 1, 0, 0);
+    if (batch) {
+        // The whole scene: geometry pool bound once, one indirect stream.
+        const VkDeviceSize zero = 0;
+        vkCmdBindVertexBuffers(cmd, 0, 1, &batch->geometry, &zero);
+        vkCmdBindIndexBuffer(cmd, batch->geometry, 0, VK_INDEX_TYPE_UINT32);
+        vkCmdPushConstants(cmd, pipeline.layout(),
+                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                           sizeof(batch->viewProj), batch->viewProj.data());
+        vkCmdDrawIndexedIndirect(cmd, batch->indirect, 0, batch->drawCount,
+                                 sizeof(DrawIndexedIndirect));
+    } else {
+        vkCmdDraw(cmd, 3, 1, 0, 0);
+    }
 
     vkCmdEndRendering(cmd);
 
@@ -233,7 +295,7 @@ Result<void> FrameRenderer::waitForFence(VkFence fence, const char* what) const 
     }
 }
 
-Result<void> FrameRenderer::drawFrame(const Pipeline& pipeline) {
+Result<void> FrameRenderer::drawFrame(const Pipeline& pipeline, const DrawBatch* batch) {
     if (resizeRequested_) {
         if (pendingWidth_ == 0 || pendingHeight_ == 0) {
             return {}; // minimized: nothing to present to
@@ -266,7 +328,7 @@ Result<void> FrameRenderer::drawFrame(const Pipeline& pipeline) {
 
     vkResetFences(device_->handle(), 1, &frame.inFlight);
     vkResetCommandBuffer(frame.commandBuffer, 0);
-    if (auto r = record(frame.commandBuffer, imageIndex, pipeline); !r) {
+    if (auto r = record(frame.commandBuffer, imageIndex, pipeline, batch); !r) {
         return r.error();
     }
 

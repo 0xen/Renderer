@@ -1,5 +1,6 @@
 #include "rend/assetio/scene_loader.h"
 #include "rend/core/log.h"
+#include "rend/core/math.h"
 #include "rend/core/paths.h"
 #include "rend/gpu/device.h"
 #include "rend/gpu/frame_renderer.h"
@@ -18,14 +19,29 @@ using namespace rend;
 
 namespace {
 
-// Where a mesh landed in the geometry pool. Step 2 of milestone 7 turns
-// these into indirect draw entries.
+// Where a mesh landed in the geometry pool; becomes one indirect entry.
 struct GeometryLocation {
     gpu::BufferSlice vertices;
     gpu::BufferSlice indices;
     std::uint32_t indexCount = 0;
     std::uint32_t materialIndex = 0;
 };
+
+// Interleaved vertex layout of the scene pass: position, normal, uv.
+constexpr std::uint32_t kVertexStride = 8 * sizeof(float);
+
+math::Mat4 cameraViewProj(const assetio::CameraDesc& camera, std::uint32_t width,
+                          std::uint32_t height) {
+    constexpr float kPi = 3.14159265358979323846f;
+    const auto& p = camera.position;
+    const auto& t = camera.target;
+    const math::Mat4 view =
+        math::lookAt({p[0], p[1], p[2]}, {t[0], t[1], t[2]}, {0.0f, 1.0f, 0.0f});
+    const float aspect = height > 0 ? static_cast<float>(width) / static_cast<float>(height) : 1.0f;
+    const math::Mat4 proj =
+        math::perspective(camera.fovDegrees * kPi / 180.0f, aspect, 0.1f, 300.0f);
+    return math::mul(proj, view);
+}
 
 // Interleave the assetio streams into the vertex layout the scene pass will
 // consume: position (3f), normal (3f), uv (2f). Missing streams pad with
@@ -142,6 +158,7 @@ int main(int argc, char** argv) {
     // device-local memory pool, filled through the transfer queue. Indirect
     // draw entries over these slices come next.
     std::unique_ptr<gpu::MemoryPool> geometryPool;
+    std::unique_ptr<gpu::Buffer> indirectBuffer;
     std::vector<GeometryLocation> geometry;
     if (scene) {
         const auto start = std::chrono::steady_clock::now();
@@ -162,8 +179,9 @@ int main(int argc, char** argv) {
         for (const auto& model : scene->models) {
             for (const auto& mesh : model.data.meshes) {
                 const std::vector<float> vertexData = interleave(mesh);
+                // Stride alignment keeps vertexOffset (= offset / stride) exact.
                 auto vertexSlice =
-                    geometryPool->allocate(vertexData.size() * sizeof(float));
+                    geometryPool->allocate(vertexData.size() * sizeof(float), kVertexStride);
                 auto indexSlice =
                     geometryPool->allocate(mesh.indices.size() * sizeof(std::uint32_t), 4);
                 if (!vertexSlice || !indexSlice) {
@@ -188,6 +206,41 @@ int main(int argc, char** argv) {
                                     .materialIndex = mesh.materialIndex});
             }
         }
+        // One indirect entry per mesh, addressing its slices by offset.
+        // instanceCount is the milestone-7 load/unload toggle; firstInstance
+        // becomes the object-SSBO index in step 3.
+        std::vector<gpu::DrawIndexedIndirect> draws;
+        draws.reserve(geometry.size());
+        for (std::size_t i = 0; i < geometry.size(); ++i) {
+            const GeometryLocation& location = geometry[i];
+            draws.push_back({
+                .indexCount = location.indexCount,
+                .instanceCount = 1,
+                .firstIndex = static_cast<std::uint32_t>(location.indices.offset /
+                                                         sizeof(std::uint32_t)),
+                .vertexOffset = static_cast<std::int32_t>(location.vertices.offset / kVertexStride),
+                .firstInstance = static_cast<std::uint32_t>(i),
+            });
+        }
+        auto indirectResult = gpu::Buffer::create(
+            *device, {
+                         .size = draws.size() * sizeof(gpu::DrawIndexedIndirect),
+                         .usage = gpu::kUsageIndirect | gpu::kUsageTransferDst,
+                         .location = gpu::MemoryLocation::DeviceLocal,
+                         .sharedWithTransferQueue = true,
+                     });
+        if (!indirectResult) {
+            log::error("Indirect buffer creation failed: {}", indirectResult.error().message);
+            return 1;
+        }
+        indirectBuffer = std::move(indirectResult).value();
+        if (auto staged = transfer->stage(*indirectBuffer, 0, draws.data(),
+                                          draws.size() * sizeof(gpu::DrawIndexedIndirect));
+            !staged) {
+            log::error("Indirect staging failed: {}", staged.error().message);
+            return 1;
+        }
+
         if (auto flushed = transfer->flush(); !flushed) {
             log::error("Geometry upload failed: {}", flushed.error().message);
             return 1;
@@ -262,12 +315,56 @@ int main(int argc, char** argv) {
     }
     auto pipeline = std::move(pipelineResult).value();
 
+    // Scene pass pipeline: interleaved vertex input from the geometry pool,
+    // depth-tested, camera via push constant.
+    std::unique_ptr<gpu::Pipeline> scenePipeline;
+    std::unique_ptr<gpu::Shader> sceneVert, sceneFrag;
+    if (scene) {
+        auto vertResult = gpu::Shader::createFromFile(*device, shaderDir / "scene.vert.spv");
+        auto fragResult = gpu::Shader::createFromFile(*device, shaderDir / "scene.frag.spv");
+        if (!vertResult || !fragResult) {
+            log::error("{}", (!vertResult ? vertResult : fragResult).error().message);
+            return 1;
+        }
+        sceneVert = std::move(vertResult).value();
+        sceneFrag = std::move(fragResult).value();
+        auto sceneResult = gpu::Pipeline::createGraphics(
+            *device, {
+                         .vertexShader = sceneVert.get(),
+                         .fragmentShader = sceneFrag.get(),
+                         .colorFormat = swapchain->imageFormat(),
+                         .vertexStride = kVertexStride,
+                         .vertexAttributes = {{0, gpu::kFormatR32G32B32Sfloat, 0},
+                                              {1, gpu::kFormatR32G32B32Sfloat, 12},
+                                              {2, gpu::kFormatR32G32Sfloat, 24}},
+                         .depthFormat = gpu::kFormatD32Sfloat,
+                         .pushConstantBytes = 64,
+                     });
+        if (!sceneResult) {
+            log::error("Scene pipeline creation failed: {}", sceneResult.error().message);
+            return 1;
+        }
+        scenePipeline = std::move(sceneResult).value();
+    }
+
     auto rendererResult = gpu::FrameRenderer::create(*device, *swapchain);
     if (!rendererResult) {
         log::error("Frame renderer creation failed: {}", rendererResult.error().message);
         return 1;
     }
     auto renderer = std::move(rendererResult).value();
+
+    // With a scene, every frame is the indirect batch over the geometry
+    // pool; without one, the milestone-6 triangle stays as the fallback.
+    const bool drawScene = scenePipeline && indirectBuffer && !geometry.empty();
+    gpu::DrawBatch batch;
+    if (drawScene) {
+        batch.geometry = geometryPool->buffer().handle();
+        batch.indirect = indirectBuffer->handle();
+        batch.drawCount = static_cast<std::uint32_t>(geometry.size());
+        batch.viewProj = cameraViewProj(scene->camera, extent.width, extent.height);
+        log::info("Scene pass ready: {} indirect draws", batch.drawCount);
+    }
 
     log::info("Viewer live at {}x{} — press Esc to quit", extent.width, extent.height);
 
@@ -285,6 +382,10 @@ int main(int argc, char** argv) {
                 break;
             case platform::Event::Type::Resized:
                 renderer->resize(event.size.width, event.size.height);
+                if (drawScene && event.size.width > 0 && event.size.height > 0) {
+                    batch.viewProj =
+                        cameraViewProj(scene->camera, event.size.width, event.size.height);
+                }
                 break;
             default:
                 break;
@@ -293,7 +394,9 @@ int main(int argc, char** argv) {
         if (!running) {
             break;
         }
-        if (auto r = renderer->drawFrame(*pipeline); !r) {
+        if (auto r = renderer->drawFrame(drawScene ? *scenePipeline : *pipeline,
+                                         drawScene ? &batch : nullptr);
+            !r) {
             log::error("Frame failed: {}", r.error().message);
             running = false;
         }

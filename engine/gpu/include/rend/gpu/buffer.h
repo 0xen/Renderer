@@ -12,6 +12,11 @@ namespace rend::gpu {
 
 class Device;
 
+// VkBufferUsageFlags bits callers need without including Vulkan headers.
+inline constexpr std::uint32_t kUsageTransferDst = 0x2;
+inline constexpr std::uint32_t kUsageStorage = 0x20;
+inline constexpr std::uint32_t kUsageIndirect = 0x100;
+
 enum class MemoryLocation {
     DeviceLocal, // VRAM; filled via transfer
     HostVisible, // CPU-writable (host-coherent), persistently mapped
