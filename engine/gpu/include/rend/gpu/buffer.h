@@ -16,6 +16,8 @@ class Device;
 inline constexpr std::uint32_t kUsageTransferDst = 0x2;
 inline constexpr std::uint32_t kUsageStorage = 0x20;
 inline constexpr std::uint32_t kUsageIndirect = 0x100;
+inline constexpr std::uint32_t kUsageShaderDeviceAddress = 0x20000;
+inline constexpr std::uint32_t kUsageAccelBuildInput = 0x80000; // AS build read-only input
 
 enum class MemoryLocation {
     DeviceLocal, // VRAM; filled via transfer

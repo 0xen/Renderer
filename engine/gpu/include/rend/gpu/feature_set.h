@@ -21,6 +21,8 @@ enum class Feature : std::uint32_t {
     DynamicRendering,          // 1.3: render without render passes
     Synchronization2,          // 1.3: modern barrier API
     ShaderDemote,              // 1.3: dxc compiles HLSL discard to OpDemote
+    AccelerationStructure,     // ext: BLAS/TLAS build + storage
+    RayQuery,                  // ext: inline ray tracing from any stage
     Count,
 };
 

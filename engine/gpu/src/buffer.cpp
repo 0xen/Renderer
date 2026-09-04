@@ -69,6 +69,14 @@ Result<std::unique_ptr<Buffer>> Buffer::create(const Device& device, const Buffe
     alloc.allocationSize = requirements.size;
     alloc.memoryTypeIndex = typeResult.value();
 
+    // Device-address usage requires the matching allocation flag.
+    VkMemoryAllocateFlagsInfo allocFlags{};
+    allocFlags.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO;
+    allocFlags.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
+    if (desc.usage & kUsageShaderDeviceAddress) {
+        alloc.pNext = &allocFlags;
+    }
+
     VkDeviceMemory memory = VK_NULL_HANDLE;
     if (VkResult r = vkAllocateMemory(device.handle(), &alloc, nullptr, &memory); r != VK_SUCCESS) {
         vkDestroyBuffer(device.handle(), handle, nullptr);

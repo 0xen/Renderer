@@ -14,12 +14,14 @@ message(STATUS "Shader compiler: ${REND_DXC_EXECUTABLE}")
 # to its own directory: <runtime dir>/data/shaders/<name>.<stage>.spv
 set(REND_SHADER_OUT_DIR "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/data/shaders")
 
-# source | entry point | dxc profile | artifact
+# source | entry point | dxc profile | artifact | optional -D defines
 set(REND_SHADER_STAGES
     "triangle.hlsl|VSMain|vs_6_0|triangle.vert.spv"
     "triangle.hlsl|PSMain|ps_6_0|triangle.frag.spv"
     "scene.hlsl|VSMain|vs_6_0|scene.vert.spv"
-    "scene.hlsl|PSMain|ps_6_0|scene.frag.spv"
+    "scene.hlsl|PSMain|ps_6_0|scene.frag.spv|-DRT_SHADOWS=0"
+    # ps_6_5: RayQuery needs shader model 6.5 (SPV_KHR_ray_query).
+    "scene.hlsl|PSMain|ps_6_5|scene_rt.frag.spv|-DRT_SHADOWS=1"
     "cull.hlsl|CSMain|cs_6_0|cull.comp.spv"
     "shadow.hlsl|VSMain|vs_6_0|shadow.vert.spv"
     "shadow.hlsl|PSMain|ps_6_0|shadow.frag.spv"
@@ -32,6 +34,11 @@ foreach(stage IN LISTS REND_SHADER_STAGES)
     list(GET parts 1 entrypoint)
     list(GET parts 2 profile)
     list(GET parts 3 artifact)
+    set(defines "")
+    list(LENGTH parts partCount)
+    if(partCount GREATER 4)
+        list(GET parts 4 defines)
+    endif()
 
     set(source_path "${CMAKE_CURRENT_SOURCE_DIR}/shaders/${source}")
     set(artifact_path "${REND_SHADER_OUT_DIR}/${artifact}")
@@ -45,6 +52,7 @@ foreach(stage IN LISTS REND_SHADER_STAGES)
         COMMAND "${REND_DXC_EXECUTABLE}"
                 -spirv -fspv-target-env=vulkan1.3
                 -T ${profile} -E ${entrypoint} -fspv-entrypoint-name=main
+                ${defines}
                 -Fo "${artifact_path}" "${source_path}"
         DEPENDS "${source_path}"
         COMMENT "dxc ${source} [${profile} ${entrypoint}] -> ${artifact}"

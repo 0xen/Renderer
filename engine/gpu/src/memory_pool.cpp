@@ -11,7 +11,8 @@
 namespace rend::gpu {
 
 Result<std::unique_ptr<MemoryPool>> MemoryPool::create(const Device& device,
-                                                       std::uint64_t capacity) {
+                                                       std::uint64_t capacity,
+                                                       std::uint32_t extraUsage) {
     auto bufferResult =
         Buffer::create(device, {
                                    .size = capacity,
@@ -21,7 +22,7 @@ Result<std::unique_ptr<MemoryPool>> MemoryPool::create(const Device& device,
                                             VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
                                             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
                                             VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-                                            VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                            VK_BUFFER_USAGE_TRANSFER_SRC_BIT | extraUsage,
                                    .location = MemoryLocation::DeviceLocal,
                                    .sharedWithTransferQueue = true,
                                });

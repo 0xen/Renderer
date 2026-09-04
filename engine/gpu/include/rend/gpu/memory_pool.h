@@ -25,7 +25,10 @@ struct BufferSlice {
 // indirect entries reference.
 class MemoryPool {
 public:
-    static Result<std::unique_ptr<MemoryPool>> create(const Device& device, std::uint64_t capacity);
+    // extraUsage: additional VkBufferUsageFlags (e.g. device address + AS
+    // build input when the geometry also feeds ray tracing).
+    static Result<std::unique_ptr<MemoryPool>> create(const Device& device, std::uint64_t capacity,
+                                                      std::uint32_t extraUsage = 0);
 
     Result<BufferSlice> allocate(std::uint64_t size, std::uint64_t alignment = 16);
     void free(const BufferSlice& slice);

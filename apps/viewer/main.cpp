@@ -3,6 +3,7 @@
 #include "rend/core/log.h"
 #include "rend/core/math.h"
 #include "rend/core/paths.h"
+#include "rend/gpu/acceleration_structure.h"
 #include "rend/gpu/descriptor_table.h"
 #include "rend/gpu/texture_uploader.h"
 #include "rend/gpu/device.h"
@@ -75,8 +76,12 @@ struct LightData {
     float mapSize = static_cast<float>(kShadowMapSize);
     std::uint32_t cascadeCount = 0;
     std::uint32_t debugTint = 0;
+    std::uint32_t rtShadows = 0;
+    std::uint32_t pad2 = 0;
+    std::uint32_t pad3 = 0;
+    std::uint32_t pad4 = 0;
 };
-static_assert(sizeof(LightData) == 320);
+static_assert(sizeof(LightData) == 336);
 
 // Live-tunable sun state behind the ImGui panel; direction is stored as
 // angles so the sliders stay intuitive.
@@ -89,6 +94,7 @@ struct SunControls {
     float biasBase = 0.0015f;
     float shadowDistance = 30.0f; // view-space reach of the cascades
     bool debugTint = false;
+    bool rtShadows = false; // hybrid ray-traced shadows (RayQuery devices)
 
     math::Vec3 direction() const {
         const float az = azimuthDeg * kPi / 180.0f;
@@ -256,6 +262,7 @@ int main(int argc, char** argv) {
     bool debug = false;
     bool vsync = true;
     bool staticMode = false;
+    bool rtFromStart = false; // start with ray-traced shadows on (if supported)
     std::uint64_t benchFrames = 0; // non-zero: exit after N frames with a report
     // Caps the draw-submit ladder for testing the fallbacks; the actual mode
     // is still limited by what the device supports.
@@ -269,6 +276,8 @@ int main(int argc, char** argv) {
             vsync = false;
         } else if (arg == "--static") {
             staticMode = true;
+        } else if (arg == "--rt") {
+            rtFromStart = true;
         } else if (arg == "--bench" && i + 1 < argc) {
             const std::string_view count = argv[++i];
             std::from_chars(count.data(), count.data() + count.size(), benchFrames);
@@ -374,6 +383,7 @@ int main(int argc, char** argv) {
     std::unique_ptr<gpu::Buffer> cameraBuffer; // one viewProj per frame slot, CPU-written
     std::unique_ptr<gpu::Buffer> lightBuffer;  // one LightData per frame slot, CPU-written
     std::vector<std::unique_ptr<gpu::Image>> shadowMaps; // one per cascade
+    std::unique_ptr<gpu::AccelerationStructure> blas, tlas; // RT shadow BVH
     math::Vec3 sceneMin{1e30f, 1e30f, 1e30f};
     math::Vec3 sceneMax{-1e30f, -1e30f, -1e30f};
     std::vector<gpu::DrawIndexedIndirect> draws; // outlives the loop: Direct mode records from it
@@ -381,9 +391,17 @@ int main(int argc, char** argv) {
     std::unique_ptr<gpu::DescriptorTable> descriptorTable;
     std::vector<std::unique_ptr<gpu::Image>> textures;
     std::vector<GeometryLocation> geometry;
+    const bool rtSupported = device->isEnabled(gpu::Feature::AccelerationStructure) &&
+                             device->isEnabled(gpu::Feature::RayQuery) &&
+                             device->isEnabled(gpu::Feature::BufferDeviceAddress);
+    bool rtReady = false; // BVH built and wired into the bindless table
     if (scene) {
         const auto start = std::chrono::steady_clock::now();
-        auto poolResult = gpu::MemoryPool::create(*device, 128ull * 1024 * 1024);
+        // With ray tracing, the geometry pool doubles as the BLAS build
+        // input, which needs device-address usage.
+        auto poolResult = gpu::MemoryPool::create(
+            *device, 128ull * 1024 * 1024,
+            rtSupported ? (gpu::kUsageShaderDeviceAddress | gpu::kUsageAccelBuildInput) : 0);
         if (!poolResult) {
             log::error("Memory pool creation failed: {}", poolResult.error().message);
             return 1;
@@ -597,6 +615,46 @@ int main(int argc, char** argv) {
         const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                             std::chrono::steady_clock::now() - start)
                             .count();
+        // Ray-traced shadows need the scene in a BVH: one BLAS over every
+        // mesh range in the pool, one identity instance in the TLAS
+        // (geometry is world-space baked). Load-time build; failures just
+        // leave the shadow-map path.
+        if (rtSupported) {
+            const auto rtStart = std::chrono::steady_clock::now();
+            std::vector<gpu::AccelerationStructure::TriangleGeometry> triangles;
+            triangles.reserve(geometry.size());
+            for (const GeometryLocation& location : geometry) {
+                triangles.push_back({
+                    .buffer = &geometryPool->buffer(),
+                    .vertexOffset = location.vertices.offset,
+                    .vertexStride = kVertexStride,
+                    .vertexCount =
+                        static_cast<std::uint32_t>(location.vertices.size / kVertexStride),
+                    .indexOffset = location.indices.offset,
+                    .indexCount = location.indexCount,
+                });
+            }
+            auto blasResult = gpu::AccelerationStructure::buildBottomLevel(*device, triangles);
+            if (blasResult) {
+                blas = std::move(blasResult).value();
+                const gpu::AccelerationStructure::Instance blasInstance{.blas = blas.get()};
+                auto tlasResult =
+                    gpu::AccelerationStructure::buildTopLevel(*device, {&blasInstance, 1});
+                if (tlasResult) {
+                    tlas = std::move(tlasResult).value();
+                    rtReady = true;
+                    const auto rtMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                          std::chrono::steady_clock::now() - rtStart)
+                                          .count();
+                    log::info("Ray-tracing BVH ready in {} ms", rtMs);
+                } else {
+                    log::warn("TLAS build failed: {}", tlasResult.error().message);
+                }
+            } else {
+                log::warn("BLAS build failed: {}", blasResult.error().message);
+            }
+        }
+
         log::info("Geometry uploaded in {} ms: {} slices, {:.1f} MiB of {} MiB used ({} queue)",
                   ms, geometryPool->allocationCount(),
                   static_cast<double>(geometryPool->usedBytes()) / (1024.0 * 1024.0),
@@ -623,6 +681,9 @@ int main(int argc, char** argv) {
         descriptorTable->writeStorageBuffer(7, lightBuffer->handle(), lightBuffer->size());
         for (std::uint32_t c = 0; c < kShadowCascades; ++c) {
             descriptorTable->writeShadowMap(c, shadowMaps[c]->view());
+        }
+        if (rtReady) {
+            descriptorTable->writeAccelerationStructure(tlas->handle());
         }
 
         auto uploaderResult = gpu::TextureUploader::create(*device);
@@ -731,7 +792,10 @@ int main(int argc, char** argv) {
     std::unique_ptr<gpu::Shader> sceneVert, sceneFrag, cullShader, shadowVert, shadowFrag;
     if (scene) {
         auto vertResult = gpu::Shader::createFromFile(*device, shaderDir / "scene.vert.spv");
-        auto fragResult = gpu::Shader::createFromFile(*device, shaderDir / "scene.frag.spv");
+        // The RT variant traces shadow rays inline; only loadable where the
+        // device enabled RayQuery (the SPIR-V declares the capability).
+        auto fragResult = gpu::Shader::createFromFile(
+            *device, shaderDir / (rtReady ? "scene_rt.frag.spv" : "scene.frag.spv"));
         if (!vertResult || !fragResult) {
             log::error("{}", (!vertResult ? vertResult : fragResult).error().message);
             return 1;
@@ -906,6 +970,7 @@ int main(int argc, char** argv) {
         camera = FlyCamera::fromScene(scene->camera);
         sun = SunControls::fromLight(scene->lights.empty() ? assetio::LightDesc{}
                                                            : scene->lights.front());
+        sun.rtShadows = rtFromStart && rtReady;
         log::info("Sun: azimuth {:.0f}, elevation {:.0f}, intensity {:.2f}, shadows {}",
                   sun.azimuthDeg, sun.elevationDeg, sun.intensity,
                   batch.shadowPipeline ? "on" : "off");
@@ -1030,6 +1095,7 @@ int main(int argc, char** argv) {
             lightData.biasBase = sun.biasBase;
             lightData.cascadeCount = batch.cascadeCount;
             lightData.debugTint = sun.debugTint ? 1u : 0u;
+            lightData.rtShadows = (rtReady && sun.rtShadows) ? 1u : 0u;
             std::memcpy(static_cast<std::byte*>(lightBuffer->mapped()) +
                             renderer->frameSlot() * sizeof(LightData),
                         &lightData, sizeof(LightData));
@@ -1050,6 +1116,9 @@ int main(int argc, char** argv) {
                 ImGui::SliderFloat("Bias", &sun.biasBase, 0.0002f, 0.0060f, "%.4f");
                 ImGui::SliderFloat("Shadow dist", &sun.shadowDistance, 5.0f, 60.0f, "%.0f m");
                 ImGui::Checkbox("Show cascades", &sun.debugTint);
+                if (rtReady) {
+                    ImGui::Checkbox("Ray-traced shadows", &sun.rtShadows);
+                }
                 ImGui::End();
             }
         }

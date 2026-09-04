@@ -20,6 +20,10 @@ struct LightData {
     float mapSize;
     uint cascadeCount;
     uint debugTint;
+    uint rtShadows;
+    uint pad2;
+    uint pad3;
+    uint pad4;
 };
 
 struct ObjectData {

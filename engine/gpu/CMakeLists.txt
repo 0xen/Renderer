@@ -1,6 +1,7 @@
 # Vulkan layer: instance, adapter selection/feature negotiation, device,
 # swapchain, and the base GPU objects (shader, pipeline) plus the frame loop.
 add_library(rend_gpu OBJECT
+    src/acceleration_structure.cpp
     src/buffer.cpp
     src/descriptor_table.cpp
     src/image.cpp

@@ -14,7 +14,7 @@ Result<std::unique_ptr<DescriptorTable>> DescriptorTable::create(const Device& d
     auto table = std::unique_ptr<DescriptorTable>(new DescriptorTable());
     table->device_ = &device;
 
-    std::array<VkDescriptorSetLayoutBinding, 10> bindings{};
+    std::vector<VkDescriptorSetLayoutBinding> bindings(10);
     bindings[0] = {.binding = 0,
                    .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
                    .descriptorCount = 1,
@@ -54,7 +54,7 @@ Result<std::unique_ptr<DescriptorTable>> DescriptorTable::create(const Device& d
 
     // Bindings 3-8 are partially bound: only written when their passes are
     // active, never statically used without.
-    const std::array<VkDescriptorBindingFlags, 10> bindingFlags{
+    std::vector<VkDescriptorBindingFlags> bindingFlags{
         0,
         VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT |
             VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT,
@@ -66,6 +66,17 @@ Result<std::unique_ptr<DescriptorTable>> DescriptorTable::create(const Device& d
         VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT,
         VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT,
         0};
+
+    // The TLAS binding only exists where the extension does — a layout
+    // naming an unknown descriptor type is invalid, not "unused".
+    const bool rayQuery = device.isEnabled(Feature::RayQuery);
+    if (rayQuery) {
+        bindings.push_back({.binding = 10,
+                            .descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
+                            .descriptorCount = 1,
+                            .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT});
+        bindingFlags.push_back(VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT);
+    }
     VkDescriptorSetLayoutBindingFlagsCreateInfo flagsInfo{};
     flagsInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
     flagsInfo.bindingCount = static_cast<std::uint32_t>(bindingFlags.size());
@@ -83,10 +94,13 @@ Result<std::unique_ptr<DescriptorTable>> DescriptorTable::create(const Device& d
         return Error{std::format("vkCreateDescriptorSetLayout failed ({})", static_cast<int>(r))};
     }
 
-    const std::array<VkDescriptorPoolSize, 3> poolSizes{
+    std::vector<VkDescriptorPoolSize> poolSizes{
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 6},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, maxTextures + 4},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_SAMPLER, 2}};
+    if (rayQuery) {
+        poolSizes.push_back({VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1});
+    }
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
@@ -213,6 +227,21 @@ void DescriptorTable::writeShadowMap(std::uint32_t cascade, VkImageView view) {
     write.descriptorCount = 1;
     write.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
     write.pImageInfo = &info;
+    vkUpdateDescriptorSets(device_->handle(), 1, &write, 0, nullptr);
+}
+
+void DescriptorTable::writeAccelerationStructure(VkAccelerationStructureKHR tlas) {
+    VkWriteDescriptorSetAccelerationStructureKHR asInfo{};
+    asInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
+    asInfo.accelerationStructureCount = 1;
+    asInfo.pAccelerationStructures = &tlas;
+    VkWriteDescriptorSet write{};
+    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write.pNext = &asInfo;
+    write.dstSet = set_;
+    write.dstBinding = 10;
+    write.descriptorCount = 1;
+    write.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
     vkUpdateDescriptorSets(device_->handle(), 1, &write, 0, nullptr);
 }
 

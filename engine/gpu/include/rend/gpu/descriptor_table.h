@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <memory>
 
+typedef struct VkAccelerationStructureKHR_T* VkAccelerationStructureKHR;
 typedef struct VkDescriptorSetLayout_T* VkDescriptorSetLayout;
 typedef struct VkDescriptorSet_T* VkDescriptorSet;
 typedef struct VkDescriptorPool_T* VkDescriptorPool;
@@ -29,6 +30,7 @@ class Device;
 //   7 — light SSBO (vertex + fragment: per-slot light data + matrix)
 //   8 — shadow cascade maps [4] (fragment; depth images the scene samples)
 //   9 — shadow comparison sampler (fragment; PCF, owned here)
+//   10 — scene TLAS (fragment; only on devices with Feature::RayQuery)
 class DescriptorTable {
 public:
     static Result<std::unique_ptr<DescriptorTable>> create(const Device& device,
@@ -47,6 +49,8 @@ public:
     void writeStorageBuffer(std::uint32_t binding, VkBuffer buffer, std::uint64_t range);
     // Binding 8: one cascade's depth image the scene pass samples.
     void writeShadowMap(std::uint32_t cascade, VkImageView view);
+    // Binding 10 (RayQuery devices only): the scene TLAS.
+    void writeAccelerationStructure(VkAccelerationStructureKHR tlas);
 
 private:
     DescriptorTable() = default;

@@ -39,6 +39,10 @@ struct LightData {
     float mapSize;   // shadow map resolution (texel size = 1/mapSize)
     uint cascadeCount;
     uint debugTint; // non-zero: tint output by cascade for inspection
+    uint rtShadows; // non-zero: trace shadow rays instead of sampling maps
+    uint pad2;
+    uint pad3;
+    uint pad4;
 };
 
 [[vk::binding(0, 0)]] StructuredBuffer<ObjectData> objects;
@@ -47,6 +51,12 @@ struct LightData {
 [[vk::binding(7, 0)]] StructuredBuffer<LightData> lights;
 [[vk::binding(8, 0)]] Texture2D<float> shadowMaps[4];
 [[vk::binding(9, 0)]] SamplerComparisonState shadowSampler;
+#if RT_SHADOWS
+// Hybrid ray-traced shadows (compiled only into scene_rt.frag.spv, used on
+// RayQuery devices): rasterization stays primary visibility, only the
+// shadow ray is traced — pixel toward the sun through the scene TLAS.
+[[vk::binding(10, 0)]] RaytracingAccelerationStructure sceneBVH;
+#endif
 
 struct VSInput {
     float3 position : POSITION;
@@ -111,6 +121,23 @@ float shadowFactor(float3 worldPos, float3 n, float viewDepth, LightData light,
     return sum / 9.0f;
 }
 
+#if RT_SHADOWS
+// One opaque any-hit ray from the surface toward the sun. Alpha-masked
+// casters count as solid here (colored/cutout shadow rays are a later
+// any-hit refinement).
+float rtShadowFactor(float3 worldPos, float3 n, LightData light) {
+    RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_FORCE_OPAQUE> q;
+    RayDesc ray;
+    ray.Origin = worldPos + n * 0.02f;
+    ray.Direction = -light.direction;
+    ray.TMin = 0.0f;
+    ray.TMax = 1.0e4f;
+    q.TraceRayInline(sceneBVH, RAY_FLAG_NONE, 0xff, ray);
+    q.Proceed();
+    return q.CommittedStatus() == COMMITTED_TRIANGLE_HIT ? 0.0f : 1.0f;
+}
+#endif
+
 float4 PSMain(VSOutput input) : SV_Target0 {
     const ObjectData object = objects[input.objectIndex];
     const float4 albedo =
@@ -123,10 +150,17 @@ float4 PSMain(VSOutput input) : SV_Target0 {
     const float3 n = normalize(input.normal);
     const float direct = saturate(dot(n, -normalize(light.direction)));
     uint cascade = 0;
-    const float shadow =
-        direct > 0.0f && light.cascadeCount > 0
-            ? shadowFactor(input.worldPos, n, input.viewDepth, light, cascade)
-            : (light.cascadeCount > 0 ? 0.0f : 1.0f);
+    float shadow = 1.0f;
+#if RT_SHADOWS
+    if (light.rtShadows != 0) {
+        shadow = direct > 0.0f ? rtShadowFactor(input.worldPos, n, light) : 0.0f;
+    } else
+#endif
+    if (light.cascadeCount > 0) {
+        shadow = direct > 0.0f
+                     ? shadowFactor(input.worldPos, n, input.viewDepth, light, cascade)
+                     : 0.0f;
+    }
 
     // Sun + simple hemispherical ambient; a real lighting model arrives
     // with the render-technique work.

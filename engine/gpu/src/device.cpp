@@ -26,12 +26,24 @@ struct FeatureChain {
     VkPhysicalDeviceVulkan11Features v11{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES};
     VkPhysicalDeviceVulkan12Features v12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
     VkPhysicalDeviceVulkan13Features v13{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
+    // Ray tracing extension features: chained for probing (drivers leave
+    // them false when unsupported); unlinked before device creation when
+    // the features stay disabled, so no unknown-extension structs reach
+    // vkCreateDevice.
+    VkPhysicalDeviceAccelerationStructureFeaturesKHR accel{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR};
+    VkPhysicalDeviceRayQueryFeaturesKHR rayQuery{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR};
 
     FeatureChain() {
         f2.pNext = &v11;
         v11.pNext = &v12;
         v12.pNext = &v13;
+        v13.pNext = &accel;
+        accel.pNext = &rayQuery;
     }
+
+    void unlinkRayTracing() { v13.pNext = nullptr; }
 };
 
 bool supports(const FeatureChain& c, Feature f) {
@@ -50,6 +62,8 @@ bool supports(const FeatureChain& c, Feature f) {
     case Feature::BufferDeviceAddress: return c.v12.bufferDeviceAddress;
     case Feature::DynamicRendering: return c.v13.dynamicRendering;
     case Feature::Synchronization2: return c.v13.synchronization2;
+    case Feature::AccelerationStructure: return c.accel.accelerationStructure;
+    case Feature::RayQuery: return c.rayQuery.rayQuery;
     case Feature::Count: break;
     }
     return false;
@@ -73,6 +87,8 @@ void enable(FeatureChain& c, Feature f) {
     case Feature::BufferDeviceAddress: c.v12.bufferDeviceAddress = VK_TRUE; break;
     case Feature::DynamicRendering: c.v13.dynamicRendering = VK_TRUE; break;
     case Feature::Synchronization2: c.v13.synchronization2 = VK_TRUE; break;
+    case Feature::AccelerationStructure: c.accel.accelerationStructure = VK_TRUE; break;
+    case Feature::RayQuery: c.rayQuery.rayQuery = VK_TRUE; break;
     case Feature::Count: break;
     }
 }
@@ -240,6 +256,8 @@ std::string_view featureName(Feature f) {
     case Feature::BufferDeviceAddress: return "BufferDeviceAddress";
     case Feature::DynamicRendering: return "DynamicRendering";
     case Feature::Synchronization2: return "Synchronization2";
+    case Feature::AccelerationStructure: return "AccelerationStructure";
+    case Feature::RayQuery: return "RayQuery";
     case Feature::Count: break;
     }
     return "Unknown";
@@ -253,9 +271,11 @@ FeatureSet FeatureSet::gpuDriven() {
         // The indirect-draw ladder is optional: the scene pass detects what
         // is enabled and falls back (indirect-count -> multi-draw indirect
         // -> per-draw vkCmdDrawIndexed), so a device missing these still
-        // renders, just without the static-buffer wins.
+        // renders, just without the static-buffer wins. Ray tracing is an
+        // offer on top of the shadow-map floor (docs/ARCHITECTURE.md).
         .optional = {Feature::MultiDrawIndirect, Feature::DrawIndirectFirstInstance,
-                     Feature::DrawIndirectCount, Feature::BufferDeviceAddress},
+                     Feature::DrawIndirectCount, Feature::BufferDeviceAddress,
+                     Feature::AccelerationStructure, Feature::RayQuery},
         .requiredExtensions = {},
         .optionalExtensions = {},
     };
@@ -322,6 +342,23 @@ Result<std::unique_ptr<Device>> Device::create(const Instance& instance, const F
 
     std::vector<const char*> extensions = request.requiredExtensions;
     extensions.insert(extensions.end(), best.optionalExts.begin(), best.optionalExts.end());
+
+    // Ray tracing rides on device extensions; enable them alongside the
+    // features (their support is implied by the feature probe), or unlink
+    // the extension structs so vkCreateDevice never sees them.
+    const bool rt = (mask & (1ull << static_cast<std::uint32_t>(Feature::AccelerationStructure))) &&
+                    (mask & (1ull << static_cast<std::uint32_t>(Feature::RayQuery)));
+    if (rt) {
+        extensions.push_back(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
+        extensions.push_back(VK_KHR_RAY_QUERY_EXTENSION_NAME);
+        extensions.push_back(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);
+    } else {
+        // Both or neither: a lone half of the pair is useless and its
+        // struct never reaches vkCreateDevice.
+        enabled.unlinkRayTracing();
+        mask &= ~(1ull << static_cast<std::uint32_t>(Feature::AccelerationStructure));
+        mask &= ~(1ull << static_cast<std::uint32_t>(Feature::RayQuery));
+    }
 
     VkDeviceCreateInfo info{};
     info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
