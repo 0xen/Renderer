@@ -395,6 +395,25 @@ Result<std::unique_ptr<Device>> Device::create(const Instance& instance, const F
     return device;
 }
 
+const char* shadowTechniqueName(ShadowTechnique technique) {
+    switch (technique) {
+    case ShadowTechnique::CascadedShadowMaps:
+        return "Shadow cascades";
+    case ShadowTechnique::RayTraced:
+        return "Ray traced";
+    }
+    return "Unknown";
+}
+
+std::vector<ShadowTechnique> Device::supportedShadowTechniques() const {
+    std::vector<ShadowTechnique> techniques{ShadowTechnique::CascadedShadowMaps};
+    if (isEnabled(Feature::AccelerationStructure) && isEnabled(Feature::RayQuery) &&
+        isEnabled(Feature::BufferDeviceAddress)) {
+        techniques.push_back(ShadowTechnique::RayTraced);
+    }
+    return techniques;
+}
+
 Device::~Device() {
     if (device_ != VK_NULL_HANDLE) {
         vkDestroyDevice(device_, nullptr);

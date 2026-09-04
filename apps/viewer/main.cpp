@@ -391,9 +391,13 @@ int main(int argc, char** argv) {
     std::unique_ptr<gpu::DescriptorTable> descriptorTable;
     std::vector<std::unique_ptr<gpu::Image>> textures;
     std::vector<GeometryLocation> geometry;
-    const bool rtSupported = device->isEnabled(gpu::Feature::AccelerationStructure) &&
-                             device->isEnabled(gpu::Feature::RayQuery) &&
-                             device->isEnabled(gpu::Feature::BufferDeviceAddress);
+    // Capability offer from the gpu layer: which shadow techniques this
+    // device can run. The UI is built from this list, never from
+    // hard-coded assumptions.
+    const std::vector<gpu::ShadowTechnique> shadowOffers = device->supportedShadowTechniques();
+    const bool rtSupported =
+        std::find(shadowOffers.begin(), shadowOffers.end(), gpu::ShadowTechnique::RayTraced) !=
+        shadowOffers.end();
     bool rtReady = false; // BVH built and wired into the bindless table
     if (scene) {
         const auto start = std::chrono::steady_clock::now();
@@ -1107,17 +1111,33 @@ int main(int argc, char** argv) {
                 // Sun & shadow tuning; changes land in the light buffer on
                 // the next frame's write.
                 ImGui::SetNextWindowPos(ImVec2(8.0f, 40.0f), ImGuiCond_FirstUseEver);
-                ImGui::Begin("Sun & Shadows", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
-                ImGui::SliderFloat("Azimuth", &sun.azimuthDeg, -180.0f, 180.0f, "%.0f deg");
-                ImGui::SliderFloat("Elevation", &sun.elevationDeg, 10.0f, 90.0f, "%.0f deg");
-                ImGui::SliderFloat("Intensity", &sun.intensity, 0.0f, 4.0f, "%.2f");
-                ImGui::ColorEdit3("Color", sun.color.data());
-                ImGui::SliderFloat("PCF radius", &sun.pcfRadius, 0.0f, 4.0f, "%.1f texels");
-                ImGui::SliderFloat("Bias", &sun.biasBase, 0.0002f, 0.0060f, "%.4f");
-                ImGui::SliderFloat("Shadow dist", &sun.shadowDistance, 5.0f, 60.0f, "%.0f m");
-                ImGui::Checkbox("Show cascades", &sun.debugTint);
-                if (rtReady) {
-                    ImGui::Checkbox("Ray-traced shadows", &sun.rtShadows);
+                ImGui::Begin("Settings", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
+                // One shadow choice, built from the device's offer list.
+                // Ray traced additionally needs the BVH the viewer built.
+                const gpu::ShadowTechnique active = (rtReady && sun.rtShadows)
+                                                        ? gpu::ShadowTechnique::RayTraced
+                                                        : gpu::ShadowTechnique::CascadedShadowMaps;
+                if (ImGui::BeginCombo("Shadows", gpu::shadowTechniqueName(active))) {
+                    for (gpu::ShadowTechnique offer : shadowOffers) {
+                        if (offer == gpu::ShadowTechnique::RayTraced && !rtReady) {
+                            continue;
+                        }
+                        if (ImGui::Selectable(gpu::shadowTechniqueName(offer), offer == active)) {
+                            sun.rtShadows = offer == gpu::ShadowTechnique::RayTraced;
+                        }
+                    }
+                    ImGui::EndCombo();
+                }
+                if (ImGui::TreeNode("Advanced")) {
+                    ImGui::SliderFloat("Azimuth", &sun.azimuthDeg, -180.0f, 180.0f, "%.0f deg");
+                    ImGui::SliderFloat("Elevation", &sun.elevationDeg, 10.0f, 90.0f, "%.0f deg");
+                    ImGui::SliderFloat("Intensity", &sun.intensity, 0.0f, 4.0f, "%.2f");
+                    ImGui::ColorEdit3("Color", sun.color.data());
+                    ImGui::SliderFloat("PCF radius", &sun.pcfRadius, 0.0f, 4.0f, "%.1f texels");
+                    ImGui::SliderFloat("Bias", &sun.biasBase, 0.0002f, 0.0060f, "%.4f");
+                    ImGui::SliderFloat("Shadow dist", &sun.shadowDistance, 5.0f, 60.0f, "%.0f m");
+                    ImGui::Checkbox("Show cascades", &sun.debugTint);
+                    ImGui::TreePop();
                 }
                 ImGui::End();
             }

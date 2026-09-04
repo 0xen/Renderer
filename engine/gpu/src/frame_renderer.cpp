@@ -493,6 +493,9 @@ void FrameRenderer::setStaticRecording(bool enabled) {
 
 void FrameRenderer::invalidateStatic() {
     if (!staticBuffers_.empty()) {
+        // In-flight frames may still be executing these buffers; freeing a
+        // pending command buffer is invalid and wedges the driver.
+        vkDeviceWaitIdle(device_->handle());
         vkFreeCommandBuffers(device_->handle(), commandPool_,
                              static_cast<std::uint32_t>(staticBuffers_.size()),
                              staticBuffers_.data());
