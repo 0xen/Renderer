@@ -17,6 +17,8 @@
 
 #include "ui.h"
 
+#include <imgui.h>
+
 #include <algorithm>
 #include <charconv>
 #include <chrono>
@@ -52,6 +54,7 @@ struct ObjectData {
 constexpr std::uint32_t kVertexStride = 8 * sizeof(float);
 
 constexpr std::uint32_t kShadowMapSize = 2048;
+constexpr float kPi = 3.14159265358979323846f;
 
 // One region per frame slot in the light buffer (bindless binding 7).
 // Must match LightData in scene.hlsl / shadow.hlsl.
@@ -60,9 +63,41 @@ struct LightData {
     std::array<float, 3> direction{0.0f, -1.0f, 0.0f};
     float intensity = 1.0f;
     std::array<float, 3> color{1.0f, 1.0f, 1.0f};
-    float pad = 0.0f;
+    float pcfRadius = 1.0f;
+    float biasBase = 0.0015f;
+    float mapSize = static_cast<float>(kShadowMapSize);
+    float pad0 = 0.0f;
+    float pad1 = 0.0f;
 };
-static_assert(sizeof(LightData) == 96);
+static_assert(sizeof(LightData) == 112);
+
+// Live-tunable sun state behind the ImGui panel; direction is stored as
+// angles so the sliders stay intuitive.
+struct SunControls {
+    float azimuthDeg = 30.0f;   // around +Y, 0 = +X
+    float elevationDeg = 70.0f; // above horizon, 90 = straight down
+    float intensity = 1.0f;
+    std::array<float, 3> color{1.0f, 1.0f, 1.0f};
+    float pcfRadius = 1.0f;
+    float biasBase = 0.0015f;
+
+    math::Vec3 direction() const {
+        const float az = azimuthDeg * kPi / 180.0f;
+        const float el = elevationDeg * kPi / 180.0f;
+        return {std::cos(el) * std::cos(az), -std::sin(el), std::cos(el) * std::sin(az)};
+    }
+
+    static SunControls fromLight(const assetio::LightDesc& light) {
+        SunControls out;
+        const math::Vec3 d =
+            math::normalize({light.direction[0], light.direction[1], light.direction[2]});
+        out.elevationDeg = std::asin(std::clamp(-d.y, -1.0f, 1.0f)) * 180.0f / kPi;
+        out.azimuthDeg = std::atan2(d.z, d.x) * 180.0f / kPi;
+        out.intensity = light.intensity;
+        out.color = light.color;
+        return out;
+    }
+};
 
 // Directional-light matrix fitted around the scene's bounding sphere: a
 // crude fit (cascades tighten it later), but it guarantees every caster
@@ -83,8 +118,6 @@ math::Mat4 lightViewProj(const math::Vec3& direction, const math::Vec3& aabbMin,
         math::orthographic(-radius, radius, -radius, radius, 0.1f, radius * 3.0f);
     return math::mul(proj, view);
 }
-
-constexpr float kPi = 3.14159265358979323846f;
 
 // Free-fly camera: yaw/pitch angles plus position, driven by RMB mouselook
 // and WASD/QE. Yaw 0 looks down -Z (matching math::lookAt's convention).
@@ -789,20 +822,13 @@ int main(int argc, char** argv) {
     };
 
     FlyCamera camera;
-    LightData lightData;
+    SunControls sun;
     if (scene) {
         camera = FlyCamera::fromScene(scene->camera);
-
-        const assetio::LightDesc lightDesc =
-            scene->lights.empty() ? assetio::LightDesc{} : scene->lights.front();
-        const math::Vec3 direction = math::normalize(
-            {lightDesc.direction[0], lightDesc.direction[1], lightDesc.direction[2]});
-        lightData.viewProj = lightViewProj(direction, sceneMin, sceneMax);
-        lightData.direction = {direction.x, direction.y, direction.z};
-        lightData.intensity = lightDesc.intensity;
-        lightData.color = lightDesc.color;
-        log::info("Sun: direction ({:.2f} {:.2f} {:.2f}), intensity {:.2f}, shadows {}",
-                  direction.x, direction.y, direction.z, lightDesc.intensity,
+        sun = SunControls::fromLight(scene->lights.empty() ? assetio::LightDesc{}
+                                                           : scene->lights.front());
+        log::info("Sun: azimuth {:.0f}, elevation {:.0f}, intensity {:.2f}, shadows {}",
+                  sun.azimuthDeg, sun.elevationDeg, sun.intensity,
                   batch.shadowPipeline ? "on" : "off");
     }
     // Held-key state for camera movement; mouselook while RMB is held.
@@ -842,7 +868,9 @@ int main(int argc, char** argv) {
                 keyHeld[static_cast<int>(event.key)] = false;
                 break;
             case platform::Event::Type::MouseButtonDown:
-                if (event.button == platform::MouseButton::Right) {
+                // The UI owns the mouse when the cursor is over a widget.
+                if (event.button == platform::MouseButton::Right &&
+                    !(ui && ImGui::GetIO().WantCaptureMouse)) {
                     mouselook = true;
                     backend->setRelativeMouseMode(*target, true);
                 }
@@ -907,6 +935,14 @@ int main(int argc, char** argv) {
             std::memcpy(static_cast<std::byte*>(cameraBuffer->mapped()) +
                             renderer->frameSlot() * sizeof(math::Mat4),
                         viewProj.data(), sizeof(math::Mat4));
+            LightData lightData;
+            const math::Vec3 direction = sun.direction();
+            lightData.viewProj = lightViewProj(direction, sceneMin, sceneMax);
+            lightData.direction = {direction.x, direction.y, direction.z};
+            lightData.intensity = sun.intensity;
+            lightData.color = sun.color;
+            lightData.pcfRadius = sun.pcfRadius;
+            lightData.biasBase = sun.biasBase;
             std::memcpy(static_cast<std::byte*>(lightBuffer->mapped()) +
                             renderer->frameSlot() * sizeof(LightData),
                         &lightData, sizeof(LightData));
@@ -914,6 +950,19 @@ int main(int argc, char** argv) {
 
         if (ui && viewWidth > 0 && viewHeight > 0) {
             ui->buildFrame(viewWidth, viewHeight, deltaSeconds);
+            if (drawScene) {
+                // Sun & shadow tuning; changes land in the light buffer on
+                // the next frame's write.
+                ImGui::SetNextWindowPos(ImVec2(8.0f, 40.0f), ImGuiCond_FirstUseEver);
+                ImGui::Begin("Sun & Shadows", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
+                ImGui::SliderFloat("Azimuth", &sun.azimuthDeg, -180.0f, 180.0f, "%.0f deg");
+                ImGui::SliderFloat("Elevation", &sun.elevationDeg, 10.0f, 90.0f, "%.0f deg");
+                ImGui::SliderFloat("Intensity", &sun.intensity, 0.0f, 4.0f, "%.2f");
+                ImGui::ColorEdit3("Color", sun.color.data());
+                ImGui::SliderFloat("PCF radius", &sun.pcfRadius, 0.0f, 4.0f, "%.1f texels");
+                ImGui::SliderFloat("Bias", &sun.biasBase, 0.0002f, 0.0060f, "%.4f");
+                ImGui::End();
+            }
         }
 
         if (auto r = renderer->drawFrame(drawScene ? *scenePipeline : *pipeline,

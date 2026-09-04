@@ -32,7 +32,11 @@ struct LightData {
     float3 direction;               // world space, from the light toward the scene
     float intensity;
     float3 color;
-    float pad;
+    float pcfRadius; // filter radius in shadow-map texels (0 = hard 2x2)
+    float biasBase;  // depth-compare bias floor; slope-scaled up to 8x
+    float mapSize;   // shadow map resolution (texel size = 1/mapSize)
+    float pad0;
+    float pad1;
 };
 
 [[vk::binding(0, 0)]] StructuredBuffer<ObjectData> objects;
@@ -67,15 +71,31 @@ VSOutput VSMain(VSInput input) {
     return output;
 }
 
-// Shadow visibility: transform to light space, hardware-PCF compare. The
-// projection already bakes Vulkan's Y flip, so NDC y maps straight to V.
+// Shadow visibility: transform to light space, 3x3 PCF over hardware 2x2
+// compares (radius in texels from the light data). The projection already
+// bakes Vulkan's Y flip, so NDC y maps straight to V.
 float shadowFactor(float3 worldPos, float3 n, LightData light) {
     const float4 lightClip = mul(light.viewProj, float4(worldPos, 1.0f));
     const float2 uv = lightClip.xy * 0.5f + 0.5f;
     // Slope-scaled bias against acne on faces the light grazes.
     const float ndotl = saturate(dot(n, -light.direction));
-    const float bias = clamp(0.0015f / max(ndotl, 0.05f), 0.0015f, 0.01f);
-    return shadowMap.SampleCmpLevelZero(shadowSampler, uv, lightClip.z - bias);
+    const float bias = clamp(light.biasBase / max(ndotl, 0.05f), light.biasBase,
+                             light.biasBase * 8.0f);
+    const float depth = lightClip.z - bias;
+    if (light.pcfRadius <= 0.0f) {
+        return shadowMap.SampleCmpLevelZero(shadowSampler, uv, depth);
+    }
+    const float texel = light.pcfRadius / light.mapSize;
+    float sum = 0.0f;
+    [unroll]
+    for (int y = -1; y <= 1; ++y) {
+        [unroll]
+        for (int x = -1; x <= 1; ++x) {
+            sum += shadowMap.SampleCmpLevelZero(shadowSampler,
+                                                uv + float2(x, y) * texel, depth);
+        }
+    }
+    return sum / 9.0f;
 }
 
 float4 PSMain(VSOutput input) : SV_Target0 {

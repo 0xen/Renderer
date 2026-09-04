@@ -13,7 +13,11 @@ struct LightData {
     float3 direction;
     float intensity;
     float3 color;
-    float pad;
+    float pcfRadius;
+    float biasBase;
+    float mapSize;
+    float pad0;
+    float pad1;
 };
 
 struct ObjectData {
