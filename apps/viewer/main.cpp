@@ -92,6 +92,9 @@ int main(int argc, char** argv) {
     bool vsync = true;
     bool staticMode = false;
     std::uint64_t benchFrames = 0; // non-zero: exit after N frames with a report
+    // Caps the draw-submit ladder for testing the fallbacks; the actual mode
+    // is still limited by what the device supports.
+    auto maxDrawMode = gpu::DrawSubmitMode::IndirectCount;
     const char* scenePath = nullptr;
     for (int i = 1; i < argc; ++i) {
         const std::string_view arg = argv[i];
@@ -104,6 +107,18 @@ int main(int argc, char** argv) {
         } else if (arg == "--bench" && i + 1 < argc) {
             const std::string_view count = argv[++i];
             std::from_chars(count.data(), count.data() + count.size(), benchFrames);
+        } else if (arg == "--draw-mode" && i + 1 < argc) {
+            const std::string_view mode = argv[++i];
+            if (mode == "count") {
+                maxDrawMode = gpu::DrawSubmitMode::IndirectCount;
+            } else if (mode == "indirect") {
+                maxDrawMode = gpu::DrawSubmitMode::Indirect;
+            } else if (mode == "direct") {
+                maxDrawMode = gpu::DrawSubmitMode::Direct;
+            } else {
+                log::error("Unknown --draw-mode '{}' (count|indirect|direct)", mode);
+                return 1;
+            }
         } else {
             scenePath = arg.data();
         }
@@ -149,7 +164,8 @@ int main(int argc, char** argv) {
                   ms, scene->models.size(), vertices, triangles);
     } else {
         log::info("No scene file given "
-                  "(usage: viewer [--debug] [--novsync] [--static] [--bench N] <scene.xml>)");
+                  "(usage: viewer [--debug] [--novsync] [--static] [--bench N] "
+                  "[--draw-mode count|indirect|direct] <scene.xml>)");
     }
 
     auto backendResult = platform::createBackend(platform::BackendKind::SDL3);
@@ -188,6 +204,8 @@ int main(int argc, char** argv) {
     // draw entries over these slices come next.
     std::unique_ptr<gpu::MemoryPool> geometryPool;
     std::unique_ptr<gpu::Buffer> indirectBuffer;
+    std::unique_ptr<gpu::Buffer> countBuffer;
+    std::vector<gpu::DrawIndexedIndirect> draws; // outlives the loop: Direct mode records from it
     std::unique_ptr<gpu::Buffer> objectBuffer;
     std::unique_ptr<gpu::DescriptorTable> descriptorTable;
     std::vector<std::unique_ptr<gpu::Image>> textures;
@@ -264,7 +282,6 @@ int main(int argc, char** argv) {
         // One indirect entry per mesh, addressing its slices by offset.
         // instanceCount is the milestone-7 load/unload toggle; firstInstance
         // becomes the object-SSBO index in step 3.
-        std::vector<gpu::DrawIndexedIndirect> draws;
         draws.reserve(geometry.size());
         for (std::size_t i = 0; i < geometry.size(); ++i) {
             const GeometryLocation& location = geometry[i];
@@ -295,6 +312,25 @@ int main(int argc, char** argv) {
         for (std::uint32_t slot = 0; slot < gpu::FrameRenderer::kFramesInFlight; ++slot) {
             std::memcpy(static_cast<std::byte*>(indirectBuffer->mapped()) + slot * indirectRegion,
                         draws.data(), indirectRegion);
+        }
+
+        // Draw-count buffer for IndirectCount mode: one uint32 per frame
+        // slot, initialized to "all draws". Later the compaction compute
+        // writes it on the GPU; harmless if the mode falls back.
+        auto countResult = gpu::Buffer::create(
+            *device, {
+                         .size = sizeof(std::uint32_t) * gpu::FrameRenderer::kFramesInFlight,
+                         .usage = gpu::kUsageIndirect,
+                         .location = gpu::MemoryLocation::HostVisible,
+                     });
+        if (!countResult) {
+            log::error("Count buffer creation failed: {}", countResult.error().message);
+            return 1;
+        }
+        countBuffer = std::move(countResult).value();
+        auto* counts = static_cast<std::uint32_t*>(countBuffer->mapped());
+        for (std::uint32_t slot = 0; slot < gpu::FrameRenderer::kFramesInFlight; ++slot) {
+            counts[slot] = static_cast<std::uint32_t>(draws.size());
         }
 
         auto objectResult = gpu::Buffer::create(
@@ -485,13 +521,36 @@ int main(int argc, char** argv) {
     const bool drawScene = scenePipeline && indirectBuffer && !geometry.empty();
     gpu::DrawBatch batch;
     if (drawScene) {
+        // Pick the best submit mode the device's enabled features allow,
+        // never exceeding the --draw-mode cap. Each tier falls back to the
+        // next; Direct works everywhere.
+        const bool canIndirect = device->isEnabled(gpu::Feature::MultiDrawIndirect) &&
+                                 device->isEnabled(gpu::Feature::DrawIndirectFirstInstance);
+        const bool canCount = canIndirect && device->isEnabled(gpu::Feature::DrawIndirectCount);
+        batch.mode = gpu::DrawSubmitMode::Direct;
+        if (canIndirect && maxDrawMode != gpu::DrawSubmitMode::Direct) {
+            batch.mode = gpu::DrawSubmitMode::Indirect;
+        }
+        if (canCount && maxDrawMode == gpu::DrawSubmitMode::IndirectCount) {
+            batch.mode = gpu::DrawSubmitMode::IndirectCount;
+        }
+
         batch.geometry = geometryPool->buffer().handle();
         batch.indirect = indirectBuffer->handle();
         batch.drawCount = static_cast<std::uint32_t>(geometry.size());
         batch.indirectRegionStride = geometry.size() * sizeof(gpu::DrawIndexedIndirect);
+        batch.count = countBuffer->handle();
+        batch.countRegionStride = sizeof(std::uint32_t);
+        batch.cpuDraws = draws.data();
         batch.descriptors = descriptorTable->set();
         batch.viewProj = cameraViewProj(scene->camera, extent.width, extent.height);
-        log::info("Scene pass ready: {} indirect draws", batch.drawCount);
+
+        const char* modeName = batch.mode == gpu::DrawSubmitMode::IndirectCount ? "indirect-count"
+                               : batch.mode == gpu::DrawSubmitMode::Indirect    ? "indirect"
+                                                                                : "direct";
+        log::info("Scene pass ready: {} draws, {} mode (device: indirect {}, indirect-count {})",
+                  batch.drawCount, modeName, canIndirect ? "yes" : "NO",
+                  canCount ? "yes" : "NO");
     }
 
     renderer->setStaticRecording(staticMode);

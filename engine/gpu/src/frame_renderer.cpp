@@ -267,8 +267,27 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
         vkCmdPushConstants(cmd, pipeline.layout(),
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                            sizeof(batch->viewProj), batch->viewProj.data());
-        vkCmdDrawIndexedIndirect(cmd, batch->indirect, slot * batch->indirectRegionStride,
-                                 batch->drawCount, sizeof(DrawIndexedIndirect));
+        switch (batch->mode) {
+        case DrawSubmitMode::IndirectCount:
+            vkCmdDrawIndexedIndirectCount(cmd, batch->indirect,
+                                          slot * batch->indirectRegionStride, batch->count,
+                                          slot * batch->countRegionStride, batch->drawCount,
+                                          sizeof(DrawIndexedIndirect));
+            break;
+        case DrawSubmitMode::Indirect:
+            vkCmdDrawIndexedIndirect(cmd, batch->indirect, slot * batch->indirectRegionStride,
+                                     batch->drawCount, sizeof(DrawIndexedIndirect));
+            break;
+        case DrawSubmitMode::Direct:
+            for (std::uint32_t i = 0; i < batch->drawCount; ++i) {
+                const DrawIndexedIndirect& draw = batch->cpuDraws[i];
+                if (draw.instanceCount != 0) {
+                    vkCmdDrawIndexed(cmd, draw.indexCount, draw.instanceCount, draw.firstIndex,
+                                     draw.vertexOffset, draw.firstInstance);
+                }
+            }
+            break;
+        }
     } else {
         vkCmdDraw(cmd, 3, 1, 0, 0);
     }

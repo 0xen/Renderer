@@ -247,11 +247,15 @@ std::string_view featureName(Feature f) {
 
 FeatureSet FeatureSet::gpuDriven() {
     return {
-        .required = {Feature::MultiDrawIndirect, Feature::DrawIndirectFirstInstance,
-                     Feature::ShaderDrawParameters, Feature::DescriptorIndexing,
-                     Feature::DrawIndirectCount, Feature::TimelineSemaphore, Feature::DynamicRendering,
+        .required = {Feature::ShaderDrawParameters, Feature::DescriptorIndexing,
+                     Feature::TimelineSemaphore, Feature::DynamicRendering,
                      Feature::Synchronization2, Feature::ShaderDemote},
-        .optional = {Feature::BufferDeviceAddress},
+        // The indirect-draw ladder is optional: the scene pass detects what
+        // is enabled and falls back (indirect-count -> multi-draw indirect
+        // -> per-draw vkCmdDrawIndexed), so a device missing these still
+        // renders, just without the static-buffer wins.
+        .optional = {Feature::MultiDrawIndirect, Feature::DrawIndirectFirstInstance,
+                     Feature::DrawIndirectCount, Feature::BufferDeviceAddress},
         .requiredExtensions = {},
         .optionalExtensions = {},
     };

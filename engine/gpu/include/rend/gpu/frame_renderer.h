@@ -32,6 +32,25 @@ struct DrawIndexedIndirect {
 };
 static_assert(sizeof(DrawIndexedIndirect) == 20);
 
+// How a DrawBatch reaches the GPU, best first. The caller picks the best
+// mode the device's enabled features allow (Device::isEnabled) — the gpu
+// layer executes what it is told and never chooses policy.
+enum class DrawSubmitMode {
+    // vkCmdDrawIndexedIndirectCount: the GPU also reads the draw count, so
+    // a compacted entry list needs no CPU round trip. Needs
+    // Feature::DrawIndirectCount (+ the Indirect requirements).
+    IndirectCount,
+    // vkCmdDrawIndexedIndirect over all drawCount entries; hidden objects
+    // are instanceCount-0 entries. Needs Feature::MultiDrawIndirect and
+    // Feature::DrawIndirectFirstInstance.
+    Indirect,
+    // One vkCmdDrawIndexed per entry, read from cpuDraws on the CPU at
+    // record time. Works on any Vulkan device; visibility changes need a
+    // re-record (static recordings must be invalidated), so this is the
+    // fallback of last resort.
+    Direct,
+};
+
 // One indirect-draw submission over the geometry pool: the pool's buffer
 // is bound once as vertex + index source, then every entry in the indirect
 // buffer draws by offset. Adding/removing objects only rewrites entries.
@@ -39,6 +58,13 @@ struct DrawBatch {
     VkBuffer geometry = nullptr; // bound at offset 0 as VB and IB (uint32 indices)
     VkBuffer indirect = nullptr; // DrawIndexedIndirect[drawCount]
     std::uint32_t drawCount = 0;
+    DrawSubmitMode mode = DrawSubmitMode::Indirect;
+    // IndirectCount mode: buffer holding the uint32 draw count, one region
+    // per frame slot (countRegionStride apart); drawCount caps it.
+    VkBuffer count = nullptr;
+    std::uint64_t countRegionStride = 0;
+    // Direct mode: CPU-side copy of the drawCount entries.
+    const DrawIndexedIndirect* cpuDraws = nullptr;
     // Byte distance between per-frame-slot copies of the indirect array
     // inside `indirect`. Non-zero lets the CPU rewrite the slot's region
     // (host-visible buffer) while the other slot's region is in flight —
