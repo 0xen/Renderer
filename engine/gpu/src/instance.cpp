@@ -96,6 +96,18 @@ Result<std::unique_ptr<Instance>> Instance::create(const InstanceDesc& desc) {
     // the instance itself is also covered by validation.
     VkDebugUtilsMessengerCreateInfoEXT messengerInfo = makeMessengerInfo();
 
+    // Synchronization validation is opt-in via VK_EXT_validation_features,
+    // chained through the messenger so both reach the layer.
+    const bool syncValidation = validation && desc.enableSyncValidation;
+    VkValidationFeatureEnableEXT syncEnable = VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT;
+    VkValidationFeaturesEXT validationFeatures{};
+    validationFeatures.sType = VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT;
+    validationFeatures.enabledValidationFeatureCount = 1;
+    validationFeatures.pEnabledValidationFeatures = &syncEnable;
+    if (syncValidation) {
+        messengerInfo.pNext = &validationFeatures;
+    }
+
     VkInstanceCreateInfo info{};
     info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     info.pNext = validation ? &messengerInfo : nullptr;
@@ -125,9 +137,10 @@ Result<std::unique_ptr<Instance>> Instance::create(const InstanceDesc& desc) {
         }
     }
 
-    log::info("Vulkan instance created (loader {}.{}.{}, validation {})",
+    log::info("Vulkan instance created (loader {}.{}.{}, validation {}, sync validation {})",
               VK_API_VERSION_MAJOR(supported), VK_API_VERSION_MINOR(supported),
-              VK_API_VERSION_PATCH(supported), validation ? "on" : "off");
+              VK_API_VERSION_PATCH(supported), validation ? "on" : "off",
+              syncValidation ? "on" : "off");
     return instance;
 }
 

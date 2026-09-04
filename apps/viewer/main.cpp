@@ -11,14 +11,30 @@
 using namespace rend;
 
 int main(int argc, char** argv) {
-    log::info("Renderer viewer v0.1.0");
+    bool debug = false;
+    const char* scenePath = nullptr;
+    for (int i = 1; i < argc; ++i) {
+        if (std::string_view(argv[i]) == "--debug") {
+            debug = true;
+        } else {
+            scenePath = argv[i];
+        }
+    }
+
+    // --debug: mirror the log to a file next to the exe (survives crashes,
+    // hangs, and closed consoles) and turn on synchronization validation.
+    if (debug) {
+        log::mirrorToFile(executableDirectory() / "viewer.log");
+    }
+
+    log::info("Renderer viewer v0.1.0{}", debug ? " (debug)" : "");
 
     // Scene-description XML (shaders, scene setup, models). Parsing lands
     // with the renderer layer; the entry point is established now.
-    if (argc > 1) {
-        log::info("Scene file requested: {} (XML scene loading not implemented yet)", argv[1]);
+    if (scenePath) {
+        log::info("Scene file requested: {} (XML scene loading not implemented yet)", scenePath);
     } else {
-        log::info("No scene file given (usage: viewer <scene.xml>)");
+        log::info("No scene file given (usage: viewer [--debug] <scene.xml>)");
     }
 
     auto backendResult = platform::createBackend(platform::BackendKind::SDL3);
@@ -34,6 +50,7 @@ int main(int argc, char** argv) {
 
     auto instanceResult = gpu::Instance::create({
         .appName = "Renderer Viewer",
+        .enableSyncValidation = debug,
         .extraExtensions = backend->requiredVulkanInstanceExtensions(),
     });
     if (!instanceResult) {
@@ -52,7 +69,7 @@ int main(int argc, char** argv) {
     auto device = std::move(deviceResult).value();
 
     platform::TargetDesc desc{
-        .style = platform::WindowStyle::Borderless,
+        .style = platform::WindowStyle::Decorated,
         .size = {1280, 720},
         .title = "Renderer Viewer",
     };

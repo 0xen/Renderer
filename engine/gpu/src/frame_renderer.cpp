@@ -217,6 +217,22 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
     return {};
 }
 
+Result<void> FrameRenderer::waitForFence(VkFence fence, const char* what) const {
+    for (int attempt = 0;; ++attempt) {
+        const VkResult waited = vkWaitForFences(device_->handle(), 1, &fence, VK_TRUE, kWaitTimeoutNs);
+        if (waited == VK_SUCCESS) {
+            return {};
+        }
+        if (waited != VK_TIMEOUT) {
+            return Error{std::format("vkWaitForFences failed ({})", static_cast<int>(waited))};
+        }
+        if (attempt + 1 >= kMaxStalledWaits) {
+            return Error{std::format("{} fence never signalled; the GPU appears stalled", what)};
+        }
+        log::warn("{} still pending after {} s", what, (attempt + 1) * 2);
+    }
+}
+
 Result<void> FrameRenderer::drawFrame(const Pipeline& pipeline) {
     if (resizeRequested_) {
         if (pendingWidth_ == 0 || pendingHeight_ == 0) {
@@ -228,20 +244,8 @@ Result<void> FrameRenderer::drawFrame(const Pipeline& pipeline) {
     }
 
     FrameData& frame = frames_[frameIndex_];
-    for (int attempt = 0;; ++attempt) {
-        const VkResult waited =
-            vkWaitForFences(device_->handle(), 1, &frame.inFlight, VK_TRUE, kWaitTimeoutNs);
-        if (waited == VK_SUCCESS) {
-            break;
-        }
-        if (waited != VK_TIMEOUT) {
-            return Error{std::format("vkWaitForFences failed ({})", static_cast<int>(waited))};
-        }
-        if (attempt + 1 >= kMaxStalledWaits) {
-            return Error{std::format("Frame {} fence never signalled; the GPU appears stalled",
-                                     frameIndex_)};
-        }
-        log::warn("Frame {} still in flight after {} s", frameIndex_, (attempt + 1) * 2);
+    if (auto r = waitForFence(frame.inFlight, "Previous frame"); !r) {
+        return r.error();
     }
 
     std::uint32_t imageIndex = 0;

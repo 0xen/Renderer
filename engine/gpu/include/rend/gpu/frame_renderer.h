@@ -54,6 +54,7 @@ private:
     Result<void> createImageSemaphores();
     void destroyImageSemaphores();
     Result<void> recreateSwapchain();
+    Result<void> waitForFence(VkFence fence, const char* what) const;
     Result<void> record(VkCommandBuffer cmd, std::uint32_t imageIndex, const Pipeline& pipeline) const;
 
     struct FrameData {

@@ -5,8 +5,15 @@
 
 #include <volk.h>
 
+#include <array>
 #include <cstring>
 #include <optional>
+
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <dxgi.h>
+#endif
 
 namespace rend::gpu {
 
@@ -94,6 +101,37 @@ QueueFamilies findQueueFamilies(VkPhysicalDevice pd) {
     return out;
 }
 
+// LUIDs of every adapter the OS has a display attached to. Presenting from
+// an adapter with no display goes through the driver's cross-adapter copy
+// path, which on some drivers (seen on AMD iGPU+dGPU systems) can deadlock
+// the whole device — so adapter selection strongly prefers a display owner.
+std::vector<std::array<std::uint8_t, VK_LUID_SIZE>> displayAdapterLuids() {
+    std::vector<std::array<std::uint8_t, VK_LUID_SIZE>> luids;
+#ifdef _WIN32
+    IDXGIFactory* factory = nullptr;
+    if (FAILED(CreateDXGIFactory(__uuidof(IDXGIFactory), reinterpret_cast<void**>(&factory)))) {
+        return luids;
+    }
+    IDXGIAdapter* adapter = nullptr;
+    for (UINT i = 0; factory->EnumAdapters(i, &adapter) != DXGI_ERROR_NOT_FOUND; ++i) {
+        IDXGIOutput* output = nullptr;
+        if (adapter->EnumOutputs(0, &output) != DXGI_ERROR_NOT_FOUND && output) {
+            DXGI_ADAPTER_DESC desc{};
+            if (SUCCEEDED(adapter->GetDesc(&desc))) {
+                std::array<std::uint8_t, VK_LUID_SIZE> luid{};
+                static_assert(sizeof(desc.AdapterLuid) == VK_LUID_SIZE);
+                std::memcpy(luid.data(), &desc.AdapterLuid, VK_LUID_SIZE);
+                luids.push_back(luid);
+            }
+            output->Release();
+        }
+        adapter->Release();
+    }
+    factory->Release();
+#endif
+    return luids;
+}
+
 bool hasExtension(const std::vector<VkExtensionProperties>& available, const char* name) {
     for (const auto& e : available) {
         if (std::strcmp(e.extensionName, name) == 0) {
@@ -110,15 +148,29 @@ struct Candidate {
     FeatureChain supported;
     std::vector<const char*> optionalExts;
     std::uint64_t optionalMask = 0;
+    bool drivesDisplay = false;
     int score = -1; // <0 = unsuitable
 };
 
-Candidate evaluate(VkPhysicalDevice pd, const FeatureSet& request) {
+Candidate evaluate(VkPhysicalDevice pd, const FeatureSet& request,
+                   const std::vector<std::array<std::uint8_t, VK_LUID_SIZE>>& displayLuids) {
     Candidate c;
     c.pd = pd;
-    vkGetPhysicalDeviceProperties(pd, &c.props);
+    VkPhysicalDeviceIDProperties idProps{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES};
+    VkPhysicalDeviceProperties2 props2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
+    props2.pNext = &idProps;
+    vkGetPhysicalDeviceProperties2(pd, &props2);
+    c.props = props2.properties;
     if (c.props.apiVersion < VK_API_VERSION_1_3) {
         return c;
+    }
+    if (idProps.deviceLUIDValid) {
+        for (const auto& luid : displayLuids) {
+            if (std::memcmp(luid.data(), idProps.deviceLUID, VK_LUID_SIZE) == 0) {
+                c.drivesDisplay = true;
+                break;
+            }
+        }
     }
 
     c.families = findQueueFamilies(pd);
@@ -146,6 +198,11 @@ Candidate evaluate(VkPhysicalDevice pd, const FeatureSet& request) {
     }
 
     c.score = 0;
+    // Owning a display outweighs everything else: presenting from a
+    // display-less adapter uses the cross-adapter path (see above).
+    if (c.drivesDisplay) {
+        c.score += 10000;
+    }
     if (c.props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
         c.score += 1000;
     }
@@ -206,12 +263,18 @@ Result<std::unique_ptr<Device>> Device::create(const Instance& instance, const F
     std::vector<VkPhysicalDevice> devices(count);
     vkEnumeratePhysicalDevices(instance.handle(), &count, devices.data());
 
+    const auto displayLuids = displayAdapterLuids();
+    if (displayLuids.empty()) {
+        log::warn("Could not determine which adapter drives the display; scoring by type only");
+    }
+
     Candidate best;
     for (VkPhysicalDevice pd : devices) {
-        Candidate c = evaluate(pd, request);
-        log::info("Adapter: {} (api {}.{}, {}) — {}", c.props.deviceName,
+        Candidate c = evaluate(pd, request, displayLuids);
+        log::info("Adapter: {} (api {}.{}, {}{}) — {}", c.props.deviceName,
                   VK_API_VERSION_MAJOR(c.props.apiVersion), VK_API_VERSION_MINOR(c.props.apiVersion),
                   c.props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU ? "discrete" : "integrated/other",
+                  c.drivesDisplay ? ", drives a display" : ", no display",
                   c.score < 0 ? "unsuitable" : std::format("score {}", c.score));
         if (c.score > best.score) {
             best = c;

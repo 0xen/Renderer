@@ -15,4 +15,8 @@ target_link_libraries(rend_gpu
     PUBLIC rend::core
     PRIVATE rend_warnings volk
 )
+if(WIN32)
+    # Adapter selection asks DXGI which adapter owns the display.
+    target_link_libraries(rend_gpu PRIVATE dxgi)
+endif()
 set_target_properties(rend_gpu PROPERTIES FOLDER "engine")

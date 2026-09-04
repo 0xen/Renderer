@@ -17,6 +17,10 @@ struct InstanceDesc {
     // Validation layers + debug messenger; silently skipped if the layer
     // is not installed (logged as a warning).
     bool enableValidation = true;
+    // Synchronization validation (hazard detection across submits/presents).
+    // Much slower; meant for debug runs chasing sync bugs. Requires
+    // enableValidation and the installed layer to support it.
+    bool enableSyncValidation = false;
     // Platform surface extensions etc., supplied by the caller (the
     // platform layer's Vulkan seam feeds this from milestone 5 on).
     std::vector<const char*> extraExtensions;
