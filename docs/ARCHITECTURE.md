@@ -57,6 +57,9 @@ placement, upload timing, and residency.** The two sides stay maximally separate
   the renderer draws the minimal version instead — frames never stall on IO, and
   objects refine from coarse to full rather than popping from a placeholder. Optional
   per descriptor (a raw memory pool has no minimal form; it just reports non-resident).
+  A per-descriptor flag (`keepMinimalResident`) requests that the minimal version be
+  uploaded to VRAM at registration and pinned — guaranteeing the object can always draw
+  immediately; without it, the minimal version streams on demand like any other data.
 - **Two mechanisms, one philosophy** — message-style API for resource lifetime and
   streaming (create/destroy/hint: infrequent, async-friendly); structured draw
   lists / frame graph for per-frame submission (typed, batch-oriented — not generic
