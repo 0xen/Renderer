@@ -1,10 +1,18 @@
 #include "rend/core/log.h"
+#include "rend/gpu/instance.h"
 #include "rend/platform/backend.h"
 
 using namespace rend;
 
 int main() {
     log::info("Renderer sandbox v0.1.0");
+
+    auto instanceResult = gpu::Instance::create({.appName = "Renderer Sandbox"});
+    if (!instanceResult) {
+        log::error("Vulkan instance creation failed: {}", instanceResult.error().message);
+        return 1;
+    }
+    auto instance = std::move(instanceResult).value();
 
     auto backendResult = platform::createBackend(platform::BackendKind::SDL3);
     if (!backendResult) {

@@ -22,6 +22,7 @@ else()
 endif()
 
 include(cmake/FetchSDL3.cmake)
+include(cmake/FetchVolk.cmake)
 
 add_subdirectory(engine/core)
 add_subdirectory(engine/platform)

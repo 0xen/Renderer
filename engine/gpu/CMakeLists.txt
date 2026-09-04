@@ -1,6 +1,13 @@
-# Placeholder: becomes the Vulkan layer (instance, adapter selection,
-# device, swapchain, feature negotiation) starting next milestone.
-add_library(rend_gpu INTERFACE)
+# Vulkan layer: instance today; adapter selection, device, swapchain and
+# feature negotiation land in the coming milestones.
+add_library(rend_gpu STATIC
+    src/instance.cpp
+)
 add_library(rend::gpu ALIAS rend_gpu)
-target_include_directories(rend_gpu INTERFACE include)
-target_link_libraries(rend_gpu INTERFACE rend::core)
+
+target_include_directories(rend_gpu PUBLIC include)
+target_link_libraries(rend_gpu
+    PUBLIC rend::core
+    PRIVATE rend_warnings volk
+)
+set_target_properties(rend_gpu PROPERTIES FOLDER "engine")
