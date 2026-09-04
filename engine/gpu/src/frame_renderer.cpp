@@ -11,6 +11,12 @@ namespace rend::gpu {
 
 namespace {
 
+// The frame loop never blocks forever: a fence or acquire that stalls this
+// long is reported and retried, so a wedged driver stays diagnosable (and
+// the process stays killable) instead of silently hanging.
+constexpr std::uint64_t kWaitTimeoutNs = 2'000'000'000ull;
+constexpr int kMaxStalledWaits = 5;
+
 // Barrier helper: the swapchain image's previous contents are always
 // discarded (loadOp CLEAR), so the source layout is UNDEFINED every frame.
 VkImageMemoryBarrier2 imageBarrier(VkImage image, VkImageLayout oldLayout, VkImageLayout newLayout,
@@ -222,11 +228,30 @@ Result<void> FrameRenderer::drawFrame(const Pipeline& pipeline) {
     }
 
     FrameData& frame = frames_[frameIndex_];
-    vkWaitForFences(device_->handle(), 1, &frame.inFlight, VK_TRUE, UINT64_MAX);
+    for (int attempt = 0;; ++attempt) {
+        const VkResult waited =
+            vkWaitForFences(device_->handle(), 1, &frame.inFlight, VK_TRUE, kWaitTimeoutNs);
+        if (waited == VK_SUCCESS) {
+            break;
+        }
+        if (waited != VK_TIMEOUT) {
+            return Error{std::format("vkWaitForFences failed ({})", static_cast<int>(waited))};
+        }
+        if (attempt + 1 >= kMaxStalledWaits) {
+            return Error{std::format("Frame {} fence never signalled; the GPU appears stalled",
+                                     frameIndex_)};
+        }
+        log::warn("Frame {} still in flight after {} s", frameIndex_, (attempt + 1) * 2);
+    }
 
     std::uint32_t imageIndex = 0;
-    VkResult acquired = vkAcquireNextImageKHR(device_->handle(), swapchain_->handle(), UINT64_MAX,
+    // On VK_TIMEOUT no semaphore is signalled, so the same one is reusable.
+    VkResult acquired = vkAcquireNextImageKHR(device_->handle(), swapchain_->handle(), kWaitTimeoutNs,
                                               frame.imageAvailable, VK_NULL_HANDLE, &imageIndex);
+    if (acquired == VK_TIMEOUT || acquired == VK_NOT_READY) {
+        log::warn("No swapchain image available within {} s", kWaitTimeoutNs / 1'000'000'000ull);
+        return {};
+    }
     if (acquired == VK_ERROR_OUT_OF_DATE_KHR) {
         resizeRequested_ = true;
         return {}; // the semaphore was not signalled; retry next frame
