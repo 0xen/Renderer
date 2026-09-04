@@ -1,6 +1,10 @@
 #include "rend/core/log.h"
+#include "rend/core/paths.h"
 #include "rend/gpu/device.h"
+#include "rend/gpu/frame_renderer.h"
 #include "rend/gpu/instance.h"
+#include "rend/gpu/pipeline.h"
+#include "rend/gpu/shader.h"
 #include "rend/gpu/swapchain.h"
 #include "rend/platform/backend.h"
 
@@ -80,6 +84,40 @@ int main(int argc, char** argv) {
     }
     auto swapchain = std::move(swapchainResult).value();
 
+    // Shaders are compiled offline (dxc) into data/shaders next to the exe.
+    const auto shaderDir = executableDirectory() / "data" / "shaders";
+    auto vertexResult = gpu::Shader::createFromFile(*device, shaderDir / "triangle.vert.spv");
+    if (!vertexResult) {
+        log::error("{}", vertexResult.error().message);
+        return 1;
+    }
+    auto fragmentResult = gpu::Shader::createFromFile(*device, shaderDir / "triangle.frag.spv");
+    if (!fragmentResult) {
+        log::error("{}", fragmentResult.error().message);
+        return 1;
+    }
+    auto vertexShader = std::move(vertexResult).value();
+    auto fragmentShader = std::move(fragmentResult).value();
+
+    auto pipelineResult = gpu::Pipeline::createGraphics(*device,
+                                                        {
+                                                            .vertexShader = vertexShader.get(),
+                                                            .fragmentShader = fragmentShader.get(),
+                                                            .colorFormat = swapchain->imageFormat(),
+                                                        });
+    if (!pipelineResult) {
+        log::error("Pipeline creation failed: {}", pipelineResult.error().message);
+        return 1;
+    }
+    auto pipeline = std::move(pipelineResult).value();
+
+    auto rendererResult = gpu::FrameRenderer::create(*device, *swapchain);
+    if (!rendererResult) {
+        log::error("Frame renderer creation failed: {}", rendererResult.error().message);
+        return 1;
+    }
+    auto renderer = std::move(rendererResult).value();
+
     log::info("Viewer live at {}x{} — press Esc to quit", extent.width, extent.height);
 
     bool running = true;
@@ -95,20 +133,31 @@ int main(int argc, char** argv) {
                 }
                 break;
             case platform::Event::Type::Resized:
-                if (event.size.width > 0 && event.size.height > 0) {
-                    if (auto r = swapchain->recreate(event.size.width, event.size.height); !r) {
-                        log::warn("Swapchain recreate failed: {}", r.error().message);
-                    }
-                }
+                renderer->resize(event.size.width, event.size.height);
                 break;
             default:
                 break;
             }
         }
+        if (!running) {
+            break;
+        }
+        if (auto r = renderer->drawFrame(*pipeline); !r) {
+            log::error("Frame failed: {}", r.error().message);
+            running = false;
+        }
     }
 
     log::info("Shutting down");
-    swapchain.reset(); // before device/instance; owns surface
+    renderer->waitIdle();
+    // The swapchain goes first: destroying it retires presents that are still
+    // waiting on the frame renderer's per-image semaphores, which the renderer
+    // then destroys. It also owns the surface, so it must precede the instance.
+    swapchain.reset();
+    renderer.reset();
+    pipeline.reset();
+    fragmentShader.reset();
+    vertexShader.reset();
     target.reset();
     backend->shutdown();
     return 0;

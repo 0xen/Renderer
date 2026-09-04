@@ -21,7 +21,10 @@ void message(Level level, std::string_view text) {
     using namespace std::chrono;
     const auto now = time_point_cast<milliseconds>(system_clock::now());
     auto line = std::format("[{:%H:%M:%S}] [{}] {}\n", now, levelTag(level), text);
-    std::fputs(line.c_str(), level == Level::Error ? stderr : stdout);
+    std::FILE* stream = level == Level::Error ? stderr : stdout;
+    std::fputs(line.c_str(), stream);
+    // Redirected stdout is block-buffered; flush so a log survives a hang.
+    std::fflush(stream);
 }
 
 } // namespace rend::log
