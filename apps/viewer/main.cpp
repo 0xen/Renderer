@@ -518,7 +518,6 @@ int main(int argc, char** argv) {
 
     bool running = true;
     std::uint64_t frame = 0;
-    const auto animStart = std::chrono::steady_clock::now();
     while (running) {
         for (const auto& event : backend->pumpEvents()) {
             switch (event.type) {
@@ -549,30 +548,6 @@ int main(int argc, char** argv) {
         }
         if (!running) {
             break;
-        }
-
-        if (drawScene) {
-            // The experiment itself: visibility churn with ZERO command
-            // buffer rebuilds. A rotating eighth of the meshes is hidden by
-            // writing instanceCount 0 into the current slot's indirect
-            // region (safe once the slot's fence has been waited).
-            if (auto r = renderer->waitFrameSlot(); !r) {
-                log::error("Frame failed: {}", r.error().message);
-                break;
-            }
-            auto* slotDraws = reinterpret_cast<gpu::DrawIndexedIndirect*>(
-                static_cast<std::byte*>(indirectBuffer->mapped()) +
-                renderer->frameSlot() * batch.indirectRegionStride);
-            // Time-based (a step per half second) so the churn is watchable
-            // at any frame rate instead of strobing at thousands of fps.
-            const auto phase = static_cast<std::uint64_t>(
-                std::chrono::duration_cast<std::chrono::milliseconds>(
-                    std::chrono::steady_clock::now() - animStart)
-                    .count() /
-                500);
-            for (std::uint32_t i = 0; i < batch.drawCount; ++i) {
-                slotDraws[i].instanceCount = ((i + phase) % 8 == 0) ? 0u : 1u;
-            }
         }
 
         if (auto r = renderer->drawFrame(drawScene ? *scenePipeline : *pipeline,
