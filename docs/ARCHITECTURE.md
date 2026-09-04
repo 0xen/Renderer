@@ -35,6 +35,33 @@ pinned tag). A raw Win32 backend is planned as a modularity proof.
 The platform layer will expose exactly one Vulkan seam when the gpu layer lands:
 required instance extensions + `createSurface`.
 
+## Renderer layer (planned design, agreed 2026-09-04)
+
+The game-facing side. Core principle: **the game describes resources; the renderer owns
+placement, upload timing, and residency.** The two sides stay maximally separated.
+
+- **Rendering instance** — the active backend (Vulkan first; the design keeps OpenGL/DX
+  possible). Lives in `engine/gpu` as the explicit executor.
+- **Render object descriptors** — the game defines each resource (texture, vertex
+  buffer, generic memory pool, …) as data: type, format, usage, and *how to get its
+  bytes* (a **data provider**: asset/file reference or callback — pull model, so
+  registering a whole scene is cheap and bytes load only on demand).
+- **Opaque handles** — the game holds small IDs, never pointers into renderer memory,
+  so the renderer can lazily load, evict, defragment, and hot-reload freely.
+- **Residency** — explicit states (Unloaded → CPU-resident → GPU-resident). The game
+  sends *hints* (always-resident, priority-by-distance); the renderer owns the policy
+  (e.g. load a building only when in range or requested for draw).
+- **Minimal version fallback** — a descriptor may include a "minimal" representation of
+  the object (lowest LOD mesh, top mips of a texture) that is small enough to keep
+  resident eagerly. If a draw requests an object whose full data is still streaming,
+  the renderer draws the minimal version instead — frames never stall on IO, and
+  objects refine from coarse to full rather than popping from a placeholder. Optional
+  per descriptor (a raw memory pool has no minimal form; it just reports non-resident).
+- **Two mechanisms, one philosophy** — message-style API for resource lifetime and
+  streaming (create/destroy/hint: infrequent, async-friendly); structured draw
+  lists / frame graph for per-frame submission (typed, batch-oriented — not generic
+  messages).
+
 ## GPU layer (planned)
 
 Plain C Vulkan API loaded via **volk**. Feature/extension requirements declared as data
