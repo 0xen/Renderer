@@ -77,6 +77,20 @@ Plain C Vulkan API loaded via **volk**. Feature/extension requirements declared 
 (`FeatureSet`); physical-device selection scores adapters against it, so supporting
 multiple feature tiers stays declarative.
 
+### Base object classes (agreed 2026-09-04)
+
+GPU primitives are small, logical, isolated classes — `Buffer`, `Texture`, and later
+`Sampler`, `Shader`, `Pipeline`, `CommandContext`. Each wraps exactly one Vulkan
+concept, owns its handle/memory (RAII), and carries **no policy**: no knowledge of
+models, materials, streaming, residency, or rendering technique. They stay close to
+the metal (explicit usage flags, memory location, no hidden uploads).
+
+All composition happens above: a model is made of buffers (renderer layer); the
+residency/dedup systems manage these objects; and a rendering path — forward,
+deferred, ray tracing — is just a different arrangement of the same primitives. This
+isolation is what keeps the future dynamic pipeline system highly adaptable: the
+technique layer changes, the base vocabulary doesn't.
+
 ### Static command buffer / GPU-driven rendering model (agreed direction, 2026-09-04)
 
 Goal: **avoid rebuilding command buffers** — ideally record once and reuse every frame
