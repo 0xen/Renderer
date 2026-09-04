@@ -35,16 +35,22 @@ renderer supplies them, not the asset.
     </Descriptors>
 
     <Stages>
-        <Stage entrypoint="main" stage="Vertex"   path="data/Shaders/Terrain/vert.spv" />
-        <Stage entrypoint="main" stage="Fragment" path="data/Shaders/Terrain/frag.spv" />
+        <!-- Logical, backend-agnostic paths: no extension. The active backend
+             resolves the artifact (.spv for Vulkan, .dxil for DirectX, ...). -->
+        <Stage entrypoint="main" stage="Vertex"   path="data/Shaders/Terrain/vert" />
+        <Stage entrypoint="main" stage="Fragment" path="data/Shaders/Terrain/frag" />
     </Stages>
 </Pipeline>
 ```
 
-- Formats/rates use the Vulkan vocabulary (`R32G32_SFLOAT`, `INPUT_RATE_VERTEX`,
-  `INPUT_RATE_INSTANCE`); topology values: `Triangle`, … (extended as needed).
-- `path` points at offline-compiled SPIR-V; a build step (glslc from the SDK) will
-  compile shader source into these artifacts.
+- Formats/rates use Vulkan-style names (`R32G32_SFLOAT`, `INPUT_RATE_VERTEX`,
+  `INPUT_RATE_INSTANCE`) as a *neutral vocabulary* describing data layout; each
+  backend maps them mechanically (e.g. → `DXGI_FORMAT_R32G32_FLOAT`). Topology
+  values: `Triangle`, … (extended as needed).
+- Shader artifacts are compiled **offline at build time**, one binary per backend.
+  Planned toolchain: single-source HLSL through **dxc** (emits both SPIR-V and DXIL
+  natively), with **SPIRV-Cross** available for converting existing SPIR-V to other
+  backends' source. No runtime shader compilation.
 - Planned: SPIR-V reflection (SPIRV-Reflect) at load validates that vertex layout and
   descriptor references match the shader — mismatches are load-time errors, not
   silent corruption.
