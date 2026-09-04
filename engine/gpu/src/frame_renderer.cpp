@@ -253,6 +253,10 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
     if (batch) {
         // The whole scene: geometry pool bound once, one indirect stream.
         const VkDeviceSize zero = 0;
+        if (batch->descriptors != VK_NULL_HANDLE) {
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.layout(), 0, 1,
+                                    &batch->descriptors, 0, nullptr);
+        }
         vkCmdBindVertexBuffers(cmd, 0, 1, &batch->geometry, &zero);
         vkCmdBindIndexBuffer(cmd, batch->geometry, 0, VK_INDEX_TYPE_UINT32);
         vkCmdPushConstants(cmd, pipeline.layout(),

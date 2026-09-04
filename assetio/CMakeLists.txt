@@ -7,6 +7,7 @@ add_library(rend_assetio SHARED
     src/gltf_importer.cpp
     src/importer_registry.cpp
     src/scene_loader.cpp
+    src/texture_loader.cpp
 )
 add_library(rend::assetio ALIAS rend_assetio)
 
@@ -15,7 +16,7 @@ target_link_libraries(rend_assetio
     # Engine dependency is core utilities only (log, Result); the engine
     # never links back.
     PUBLIC rend::engine
-    PRIVATE rend_warnings pugixml::pugixml cgltf
+    PRIVATE rend_warnings pugixml::pugixml cgltf stb
 )
 set_target_properties(rend_assetio PROPERTIES
     OUTPUT_NAME "rend_assetio"

@@ -29,6 +29,10 @@ Result<std::unique_ptr<Pipeline>> Pipeline::createGraphics(const Device& device,
         layoutInfo.pushConstantRangeCount = 1;
         layoutInfo.pPushConstantRanges = &pushRange;
     }
+    if (desc.descriptorLayout != nullptr) {
+        layoutInfo.setLayoutCount = 1;
+        layoutInfo.pSetLayouts = &desc.descriptorLayout;
+    }
 
     VkPipelineLayout layout = VK_NULL_HANDLE;
     if (VkResult r = vkCreatePipelineLayout(device.handle(), &layoutInfo, nullptr, &layout);

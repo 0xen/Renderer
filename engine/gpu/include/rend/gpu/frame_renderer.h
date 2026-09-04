@@ -12,6 +12,7 @@ typedef struct VkCommandBuffer_T* VkCommandBuffer;
 typedef struct VkSemaphore_T* VkSemaphore;
 typedef struct VkFence_T* VkFence;
 typedef struct VkBuffer_T* VkBuffer;
+typedef struct VkDescriptorSet_T* VkDescriptorSet;
 
 namespace rend::gpu {
 
@@ -38,7 +39,8 @@ struct DrawBatch {
     VkBuffer geometry = nullptr; // bound at offset 0 as VB and IB (uint32 indices)
     VkBuffer indirect = nullptr; // DrawIndexedIndirect[drawCount]
     std::uint32_t drawCount = 0;
-    std::array<float, 16> viewProj{}; // pushed to the pipeline (64 bytes)
+    std::array<float, 16> viewProj{};       // pushed to the pipeline (64 bytes)
+    VkDescriptorSet descriptors = nullptr;  // bindless table set, bound once if set
 };
 
 // Per-frame-recorded baseline frame loop: acquire, record, submit, present,

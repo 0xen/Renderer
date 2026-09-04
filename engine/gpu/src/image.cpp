@@ -18,7 +18,7 @@ Result<std::unique_ptr<Image>> Image::create(const Device& device, const ImageDe
     info.imageType = VK_IMAGE_TYPE_2D;
     info.format = static_cast<VkFormat>(desc.format);
     info.extent = {desc.width, desc.height, 1};
-    info.mipLevels = 1;
+    info.mipLevels = desc.mipLevels;
     info.arrayLayers = 1;
     info.samples = VK_SAMPLE_COUNT_1_BIT;
     info.tiling = VK_IMAGE_TILING_OPTIMAL;
@@ -73,7 +73,7 @@ Result<std::unique_ptr<Image>> Image::create(const Device& device, const ImageDe
     viewInfo.subresourceRange = {
         desc.depth ? static_cast<VkImageAspectFlags>(VK_IMAGE_ASPECT_DEPTH_BIT)
                    : static_cast<VkImageAspectFlags>(VK_IMAGE_ASPECT_COLOR_BIT),
-        0, 1, 0, 1};
+        0, desc.mipLevels, 0, 1};
 
     VkImageView view = VK_NULL_HANDLE;
     if (VkResult r = vkCreateImageView(device.handle(), &viewInfo, nullptr, &view);
@@ -89,6 +89,9 @@ Result<std::unique_ptr<Image>> Image::create(const Device& device, const ImageDe
     out->memory_ = memory;
     out->view_ = view;
     out->format_ = desc.format;
+    out->width_ = desc.width;
+    out->height_ = desc.height;
+    out->mipLevels_ = desc.mipLevels;
     return out;
 }
 

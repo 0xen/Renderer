@@ -46,6 +46,7 @@ bool supports(const FeatureChain& c, Feature f) {
                c.v12.descriptorBindingSampledImageUpdateAfterBind;
     case Feature::DrawIndirectCount: return c.v12.drawIndirectCount;
     case Feature::TimelineSemaphore: return c.v12.timelineSemaphore;
+    case Feature::ShaderDemote: return c.v13.shaderDemoteToHelperInvocation;
     case Feature::BufferDeviceAddress: return c.v12.bufferDeviceAddress;
     case Feature::DynamicRendering: return c.v13.dynamicRendering;
     case Feature::Synchronization2: return c.v13.synchronization2;
@@ -67,6 +68,7 @@ void enable(FeatureChain& c, Feature f) {
         c.v12.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
         break;
     case Feature::DrawIndirectCount: c.v12.drawIndirectCount = VK_TRUE; break;
+    case Feature::ShaderDemote: c.v13.shaderDemoteToHelperInvocation = VK_TRUE; break;
     case Feature::TimelineSemaphore: c.v12.timelineSemaphore = VK_TRUE; break;
     case Feature::BufferDeviceAddress: c.v12.bufferDeviceAddress = VK_TRUE; break;
     case Feature::DynamicRendering: c.v13.dynamicRendering = VK_TRUE; break;
@@ -233,6 +235,7 @@ std::string_view featureName(Feature f) {
     case Feature::ShaderDrawParameters: return "ShaderDrawParameters";
     case Feature::DescriptorIndexing: return "DescriptorIndexing";
     case Feature::DrawIndirectCount: return "DrawIndirectCount";
+    case Feature::ShaderDemote: return "ShaderDemote";
     case Feature::TimelineSemaphore: return "TimelineSemaphore";
     case Feature::BufferDeviceAddress: return "BufferDeviceAddress";
     case Feature::DynamicRendering: return "DynamicRendering";
@@ -247,7 +250,7 @@ FeatureSet FeatureSet::gpuDriven() {
         .required = {Feature::MultiDrawIndirect, Feature::DrawIndirectFirstInstance,
                      Feature::ShaderDrawParameters, Feature::DescriptorIndexing,
                      Feature::DrawIndirectCount, Feature::TimelineSemaphore, Feature::DynamicRendering,
-                     Feature::Synchronization2},
+                     Feature::Synchronization2, Feature::ShaderDemote},
         .optional = {Feature::BufferDeviceAddress},
         .requiredExtensions = {},
         .optionalExtensions = {},

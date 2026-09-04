@@ -8,6 +8,7 @@
 
 typedef struct VkPipeline_T* VkPipeline;
 typedef struct VkPipelineLayout_T* VkPipelineLayout;
+typedef struct VkDescriptorSetLayout_T* VkDescriptorSetLayout;
 
 namespace rend::gpu {
 
@@ -42,6 +43,8 @@ struct GraphicsPipelineDesc {
     std::uint32_t depthFormat = 0;
     // One push-constant range visible to both stages; 0 = none.
     std::uint32_t pushConstantBytes = 0;
+    // Set 0 layout (the bindless DescriptorTable); null = no sets.
+    VkDescriptorSetLayout descriptorLayout = nullptr;
 };
 
 // A graphics pipeline plus the layout it was built with. Dynamic rendering

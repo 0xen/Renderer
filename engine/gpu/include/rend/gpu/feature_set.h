@@ -20,6 +20,7 @@ enum class Feature : std::uint32_t {
     BufferDeviceAddress,       // 1.2: GPU pointers
     DynamicRendering,          // 1.3: render without render passes
     Synchronization2,          // 1.3: modern barrier API
+    ShaderDemote,              // 1.3: dxc compiles HLSL discard to OpDemote
     Count,
 };
 

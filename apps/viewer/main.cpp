@@ -1,7 +1,10 @@
 #include "rend/assetio/scene_loader.h"
+#include "rend/assetio/texture_loader.h"
 #include "rend/core/log.h"
 #include "rend/core/math.h"
 #include "rend/core/paths.h"
+#include "rend/gpu/descriptor_table.h"
+#include "rend/gpu/texture_uploader.h"
 #include "rend/gpu/device.h"
 #include "rend/gpu/frame_renderer.h"
 #include "rend/gpu/instance.h"
@@ -14,6 +17,7 @@
 
 #include <chrono>
 #include <optional>
+#include <unordered_map>
 
 using namespace rend;
 
@@ -25,6 +29,15 @@ struct GeometryLocation {
     gpu::BufferSlice indices;
     std::uint32_t indexCount = 0;
     std::uint32_t materialIndex = 0;
+};
+
+// One row per object in the bindless table's SSBO, found by the indirect
+// entry's firstInstance. Must match ObjectData in scene.hlsl.
+struct ObjectData {
+    std::uint32_t textureIndex = 0;
+    std::uint32_t alphaMasked = 0;
+    float alphaCutoff = 0.5f;
+    float pad = 0.0f;
 };
 
 // Interleaved vertex layout of the scene pass: position, normal, uv.
@@ -159,6 +172,9 @@ int main(int argc, char** argv) {
     // draw entries over these slices come next.
     std::unique_ptr<gpu::MemoryPool> geometryPool;
     std::unique_ptr<gpu::Buffer> indirectBuffer;
+    std::unique_ptr<gpu::Buffer> objectBuffer;
+    std::unique_ptr<gpu::DescriptorTable> descriptorTable;
+    std::vector<std::unique_ptr<gpu::Image>> textures;
     std::vector<GeometryLocation> geometry;
     if (scene) {
         const auto start = std::chrono::steady_clock::now();
@@ -176,8 +192,31 @@ int main(int argc, char** argv) {
         }
         auto transfer = std::move(transferResult).value();
 
+        // Slot 0 of the bindless texture array is a 1x1 white fallback so
+        // untextured materials sample neutrally.
+        std::vector<std::filesystem::path> texturePaths{{}};
+        std::unordered_map<std::string, std::uint32_t> textureSlotByPath;
+        std::vector<ObjectData> objectData;
+
         for (const auto& model : scene->models) {
             for (const auto& mesh : model.data.meshes) {
+                ObjectData object;
+                if (mesh.materialIndex < model.data.materials.size()) {
+                    const auto& material = model.data.materials[mesh.materialIndex];
+                    object.alphaMasked = material.alphaMasked ? 1u : 0u;
+                    object.alphaCutoff = material.alphaCutoff;
+                    if (!material.baseColorTexture.empty()) {
+                        const std::string key = material.baseColorTexture.string();
+                        auto [it, inserted] = textureSlotByPath.try_emplace(
+                            key, static_cast<std::uint32_t>(texturePaths.size()));
+                        if (inserted) {
+                            texturePaths.push_back(material.baseColorTexture);
+                        }
+                        object.textureIndex = it->second;
+                    }
+                }
+                objectData.push_back(object);
+
                 const std::vector<float> vertexData = interleave(mesh);
                 // Stride alignment keeps vertexOffset (= offset / stride) exact.
                 auto vertexSlice =
@@ -241,6 +280,25 @@ int main(int argc, char** argv) {
             return 1;
         }
 
+        auto objectResult = gpu::Buffer::create(
+            *device, {
+                         .size = objectData.size() * sizeof(ObjectData),
+                         .usage = gpu::kUsageStorage | gpu::kUsageTransferDst,
+                         .location = gpu::MemoryLocation::DeviceLocal,
+                         .sharedWithTransferQueue = true,
+                     });
+        if (!objectResult) {
+            log::error("Object buffer creation failed: {}", objectResult.error().message);
+            return 1;
+        }
+        objectBuffer = std::move(objectResult).value();
+        if (auto staged = transfer->stage(*objectBuffer, 0, objectData.data(),
+                                          objectData.size() * sizeof(ObjectData));
+            !staged) {
+            log::error("Object staging failed: {}", staged.error().message);
+            return 1;
+        }
+
         if (auto flushed = transfer->flush(); !flushed) {
             log::error("Geometry upload failed: {}", flushed.error().message);
             return 1;
@@ -253,6 +311,56 @@ int main(int argc, char** argv) {
                   static_cast<double>(geometryPool->usedBytes()) / (1024.0 * 1024.0),
                   geometryPool->capacity() / (1024 * 1024),
                   device->hasDedicatedTransfer() ? "dedicated transfer" : "graphics");
+
+        // Bindless table: decode every referenced base-color texture through
+        // assetio, upload with full mip chains, and point the object SSBO
+        // rows at their slots.
+        const auto texStart = std::chrono::steady_clock::now();
+        auto tableResult = gpu::DescriptorTable::create(*device, 1024);
+        if (!tableResult) {
+            log::error("Descriptor table creation failed: {}", tableResult.error().message);
+            return 1;
+        }
+        descriptorTable = std::move(tableResult).value();
+        descriptorTable->writeObjectBuffer(objectBuffer->handle(),
+                                           objectData.size() * sizeof(ObjectData));
+
+        auto uploaderResult = gpu::TextureUploader::create(*device);
+        if (!uploaderResult) {
+            log::error("Texture uploader creation failed: {}", uploaderResult.error().message);
+            return 1;
+        }
+        auto uploader = std::move(uploaderResult).value();
+
+        std::uint64_t texelBytes = 0;
+        for (std::size_t i = 0; i < texturePaths.size(); ++i) {
+            Result<std::unique_ptr<gpu::Image>> uploaded = [&]() {
+                if (i == 0) {
+                    const std::uint8_t white[4] = {255, 255, 255, 255};
+                    return uploader->upload(1, 1, white);
+                }
+                auto decoded = assetio::loadTexture(texturePaths[i]);
+                if (!decoded) {
+                    return Result<std::unique_ptr<gpu::Image>>{decoded.error()};
+                }
+                const auto& t = decoded.value();
+                texelBytes += t.rgba.size();
+                return uploader->upload(t.width, t.height, t.rgba.data());
+            }();
+            if (!uploaded) {
+                log::error("Texture {} failed: {}", texturePaths[i].filename().string(),
+                           uploaded.error().message);
+                return 1;
+            }
+            descriptorTable->writeTexture(static_cast<std::uint32_t>(i),
+                                          uploaded.value()->view());
+            textures.push_back(std::move(uploaded).value());
+        }
+        const auto texMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                               std::chrono::steady_clock::now() - texStart)
+                               .count();
+        log::info("Textures ready in {} ms: {} images ({:.1f} MiB decoded), mipmapped, bindless",
+                  texMs, textures.size(), static_cast<double>(texelBytes) / (1024.0 * 1024.0));
     }
 
     platform::TargetDesc desc{
@@ -339,6 +447,7 @@ int main(int argc, char** argv) {
                                               {2, gpu::kFormatR32G32Sfloat, 24}},
                          .depthFormat = gpu::kFormatD32Sfloat,
                          .pushConstantBytes = 64,
+                         .descriptorLayout = descriptorTable->layout(),
                      });
         if (!sceneResult) {
             log::error("Scene pipeline creation failed: {}", sceneResult.error().message);
@@ -362,6 +471,7 @@ int main(int argc, char** argv) {
         batch.geometry = geometryPool->buffer().handle();
         batch.indirect = indirectBuffer->handle();
         batch.drawCount = static_cast<std::uint32_t>(geometry.size());
+        batch.descriptors = descriptorTable->set();
         batch.viewProj = cameraViewProj(scene->camera, extent.width, extent.height);
         log::info("Scene pass ready: {} indirect draws", batch.drawCount);
     }
