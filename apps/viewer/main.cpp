@@ -55,7 +55,7 @@ struct ObjectData {
 constexpr std::uint32_t kVertexStride = 8 * sizeof(float);
 
 constexpr std::uint32_t kShadowMapSize = 2048;
-constexpr std::uint32_t kShadowCascades = 3;
+constexpr std::uint32_t kShadowCascades = 4;
 constexpr float kPi = 3.14159265358979323846f;
 
 math::Vec3 vadd(const math::Vec3& a, const math::Vec3& b) {
@@ -92,7 +92,7 @@ struct SunControls {
     std::array<float, 3> color{1.0f, 1.0f, 1.0f};
     float pcfRadius = 1.0f;
     float biasBase = 0.0015f;
-    float shadowDistance = 30.0f; // view-space reach of the cascades
+    float shadowDistance = 60.0f; // view-space reach of the cascades
     bool debugTint = false;
     bool rtShadows = false; // hybrid ray-traced shadows (RayQuery devices)
 
@@ -1135,7 +1135,7 @@ int main(int argc, char** argv) {
                     ImGui::ColorEdit3("Color", sun.color.data());
                     ImGui::SliderFloat("PCF radius", &sun.pcfRadius, 0.0f, 4.0f, "%.1f texels");
                     ImGui::SliderFloat("Bias", &sun.biasBase, 0.0002f, 0.0060f, "%.4f");
-                    ImGui::SliderFloat("Shadow dist", &sun.shadowDistance, 5.0f, 60.0f, "%.0f m");
+                    ImGui::SliderFloat("Shadow dist", &sun.shadowDistance, 5.0f, 150.0f, "%.0f m");
                     ImGui::Checkbox("Show cascades", &sun.debugTint);
                     ImGui::TreePop();
                 }
