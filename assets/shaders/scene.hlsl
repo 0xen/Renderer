@@ -27,12 +27,17 @@ struct CameraData {
 
 struct ObjectData {
     uint textureIndex; // into the bindless texture array
+    uint normalIndex;  // 0 = no normal map (use the vertex normal)
+    uint mrIndex;      // 0 = factors only (glTF: B = metallic, G = roughness)
     uint flags;        // bit 0: alpha-masked, bit 1: transparent (blend)
     float alphaCutoff;
     float baseAlpha; // baseColorFactor.a: blend opacity multiplier
+    float metallicFactor;
+    float roughnessFactor;
 };
 
 static const uint kFlagAlphaMasked = 1u;
+static const float kPi = 3.14159265f;
 
 // Must match LightData in the viewer / shadow.hlsl. One region per frame
 // slot, like the camera.
@@ -167,6 +172,57 @@ float rtShadowFactor(float3 worldPos, float3 n, LightData light) {
 }
 #endif
 
+// Tangent-space normal map applied via the screen-space cotangent frame
+// (Schueler): derivatives of position and uv rebuild the tangent basis, so
+// the vertex layout needs no baked tangents.
+float3 applyNormalMap(uint normalIndex, float3 n, float3 worldPos, float2 uv) {
+    if (normalIndex == 0) {
+        return n;
+    }
+    const float3 dp1 = ddx(worldPos);
+    const float3 dp2 = ddy(worldPos);
+    const float2 duv1 = ddx(uv);
+    const float2 duv2 = ddy(uv);
+    const float3 dp2perp = cross(dp2, n);
+    const float3 dp1perp = cross(n, dp1);
+    float3 t = dp2perp * duv1.x + dp1perp * duv2.x;
+    float3 b = dp2perp * duv1.y + dp1perp * duv2.y;
+    const float invmax = rsqrt(max(dot(t, t), dot(b, b)) + 1.0e-12f);
+    t *= invmax;
+    b *= invmax;
+    const float3 tn =
+        textures[NonUniformResourceIndex(normalIndex)].Sample(linearSampler, uv).xyz * 2.0f -
+        1.0f;
+    return normalize(t * tn.x + b * tn.y + n * tn.z);
+}
+
+// One directional light, glTF metallic-roughness: Lambert diffuse + GGX
+// specular (Smith-Schlick visibility, Schlick Fresnel). Scaled by pi so a
+// white dielectric matches the old albedo*NdotL model's brightness.
+float3 shadeSurface(float3 albedo, float metallic, float roughness, float3 n, float3 v, float3 l,
+                    float3 lightColor, float intensity, float shadow) {
+    const float ndotl = saturate(dot(n, l));
+    if (ndotl <= 0.0f || shadow <= 0.0f) {
+        return 0.0f;
+    }
+    const float3 h = normalize(v + l);
+    const float ndotv = max(dot(n, v), 1.0e-4f);
+    const float ndoth = saturate(dot(n, h));
+    const float vdoth = saturate(dot(v, h));
+    const float a = max(roughness * roughness, 1.0e-3f);
+    const float a2 = a * a;
+    const float dDenom = ndoth * ndoth * (a2 - 1.0f) + 1.0f;
+    const float d = a2 / (kPi * dDenom * dDenom);
+    const float k = a * 0.5f;
+    const float gv = ndotv / (ndotv * (1.0f - k) + k);
+    const float gl = ndotl / (ndotl * (1.0f - k) + k);
+    const float3 f0 = lerp(0.04f, albedo, metallic);
+    const float3 f = f0 + (1.0f - f0) * pow(1.0f - vdoth, 5.0f);
+    const float3 specular = d * gv * gl * f / (4.0f * ndotv * ndotl + 1.0e-4f);
+    const float3 diffuse = albedo * (1.0f - metallic) / kPi;
+    return (diffuse + specular) * lightColor * (intensity * ndotl * shadow * kPi);
+}
+
 float4 PSMain(VSOutput input) : SV_Target0 {
     const ObjectData object = objects[input.objectIndex];
     const float4 albedo =
@@ -176,8 +232,18 @@ float4 PSMain(VSOutput input) : SV_Target0 {
     }
 
     const LightData light = lights[pc.cameraSlot];
-    const float3 n = normalize(input.normal);
-    const float direct = saturate(dot(n, -normalize(light.direction)));
+    float3 n = normalize(input.normal);
+    n = applyNormalMap(object.normalIndex, n, input.worldPos, input.uv);
+    float metallic = object.metallicFactor;
+    float roughness = object.roughnessFactor;
+    if (object.mrIndex != 0) {
+        const float2 mr =
+            textures[NonUniformResourceIndex(object.mrIndex)].Sample(linearSampler, input.uv).gb;
+        roughness *= mr.x;
+        metallic *= mr.y;
+    }
+    const float3 l = -normalize(light.direction);
+    const float direct = saturate(dot(n, l));
     uint cascade = 0;
     float shadow = 1.0f;
 #if RT_SHADOWS
@@ -191,11 +257,11 @@ float4 PSMain(VSOutput input) : SV_Target0 {
                      : 0.0f;
     }
 
-    // Sun + simple hemispherical ambient; a real lighting model arrives
-    // with the render-technique work.
-    const float3 sun = light.color * (light.intensity * direct * shadow);
+    const float3 v = normalize(cameras[pc.cameraSlot].position.xyz - input.worldPos);
+    const float3 sun = shadeSurface(albedo.rgb, metallic, roughness, n, v, l, light.color,
+                                    light.intensity, shadow);
     const float3 ambient = float3(0.30f, 0.32f, 0.36f) * (n.y * 0.2f + 0.5f);
-    float3 color = albedo.rgb * (ambient + sun);
+    float3 color = albedo.rgb * ambient + sun;
     if (light.debugTint != 0) {
         const float3 tints[4] = {float3(1.0f, 0.6f, 0.6f), float3(0.6f, 1.0f, 0.6f),
                                  float3(0.6f, 0.6f, 1.0f), float3(1.0f, 1.0f, 0.6f)};

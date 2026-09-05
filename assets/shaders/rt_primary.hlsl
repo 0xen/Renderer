@@ -28,9 +28,13 @@ struct CameraData {
 
 struct ObjectData {
     uint textureIndex; // into the bindless texture array
+    uint normalIndex;  // 0 = no normal map (use the vertex normal)
+    uint mrIndex;      // 0 = factors only (glTF: B = metallic, G = roughness)
     uint flags;        // kFlagAlphaMasked | kFlagTransparent
     float alphaCutoff;
     float baseAlpha; // baseColorFactor.a: blend opacity multiplier
+    float metallicFactor;
+    float roughnessFactor;
 };
 
 // Must match LightData in the viewer / scene.hlsl.
@@ -67,6 +71,7 @@ static const uint kFlagAlphaMasked = 1u;
 static const uint kFlagTransparent = 2u;
 static const uint kVertexStrideBytes = 32u;
 static const uint kMaxTransparencySteps = 4u;
+static const float kPi = 3.14159265f;
 
 struct VSOutput {
     float4 position : SV_Position;
@@ -79,6 +84,10 @@ VSOutput VSMain(uint id : SV_VertexID) {
     output.position = float4(pos, 0.0f, 1.0f);
     output.ndc = pos;
     return output;
+}
+
+float3 vertexPosition(uint vertex) {
+    return asfloat(geometryBytes.Load3(vertex * kVertexStrideBytes));
 }
 
 float3 vertexNormal(uint vertex) {
@@ -138,6 +147,58 @@ float shadowRay(float3 worldPos, float3 n, LightData light) {
     return q.CommittedStatus() == COMMITTED_TRIANGLE_HIT ? 0.0f : 1.0f;
 }
 
+// Tangent-space normal map for a traced hit: no screen derivatives here,
+// so the tangent frame comes from the triangle's edges and uv deltas.
+float3 applyNormalMap(uint normalIndex, float3 n, uint3 tri, float2 uv) {
+    if (normalIndex == 0) {
+        return n;
+    }
+    const float3 e1 = vertexPosition(tri.y) - vertexPosition(tri.x);
+    const float3 e2 = vertexPosition(tri.z) - vertexPosition(tri.x);
+    const float2 duv1 = vertexUv(tri.y) - vertexUv(tri.x);
+    const float2 duv2 = vertexUv(tri.z) - vertexUv(tri.x);
+    const float det = duv1.x * duv2.y - duv2.x * duv1.y;
+    if (abs(det) < 1.0e-8f) {
+        return n;
+    }
+    const float r = 1.0f / det;
+    float3 t = (e1 * duv2.y - e2 * duv1.y) * r;
+    t = normalize(t - n * dot(n, t)); // orthonormalize against the normal
+    const float3 b = cross(n, t) * (det < 0.0f ? -1.0f : 1.0f);
+    const float3 tn = textures[NonUniformResourceIndex(normalIndex)]
+                          .SampleLevel(linearSampler, uv, 0)
+                          .xyz *
+                          2.0f -
+                      1.0f;
+    return normalize(t * tn.x + b * tn.y + n * tn.z);
+}
+
+// Same BRDF as scene.hlsl: Lambert diffuse + GGX specular, glTF
+// metallic-roughness parameterization, pi-scaled to match.
+float3 shadeSurface(float3 albedo, float metallic, float roughness, float3 n, float3 v, float3 l,
+                    float3 lightColor, float intensity, float shadow) {
+    const float ndotl = saturate(dot(n, l));
+    if (ndotl <= 0.0f || shadow <= 0.0f) {
+        return 0.0f;
+    }
+    const float3 h = normalize(v + l);
+    const float ndotv = max(dot(n, v), 1.0e-4f);
+    const float ndoth = saturate(dot(n, h));
+    const float vdoth = saturate(dot(v, h));
+    const float a = max(roughness * roughness, 1.0e-3f);
+    const float a2 = a * a;
+    const float dDenom = ndoth * ndoth * (a2 - 1.0f) + 1.0f;
+    const float d = a2 / (kPi * dDenom * dDenom);
+    const float k = a * 0.5f;
+    const float gv = ndotv / (ndotv * (1.0f - k) + k);
+    const float gl = ndotl / (ndotl * (1.0f - k) + k);
+    const float3 f0 = lerp(0.04f, albedo, metallic);
+    const float3 f = f0 + (1.0f - f0) * pow(1.0f - vdoth, 5.0f);
+    const float3 specular = d * gv * gl * f / (4.0f * ndotv * ndotl + 1.0e-4f);
+    const float3 diffuse = albedo * (1.0f - metallic) / kPi;
+    return (diffuse + specular) * lightColor * (intensity * ndotl * shadow * kPi);
+}
+
 float3 skyColor(float3 dir) {
     // Subtle zenith-to-horizon gradient standing in for the raster path's
     // clear color until a real sky exists.
@@ -185,13 +246,25 @@ float4 PSMain(VSOutput input) : SV_Target0 {
             vertexUv(tri.x) * w0 + vertexUv(tri.y) * bary.x + vertexUv(tri.z) * bary.y;
         const float3 hitPos = origin + dir * q.CommittedRayT();
 
+        n = applyNormalMap(object.normalIndex, n, tri, uv);
+        float metallic = object.metallicFactor;
+        float roughness = object.roughnessFactor;
+        if (object.mrIndex != 0) {
+            const float2 mr = textures[NonUniformResourceIndex(object.mrIndex)]
+                                  .SampleLevel(linearSampler, uv, 0)
+                                  .gb;
+            roughness *= mr.x;
+            metallic *= mr.y;
+        }
         const float4 albedo =
             textures[NonUniformResourceIndex(object.textureIndex)].SampleLevel(linearSampler, uv, 0);
-        const float direct = saturate(dot(n, -normalize(light.direction)));
+        const float3 l = -normalize(light.direction);
+        const float direct = saturate(dot(n, l));
         const float shadow = direct > 0.0f ? shadowRay(hitPos, n, light) : 0.0f;
-        const float3 sun = light.color * (light.intensity * direct * shadow);
+        const float3 sun = shadeSurface(albedo.rgb, metallic, roughness, n, -dir, l, light.color,
+                                        light.intensity, shadow);
         const float3 ambient = float3(0.30f, 0.32f, 0.36f) * (n.y * 0.2f + 0.5f);
-        const float3 shaded = albedo.rgb * (ambient + sun);
+        const float3 shaded = albedo.rgb * ambient + sun;
 
         if ((object.flags & kFlagTransparent) != 0) {
             const float opacity = saturate(albedo.a * object.baseAlpha);

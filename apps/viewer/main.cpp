@@ -48,9 +48,13 @@ constexpr std::uint32_t kObjectAlphaMasked = 1u;
 constexpr std::uint32_t kObjectTransparent = 2u;
 struct ObjectData {
     std::uint32_t textureIndex = 0;
-    std::uint32_t flags = 0; // kObjectAlphaMasked | kObjectTransparent
+    std::uint32_t normalIndex = 0; // 0 = no normal map (use vertex normal)
+    std::uint32_t mrIndex = 0;     // 0 = factors only (glTF: B=metal, G=rough)
+    std::uint32_t flags = 0;       // kObjectAlphaMasked | kObjectTransparent
     float alphaCutoff = 0.5f;
     float baseAlpha = 1.0f; // baseColorFactor.a: blend opacity multiplier
+    float metallicFactor = 1.0f;
+    float roughnessFactor = 1.0f;
 };
 
 // Per-slot camera region. viewProj feeds the raster vertex shader; the
@@ -450,9 +454,25 @@ int main(int argc, char** argv) {
         auto transfer = std::move(transferResult).value();
 
         // Slot 0 of the bindless texture array is a 1x1 white fallback so
-        // untextured materials sample neutrally.
-        std::vector<std::filesystem::path> texturePaths{{}};
+        // untextured materials sample neutrally; index 0 doubles as "no
+        // normal / no metallic-roughness map".
+        struct TextureRequest {
+            std::filesystem::path path;
+            bool srgb = true; // normal/MR maps decode linear (UNORM)
+        };
+        std::vector<TextureRequest> texturePaths{{}};
         std::unordered_map<std::string, std::uint32_t> textureSlotByPath;
+        auto registerTexture = [&](const std::filesystem::path& path, bool srgb) {
+            if (path.empty()) {
+                return 0u;
+            }
+            auto [it, inserted] = textureSlotByPath.try_emplace(
+                path.string(), static_cast<std::uint32_t>(texturePaths.size()));
+            if (inserted) {
+                texturePaths.push_back({path, srgb});
+            }
+            return it->second;
+        };
         std::vector<ObjectData> objectData;
 
         for (const auto& model : scene->models) {
@@ -464,15 +484,11 @@ int main(int argc, char** argv) {
                                    (material.transparent ? kObjectTransparent : 0u);
                     object.alphaCutoff = material.alphaCutoff;
                     object.baseAlpha = material.baseColorFactor[3];
-                    if (!material.baseColorTexture.empty()) {
-                        const std::string key = material.baseColorTexture.string();
-                        auto [it, inserted] = textureSlotByPath.try_emplace(
-                            key, static_cast<std::uint32_t>(texturePaths.size()));
-                        if (inserted) {
-                            texturePaths.push_back(material.baseColorTexture);
-                        }
-                        object.textureIndex = it->second;
-                    }
+                    object.metallicFactor = material.metallicFactor;
+                    object.roughnessFactor = material.roughnessFactor;
+                    object.textureIndex = registerTexture(material.baseColorTexture, true);
+                    object.normalIndex = registerTexture(material.normalTexture, false);
+                    object.mrIndex = registerTexture(material.metallicRoughnessTexture, false);
                 }
                 objectData.push_back(object);
 
@@ -780,16 +796,17 @@ int main(int argc, char** argv) {
                     const std::uint8_t white[4] = {255, 255, 255, 255};
                     return uploader->upload(1, 1, white);
                 }
-                auto decoded = assetio::loadTexture(texturePaths[i]);
+                auto decoded = assetio::loadTexture(texturePaths[i].path);
                 if (!decoded) {
                     return Result<std::unique_ptr<gpu::Image>>{decoded.error()};
                 }
                 const auto& t = decoded.value();
                 texelBytes += t.rgba.size();
-                return uploader->upload(t.width, t.height, t.rgba.data());
+                return uploader->upload(t.width, t.height, t.rgba.data(),
+                                        texturePaths[i].srgb);
             }();
             if (!uploaded) {
-                log::error("Texture {} failed: {}", texturePaths[i].filename().string(),
+                log::error("Texture {} failed: {}", texturePaths[i].path.filename().string(),
                            uploaded.error().message);
                 return 1;
             }

@@ -28,9 +28,13 @@ struct LightData {
 
 struct ObjectData {
     uint textureIndex;
+    uint normalIndex;
+    uint mrIndex;
     uint flags; // bit 0: alpha-masked, bit 1: transparent (blend)
     float alphaCutoff;
     float baseAlpha;
+    float metallicFactor;
+    float roughnessFactor;
 };
 
 static const uint kFlagAlphaMasked = 1u;
