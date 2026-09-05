@@ -197,6 +197,50 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
     // whose fragments walk the TLAS instead.
     const bool rtDraw = batch && batch->rtPrimary && batch->rtPrimaryPipeline;
 
+    if (batch && batch->skinPipeline && !batch->skinDispatches.empty()) {
+        // Pose animated vertices into this slot's pool regions. Order
+        // against the previous frame's vertex fetches, then make the
+        // writes visible to every consumer of the pool this frame.
+        VkMemoryBarrier2 toSkin{};
+        toSkin.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+        toSkin.srcStageMask =
+            VK_PIPELINE_STAGE_2_VERTEX_ATTRIBUTE_INPUT_BIT | VK_PIPELINE_STAGE_2_INDEX_INPUT_BIT;
+        toSkin.srcAccessMask = 0;
+        toSkin.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        toSkin.dstAccessMask =
+            VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
+        VkDependencyInfo skinDependency{};
+        skinDependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        skinDependency.memoryBarrierCount = 1;
+        skinDependency.pMemoryBarriers = &toSkin;
+        vkCmdPipelineBarrier2(cmd, &skinDependency);
+
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, batch->skinPipeline->handle());
+        if (batch->descriptors != VK_NULL_HANDLE) {
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
+                                    batch->skinPipeline->layout(), 0, 1, &batch->descriptors, 0,
+                                    nullptr);
+        }
+        for (const DrawBatch::SkinDispatch& dispatch : batch->skinDispatches) {
+            auto push = dispatch.push;
+            push[DrawBatch::kSkinSlotPushIndex] = slot;
+            vkCmdPushConstants(cmd, batch->skinPipeline->layout(), VK_SHADER_STAGE_COMPUTE_BIT,
+                               0, sizeof(push), push.data());
+            vkCmdDispatch(cmd, (dispatch.vertexCount + 63) / 64, 1, 1);
+        }
+
+        VkMemoryBarrier2 fromSkin{};
+        fromSkin.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+        fromSkin.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        fromSkin.srcAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
+        fromSkin.dstStageMask = VK_PIPELINE_STAGE_2_VERTEX_ATTRIBUTE_INPUT_BIT |
+                                VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+        fromSkin.dstAccessMask =
+            VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
+        skinDependency.pMemoryBarriers = &fromSkin;
+        vkCmdPipelineBarrier2(cmd, &skinDependency);
+    }
+
     if (batch && !rtDraw && batch->cullPipeline && batch->mode == DrawSubmitMode::IndirectCount) {
         // GPU compaction: zero the slot's draw count, run one thread per
         // template, then make the writes visible to the indirect fetch.

@@ -114,26 +114,107 @@ math::Mat4 transformMatrix(const assetio::TransformDesc& t) {
     return m;
 }
 
-// Column-major TRS matrix from a skeleton node's local rest pose.
-math::Mat4 trsMatrix(const assetio::SkeletonNode& node) {
-    const float x = node.rotation[0], y = node.rotation[1], z = node.rotation[2],
-                w = node.rotation[3];
-    const float sx = node.scale[0], sy = node.scale[1], sz = node.scale[2];
+// Column-major TRS matrix from decomposed translation/quaternion/scale.
+math::Mat4 composeTrs(const std::array<float, 3>& t, const std::array<float, 4>& r,
+                      const std::array<float, 3>& s) {
+    const float x = r[0], y = r[1], z = r[2], w = r[3];
     math::Mat4 m{};
-    m[0] = (1.0f - 2.0f * (y * y + z * z)) * sx;
-    m[1] = (2.0f * (x * y + z * w)) * sx;
-    m[2] = (2.0f * (x * z - y * w)) * sx;
-    m[4] = (2.0f * (x * y - z * w)) * sy;
-    m[5] = (1.0f - 2.0f * (x * x + z * z)) * sy;
-    m[6] = (2.0f * (y * z + x * w)) * sy;
-    m[8] = (2.0f * (x * z + y * w)) * sz;
-    m[9] = (2.0f * (y * z - x * w)) * sz;
-    m[10] = (1.0f - 2.0f * (x * x + y * y)) * sz;
-    m[12] = node.translation[0];
-    m[13] = node.translation[1];
-    m[14] = node.translation[2];
+    m[0] = (1.0f - 2.0f * (y * y + z * z)) * s[0];
+    m[1] = (2.0f * (x * y + z * w)) * s[0];
+    m[2] = (2.0f * (x * z - y * w)) * s[0];
+    m[4] = (2.0f * (x * y - z * w)) * s[1];
+    m[5] = (1.0f - 2.0f * (x * x + z * z)) * s[1];
+    m[6] = (2.0f * (y * z + x * w)) * s[1];
+    m[8] = (2.0f * (x * z + y * w)) * s[2];
+    m[9] = (2.0f * (y * z - x * w)) * s[2];
+    m[10] = (1.0f - 2.0f * (x * x + y * y)) * s[2];
+    m[12] = t[0];
+    m[13] = t[1];
+    m[14] = t[2];
     m[15] = 1.0f;
     return m;
+}
+
+math::Mat4 trsMatrix(const assetio::SkeletonNode& node) {
+    return composeTrs(node.translation, node.rotation, node.scale);
+}
+
+// One animated mesh's GPU wiring: where its bind-pose source, posed
+// destination and skin/morph inputs live (offsets in element units).
+struct AnimatedMeshEntry {
+    std::uint32_t objectIndex = 0;
+    std::uint32_t vertexCount = 0;
+    std::uint32_t srcVertex = 0;
+    std::uint32_t dstVertexBase = 0; // slot advances by vertexCount
+    std::uint32_t skinVertexOffset = ~0u;
+    std::uint32_t morphBase = 0;
+    std::uint32_t morphTargetCount = 0;
+    std::uint32_t morphWeightOffset = 0;
+    std::uint32_t sourceNode = 0;
+    std::size_t modelIndex = 0;
+};
+
+// CPU-side playback state for one animated model, sampled every frame.
+struct AnimatedModelState {
+    const assetio::ModelData* data = nullptr;
+    std::size_t modelIndex = 0;
+    math::Mat4 modelMatrix{};
+    std::uint32_t jointBase = 0; // into the shared joint matrix array
+    float time = 0.0f;
+    std::vector<std::array<float, 3>> t;
+    std::vector<std::array<float, 4>> r;
+    std::vector<std::array<float, 3>> s;
+    std::vector<math::Mat4> world;
+};
+
+// Evaluate one channel at `time` into out[components]. Rotation lerps with
+// hemisphere correction; CubicSpline falls back to its value tuples.
+void sampleChannel(const assetio::AnimationChannelData& channel, float time, float* out,
+                   std::size_t components) {
+    const bool cubic = channel.interpolation == assetio::AnimationInterpolation::CubicSpline;
+    const std::size_t stride = components * (cubic ? 3 : 1);
+    const std::size_t valueOffset = cubic ? components : 0;
+    const auto& times = channel.times;
+    auto keyValues = [&](std::size_t key) {
+        return channel.values.data() + key * stride + valueOffset;
+    };
+    if (times.empty()) {
+        return;
+    }
+    if (time <= times.front() || times.size() == 1) {
+        std::copy_n(keyValues(0), components, out);
+        return;
+    }
+    if (time >= times.back()) {
+        std::copy_n(keyValues(times.size() - 1), components, out);
+        return;
+    }
+    const auto next = std::upper_bound(times.begin(), times.end(), time);
+    const std::size_t k = static_cast<std::size_t>(next - times.begin()) - 1;
+    if (channel.interpolation == assetio::AnimationInterpolation::Step) {
+        std::copy_n(keyValues(k), components, out);
+        return;
+    }
+    const float u = (time - times[k]) / (times[k + 1] - times[k]);
+    const float* a = keyValues(k);
+    const float* b = keyValues(k + 1);
+    float sign = 1.0f;
+    if (channel.path == assetio::AnimationPath::Rotation) {
+        const float dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
+        sign = dot < 0.0f ? -1.0f : 1.0f; // shortest arc
+    }
+    for (std::size_t c = 0; c < components; ++c) {
+        out[c] = a[c] * (1.0f - u) + b[c] * sign * u;
+    }
+    if (channel.path == assetio::AnimationPath::Rotation) {
+        const float len = std::sqrt(out[0] * out[0] + out[1] * out[1] + out[2] * out[2] +
+                                    out[3] * out[3]);
+        if (len > 0.0f) {
+            for (int c = 0; c < 4; ++c) {
+                out[c] /= len;
+            }
+        }
+    }
 }
 math::Vec3 vmul(const math::Vec3& v, float s) { return {v.x * s, v.y * s, v.z * s}; }
 
@@ -436,6 +517,11 @@ int main(int argc, char** argv) {
                           model.data.animations.size());
             }
             for (auto& mesh : model.data.meshes) {
+                if (mesh.skinned) {
+                    // Skinned vertices stay in bind space: the skinning
+                    // pass poses them with model * world * inverseBind.
+                    continue;
+                }
                 const math::Mat4 m = world.empty()
                                          ? modelMatrix
                                          : math::mul(modelMatrix, world[mesh.sourceNode]);
@@ -517,6 +603,16 @@ int main(int argc, char** argv) {
     std::unique_ptr<gpu::Buffer> countBuffer;
     std::unique_ptr<gpu::Buffer> cameraBuffer; // one CameraData per frame slot, CPU-written
     std::unique_ptr<gpu::Buffer> geometryInfoBuffer; // per-object triangle lookup (RT primary)
+    // Animation: static inputs (staged) + per-slot CPU-written state.
+    std::unique_ptr<gpu::Buffer> skinVertexBuffer;  // packed joints+weights per skinned vertex
+    std::unique_ptr<gpu::Buffer> morphDeltaBuffer;  // pos+normal deltas per vertex/target
+    std::unique_ptr<gpu::Buffer> jointBuffer;       // joint matrices per frame slot
+    std::unique_ptr<gpu::Buffer> morphWeightBuffer; // sampled weights per frame slot
+    std::vector<AnimatedMeshEntry> animatedMeshes;
+    std::vector<AnimatedModelState> animatedStates;
+    std::vector<math::Mat4> jointMatricesCpu;
+    std::vector<float> morphWeightsFrame;
+    std::uint32_t totalJoints = 0;
     std::unique_ptr<gpu::Buffer> lightBuffer;  // one LightData per frame slot, CPU-written
     std::vector<std::unique_ptr<gpu::Image>> shadowMaps; // one per cascade
     std::unique_ptr<gpu::AccelerationStructure> blas, tlas; // RT shadow BVH
@@ -539,13 +635,14 @@ int main(int argc, char** argv) {
         const auto start = std::chrono::steady_clock::now();
         // With ray tracing, the geometry pool doubles as the BLAS build
         // input, which needs device-address usage.
-        // Storage usage too: the traced primary pass reads hit triangles
+        // Storage usage always: the skinning pass poses vertices in place;
+        // on RT devices the traced primary pass also reads hit triangles
         // straight out of the pool (descriptor binding 11).
         auto poolResult = gpu::MemoryPool::create(
             *device, 128ull * 1024 * 1024,
-            rtSupported ? (gpu::kUsageShaderDeviceAddress | gpu::kUsageAccelBuildInput |
-                           gpu::kUsageStorage)
-                        : 0);
+            gpu::kUsageStorage |
+                (rtSupported ? (gpu::kUsageShaderDeviceAddress | gpu::kUsageAccelBuildInput)
+                             : 0));
         if (!poolResult) {
             log::error("Memory pool creation failed: {}", poolResult.error().message);
             return 1;
@@ -581,7 +678,20 @@ int main(int argc, char** argv) {
         };
         std::vector<ObjectData> objectData;
 
-        for (const auto& model : scene->models) {
+        // Animation wiring accumulated across the upload loop: packed skin
+        // vertices, concatenated morph deltas (6 floats per vertex/target)
+        // and the rest-pose morph weights.
+        struct PackedSkinVertex {
+            std::uint32_t joints01 = 0;
+            std::uint32_t joints23 = 0;
+            std::array<float, 4> weights{};
+        };
+        std::vector<PackedSkinVertex> skinVertexData;
+        std::vector<float> morphDeltaData;
+        std::vector<float> morphWeightsCpu;
+
+        for (std::size_t modelIndex = 0; modelIndex < scene->models.size(); ++modelIndex) {
+            const auto& model = scene->models[modelIndex];
             for (const auto& mesh : model.data.meshes) {
                 ObjectData object;
                 if (mesh.materialIndex < model.data.materials.size()) {
@@ -633,6 +743,72 @@ int main(int argc, char** argv) {
                                     .indices = indexSlice.value(),
                                     .indexCount = static_cast<std::uint32_t>(mesh.indices.size()),
                                     .materialIndex = mesh.materialIndex});
+
+                // Animated meshes additionally get a per-slot destination
+                // region the skinning pass poses into; the indirect entry
+                // for the slot points there instead of the bind pose.
+                if (mesh.skinned || !mesh.morphTargets.empty()) {
+                    const auto vertexCount = static_cast<std::uint32_t>(mesh.vertexCount());
+                    auto dstSlice = geometryPool->allocate(
+                        std::uint64_t{vertexCount} * gpu::FrameRenderer::kFramesInFlight *
+                            kVertexStride,
+                        kVertexStride);
+                    if (!dstSlice) {
+                        log::error("Posed-vertex allocation failed: {}", dstSlice.error().message);
+                        return 1;
+                    }
+                    AnimatedMeshEntry entry;
+                    entry.objectIndex = static_cast<std::uint32_t>(geometry.size() - 1);
+                    entry.vertexCount = vertexCount;
+                    entry.srcVertex =
+                        static_cast<std::uint32_t>(vertexSlice.value().offset / kVertexStride);
+                    entry.dstVertexBase =
+                        static_cast<std::uint32_t>(dstSlice.value().offset / kVertexStride);
+                    entry.sourceNode = mesh.sourceNode;
+                    entry.modelIndex = modelIndex;
+                    if (mesh.skinned) {
+                        entry.skinVertexOffset =
+                            static_cast<std::uint32_t>(skinVertexData.size());
+                        for (std::uint32_t v = 0; v < vertexCount; ++v) {
+                            PackedSkinVertex packed;
+                            packed.joints01 = mesh.joints[v * 4] |
+                                              (std::uint32_t{mesh.joints[v * 4 + 1]} << 16);
+                            packed.joints23 = mesh.joints[v * 4 + 2] |
+                                              (std::uint32_t{mesh.joints[v * 4 + 3]} << 16);
+                            for (int k = 0; k < 4; ++k) {
+                                packed.weights[k] = mesh.weights[v * 4 + k];
+                            }
+                            skinVertexData.push_back(packed);
+                        }
+                    }
+                    if (!mesh.morphTargets.empty()) {
+                        entry.morphBase =
+                            static_cast<std::uint32_t>(morphDeltaData.size() / 6);
+                        entry.morphTargetCount =
+                            static_cast<std::uint32_t>(mesh.morphTargets.size());
+                        entry.morphWeightOffset =
+                            static_cast<std::uint32_t>(morphWeightsCpu.size());
+                        for (const auto& target : mesh.morphTargets) {
+                            for (std::uint32_t v = 0; v < vertexCount; ++v) {
+                                for (int c = 0; c < 3; ++c) {
+                                    morphDeltaData.push_back(
+                                        v * 3 + c < target.positionDeltas.size()
+                                            ? target.positionDeltas[v * 3 + c]
+                                            : 0.0f);
+                                }
+                                for (int c = 0; c < 3; ++c) {
+                                    morphDeltaData.push_back(
+                                        v * 3 + c < target.normalDeltas.size()
+                                            ? target.normalDeltas[v * 3 + c]
+                                            : 0.0f);
+                                }
+                            }
+                        }
+                        morphWeightsCpu.insert(morphWeightsCpu.end(), mesh.morphWeights.begin(),
+                                               mesh.morphWeights.end());
+                    }
+                    animatedMeshes.push_back(entry);
+                }
             }
         }
         // One indirect entry per mesh, addressing its slices by offset.
@@ -667,9 +843,16 @@ int main(int argc, char** argv) {
             return 1;
         }
         indirectBuffer = std::move(indirectResult).value();
+        // Each slot's template region points animated meshes at that slot's
+        // posed-vertex copy; everything else is identical across slots.
         for (std::uint32_t slot = 0; slot < gpu::FrameRenderer::kFramesInFlight; ++slot) {
+            std::vector<gpu::DrawIndexedIndirect> slotDraws = draws;
+            for (const AnimatedMeshEntry& entry : animatedMeshes) {
+                slotDraws[entry.objectIndex].vertexOffset =
+                    static_cast<std::int32_t>(entry.dstVertexBase + slot * entry.vertexCount);
+            }
             std::memcpy(static_cast<std::byte*>(indirectBuffer->mapped()) + slot * indirectRegion,
-                        draws.data(), indirectRegion);
+                        slotDraws.data(), indirectRegion);
         }
 
         // Cull-pass output: the compacted indirect list the GPU builds each
@@ -799,6 +982,79 @@ int main(int argc, char** argv) {
             }
         }
 
+        // Animation state: playback per animated model plus the GPU-side
+        // inputs (static skin/morph data staged, per-slot joint matrices
+        // and weights CPU-written each frame).
+        if (!animatedMeshes.empty()) {
+            for (std::size_t modelIndex = 0; modelIndex < scene->models.size(); ++modelIndex) {
+                const auto& model = scene->models[modelIndex];
+                if (model.data.skeleton.empty()) {
+                    continue;
+                }
+                AnimatedModelState state;
+                state.data = &model.data;
+                state.modelIndex = modelIndex;
+                state.modelMatrix = transformMatrix(model.desc.transform);
+                state.jointBase = totalJoints;
+                totalJoints +=
+                    static_cast<std::uint32_t>(model.data.skeleton.jointNodes.size());
+                animatedStates.push_back(std::move(state));
+            }
+            jointMatricesCpu.resize(totalJoints);
+            morphWeightsFrame = morphWeightsCpu;
+
+            auto createStaged = [&](std::vector<std::unique_ptr<gpu::Buffer>>::value_type& out,
+                                    const void* bytes, std::uint64_t size, const char* what) {
+                if (size == 0) {
+                    return true;
+                }
+                auto result = gpu::Buffer::create(
+                    *device, {
+                                 .size = size,
+                                 .usage = gpu::kUsageStorage | gpu::kUsageTransferDst,
+                                 .location = gpu::MemoryLocation::DeviceLocal,
+                                 .sharedWithTransferQueue = true,
+                             });
+                if (!result || !transfer->stage(*result.value(), 0, bytes, size)) {
+                    log::error("{} buffer failed", what);
+                    return false;
+                }
+                out = std::move(result).value();
+                return true;
+            };
+            if (!createStaged(skinVertexBuffer, skinVertexData.data(),
+                              skinVertexData.size() * sizeof(PackedSkinVertex), "Skin vertex") ||
+                !createStaged(morphDeltaBuffer, morphDeltaData.data(),
+                              morphDeltaData.size() * sizeof(float), "Morph delta")) {
+                return 1;
+            }
+            auto createPerSlot = [&](std::unique_ptr<gpu::Buffer>& out, std::uint64_t regionSize,
+                                     const char* what) {
+                if (regionSize == 0) {
+                    return true;
+                }
+                auto result = gpu::Buffer::create(
+                    *device, {
+                                 .size = regionSize * gpu::FrameRenderer::kFramesInFlight,
+                                 .usage = gpu::kUsageStorage,
+                                 .location = gpu::MemoryLocation::HostVisible,
+                             });
+                if (!result) {
+                    log::error("{} buffer failed: {}", what, result.error().message);
+                    return false;
+                }
+                out = std::move(result).value();
+                return true;
+            };
+            if (!createPerSlot(jointBuffer, totalJoints * sizeof(math::Mat4), "Joint matrix") ||
+                !createPerSlot(morphWeightBuffer, morphWeightsFrame.size() * sizeof(float),
+                               "Morph weight")) {
+                return 1;
+            }
+            log::info("Animation ready: {} animated meshes, {} joints, {} morph weights",
+                      animatedMeshes.size(), totalJoints, morphWeightsFrame.size());
+        }
+
         if (auto flushed = transfer->flush(); !flushed) {
             log::error("Geometry upload failed: {}", flushed.error().message);
             return 1;
@@ -875,6 +1131,26 @@ int main(int argc, char** argv) {
         descriptorTable->writeStorageBuffer(5, countBuffer->handle(), countBuffer->size());
         descriptorTable->writeStorageBuffer(6, cameraBuffer->handle(), cameraBuffer->size());
         descriptorTable->writeStorageBuffer(7, lightBuffer->handle(), lightBuffer->size());
+        if (!animatedMeshes.empty()) {
+            descriptorTable->writeStorageBuffer(13, geometryPool->buffer().handle(),
+                                                geometryPool->buffer().size());
+            if (skinVertexBuffer) {
+                descriptorTable->writeStorageBuffer(14, skinVertexBuffer->handle(),
+                                                    skinVertexBuffer->size());
+            }
+            if (jointBuffer) {
+                descriptorTable->writeStorageBuffer(15, jointBuffer->handle(),
+                                                    jointBuffer->size());
+            }
+            if (morphDeltaBuffer) {
+                descriptorTable->writeStorageBuffer(16, morphDeltaBuffer->handle(),
+                                                    morphDeltaBuffer->size());
+            }
+            if (morphWeightBuffer) {
+                descriptorTable->writeStorageBuffer(17, morphWeightBuffer->handle(),
+                                                    morphWeightBuffer->size());
+            }
+        }
         for (std::uint32_t c = 0; c < kShadowCascades; ++c) {
             descriptorTable->writeShadowMap(c, shadowMaps[c]->view());
         }
@@ -992,7 +1268,9 @@ int main(int argc, char** argv) {
     std::unique_ptr<gpu::Pipeline> scenePipeline;
     std::unique_ptr<gpu::Pipeline> cullPipeline;
     std::unique_ptr<gpu::Pipeline> shadowPipeline;
-    std::unique_ptr<gpu::Shader> sceneVert, sceneFrag, cullShader, shadowVert, shadowFrag;
+    std::unique_ptr<gpu::Pipeline> skinPipeline;
+    std::unique_ptr<gpu::Shader> sceneVert, sceneFrag, cullShader, shadowVert, shadowFrag,
+        skinShader;
     if (scene) {
         auto vertResult = gpu::Shader::createFromFile(*device, shaderDir / "scene.vert.spv");
         // Scene-shipped fragment override (scene-local looks like toon)
@@ -1059,6 +1337,31 @@ int main(int argc, char** argv) {
             }
         } else {
             log::warn("Cull shader unavailable: {}", cullShaderResult.error().message);
+        }
+
+        // GPU skinning pass (animated scenes only): failure falls back to
+        // the frozen rest pose baked at load.
+        if (!animatedMeshes.empty()) {
+            auto skinShaderResult =
+                gpu::Shader::createFromFile(*device, shaderDir / "skin.comp.spv");
+            if (skinShaderResult) {
+                skinShader = std::move(skinShaderResult).value();
+                auto skinResult = gpu::Pipeline::createCompute(
+                    *device,
+                    {
+                        .shader = skinShader.get(),
+                        .descriptorLayout = descriptorTable->layout(),
+                        .pushConstantBytes =
+                            gpu::DrawBatch::kSkinPushWords * sizeof(std::uint32_t),
+                    });
+                if (skinResult) {
+                    skinPipeline = std::move(skinResult).value();
+                } else {
+                    log::warn("Skin pipeline unavailable: {}", skinResult.error().message);
+                }
+            } else {
+                log::warn("Skin shader unavailable: {}", skinShaderResult.error().message);
+            }
         }
 
         // Depth-only pipeline for the shadow pass: same vertex layout and
@@ -1176,6 +1479,37 @@ int main(int argc, char** argv) {
         }
         batch.rtPrimaryPipeline = rtPrimaryPipeline.get();
         batch.rtPrimary = rtPrimaryFromStart && rtPrimaryPipeline != nullptr;
+        if (skinPipeline && !animatedMeshes.empty()) {
+            if (batch.mode == gpu::DrawSubmitMode::Direct) {
+                log::warn("Animation needs per-slot indirect entries; Direct mode shows the "
+                          "rest pose only");
+            } else {
+                batch.skinPipeline = skinPipeline.get();
+                for (const AnimatedMeshEntry& entry : animatedMeshes) {
+                    std::uint32_t jointBase = 0;
+                    for (const AnimatedModelState& state : animatedStates) {
+                        if (state.modelIndex == entry.modelIndex) {
+                            jointBase = state.jointBase;
+                            break;
+                        }
+                    }
+                    gpu::DrawBatch::SkinDispatch dispatch;
+                    dispatch.push = {entry.srcVertex,
+                                     entry.dstVertexBase,
+                                     entry.vertexCount,
+                                     entry.skinVertexOffset,
+                                     jointBase,
+                                     entry.morphBase,
+                                     entry.morphTargetCount,
+                                     entry.morphWeightOffset,
+                                     0, // slot, patched at record time
+                                     totalJoints,
+                                     static_cast<std::uint32_t>(morphWeightsFrame.size())};
+                    dispatch.vertexCount = entry.vertexCount;
+                    batch.skinDispatches.push_back(dispatch);
+                }
+            }
+        }
 
         const char* modeName = batch.mode == gpu::DrawSubmitMode::IndirectCount
                                    ? "indirect-count + GPU compaction"
@@ -1328,6 +1662,87 @@ int main(int argc, char** argv) {
                 log::error("Frame failed: {}", r.error().message);
                 break;
             }
+            // Animation playback: sample every channel, rebuild node worlds
+            // and joint matrices, and write this slot's regions (safe after
+            // waitFrameSlot). The skinning pass consumes them this frame.
+            if (batch.skinPipeline && !animatedStates.empty()) {
+                for (AnimatedModelState& state : animatedStates) {
+                    const auto& skeleton = state.data->skeleton;
+                    const std::size_t nodeCount = skeleton.nodes.size();
+                    state.t.resize(nodeCount);
+                    state.r.resize(nodeCount);
+                    state.s.resize(nodeCount);
+                    state.world.resize(nodeCount);
+                    for (std::size_t i = 0; i < nodeCount; ++i) {
+                        state.t[i] = skeleton.nodes[i].translation;
+                        state.r[i] = skeleton.nodes[i].rotation;
+                        state.s[i] = skeleton.nodes[i].scale;
+                    }
+                    if (!state.data->animations.empty()) {
+                        const auto& anim = state.data->animations.front();
+                        if (anim.duration > 0.0f) {
+                            state.time = std::fmod(state.time + deltaSeconds, anim.duration);
+                        }
+                        for (const auto& channel : anim.channels) {
+                            switch (channel.path) {
+                            case assetio::AnimationPath::Translation:
+                                sampleChannel(channel, state.time,
+                                              state.t[channel.node].data(), 3);
+                                break;
+                            case assetio::AnimationPath::Rotation:
+                                sampleChannel(channel, state.time,
+                                              state.r[channel.node].data(), 4);
+                                break;
+                            case assetio::AnimationPath::Scale:
+                                sampleChannel(channel, state.time,
+                                              state.s[channel.node].data(), 3);
+                                break;
+                            case assetio::AnimationPath::Weights:
+                                for (const AnimatedMeshEntry& entry : animatedMeshes) {
+                                    if (entry.modelIndex == state.modelIndex &&
+                                        entry.sourceNode == channel.node &&
+                                        entry.morphTargetCount > 0) {
+                                        sampleChannel(channel, state.time,
+                                                      morphWeightsFrame.data() +
+                                                          entry.morphWeightOffset,
+                                                      entry.morphTargetCount);
+                                    }
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    for (std::size_t i = 0; i < nodeCount; ++i) {
+                        const math::Mat4 local = composeTrs(state.t[i], state.r[i], state.s[i]);
+                        state.world[i] =
+                            skeleton.nodes[i].parent >= 0
+                                ? math::mul(state.world[static_cast<std::size_t>(
+                                                skeleton.nodes[i].parent)],
+                                            local)
+                                : local;
+                    }
+                    for (std::size_t j = 0; j < skeleton.jointNodes.size(); ++j) {
+                        jointMatricesCpu[state.jointBase + j] = math::mul(
+                            state.modelMatrix,
+                            math::mul(state.world[skeleton.jointNodes[j]],
+                                      skeleton.inverseBind[j]));
+                    }
+                }
+                const std::uint32_t animSlot = renderer->frameSlot();
+                if (jointBuffer && !jointMatricesCpu.empty()) {
+                    std::memcpy(static_cast<std::byte*>(jointBuffer->mapped()) +
+                                    animSlot * jointMatricesCpu.size() * sizeof(math::Mat4),
+                                jointMatricesCpu.data(),
+                                jointMatricesCpu.size() * sizeof(math::Mat4));
+                }
+                if (morphWeightBuffer && !morphWeightsFrame.empty()) {
+                    std::memcpy(static_cast<std::byte*>(morphWeightBuffer->mapped()) +
+                                    animSlot * morphWeightsFrame.size() * sizeof(float),
+                                morphWeightsFrame.data(),
+                                morphWeightsFrame.size() * sizeof(float));
+                }
+            }
+
             CameraData cameraData;
             cameraData.viewProj = camera.viewProj(viewWidth, viewHeight);
             {

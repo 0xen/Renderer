@@ -99,6 +99,18 @@ struct DrawBatch {
     // gets recorded — invalidate static recordings after flipping it.
     const Pipeline* rtPrimaryPipeline = nullptr;
     bool rtPrimary = false;
+    // GPU skinning (optional): compute dispatches that pose animated
+    // vertices into per-slot pool regions before any draw pass reads them.
+    // push holds the shader's PushConstants with the slot element patched
+    // at record time (kSkinSlotPushIndex).
+    static constexpr std::size_t kSkinPushWords = 11;
+    static constexpr std::size_t kSkinSlotPushIndex = 8;
+    struct SkinDispatch {
+        std::array<std::uint32_t, kSkinPushWords> push{};
+        std::uint32_t vertexCount = 0;
+    };
+    const Pipeline* skinPipeline = nullptr;
+    std::vector<SkinDispatch> skinDispatches;
 };
 
 // Per-frame-recorded baseline frame loop: acquire, record, submit, present,

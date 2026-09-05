@@ -35,6 +35,12 @@ class Device;
 //        fetch for traced primary rays)
 //   12 — per-object geometry info SSBO (fragment; RayQuery only —
 //        firstIndex/vertexOffset per BLAS geometry index)
+//   13 — geometry pool raw bytes, writable (compute; the skinning pass's
+//        source + destination vertices)
+//   14 — skin vertex attributes SSBO (compute; packed joints + weights)
+//   15 — joint matrices SSBO (compute; per frame slot)
+//   16 — morph target deltas SSBO (compute; pos+normal per vertex/target)
+//   17 — morph weights SSBO (compute; per frame slot)
 class DescriptorTable {
 public:
     static Result<std::unique_ptr<DescriptorTable>> create(const Device& device,
