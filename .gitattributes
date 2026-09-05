@@ -1,0 +1,3 @@
+# Batch files must stay CRLF regardless of git's autocrlf setting:
+# LF-only .bat files misparse when double-clicked.
+*.bat text eol=crlf
