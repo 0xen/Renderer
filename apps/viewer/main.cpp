@@ -1956,6 +1956,19 @@ int main(int argc, char** argv) {
     // `draws` (unloads flip instanceCounts; each slot syncs when it is the
     // current one — its region is guaranteed not in flight then).
     std::array<bool, gpu::FrameRenderer::kFramesInFlight> templatesDirty{};
+    // Deferred destruction for unloads: pool slices and draw-table rows
+    // return to circulation kFramesInFlight drains after the unload, when
+    // the last submission that could still read them has retired. Loads
+    // recycle retired rows before appending, so steady-state churn holds
+    // pool bytes AND draw count flat instead of leaking both.
+    struct PendingReclaim {
+        std::vector<gpu::BufferSlice> slices;
+        std::vector<std::uint32_t> objectIndices;
+        std::uint64_t retireAtDrain = 0;
+    };
+    std::deque<PendingReclaim> pendingReclaims;
+    std::vector<std::uint32_t> freeObjectIndices;
+    std::uint64_t drainFrame = 0;
 
     // Rewrites one slot's whole template region from the canonical draw
     // list, reapplying that slot's animated posed-vertex overrides.
@@ -2141,7 +2154,7 @@ int main(int argc, char** argv) {
 
     // Main-thread integration of one prepared load: the only remaining
     // frame-loop cost of a runtime load.
-    auto integrateLoad = [&](PreparedLoad& load) -> Result<void> {
+    auto integrateLoad = [&](PreparedLoad& load, std::uint32_t slot) -> Result<void> {
         REND_PROFILE_ZONE("RuntimeLoadModel");
         auto releaseClaims = [&] {
             std::lock_guard lock(textureClaimMutex);
@@ -2152,10 +2165,13 @@ int main(int argc, char** argv) {
         if (!load.error.empty()) {
             return Error{load.error};
         }
-        if (geometry.size() + load.meshes.size() > templateCapacity) {
+        // Only rows the free list can't cover actually grow the table.
+        const std::size_t appended =
+            load.meshes.size() - std::min(freeObjectIndices.size(), load.meshes.size());
+        if (geometry.size() + appended > templateCapacity) {
             releaseClaims(); // carried decodes never upload; let retries re-decode
             return Error{std::format("runtime capacity exhausted ({} + {} > {})",
-                                     geometry.size(), load.meshes.size(), templateCapacity)};
+                                     geometry.size(), appended, templateCapacity)};
         }
         // Upload this load's carried textures first so its own meshes (and
         // any later load that saw the claim) can resolve them by path.
@@ -2173,10 +2189,10 @@ int main(int argc, char** argv) {
                 claimedTexturePaths.erase(texture.path);
                 continue;
             }
-            const auto slot = static_cast<std::uint32_t>(textures.size());
-            descriptorTable->writeTexture(slot, image.value()->view());
+            const auto textureIndex = static_cast<std::uint32_t>(textures.size());
+            descriptorTable->writeTexture(textureIndex, image.value()->view());
             textures.push_back(std::move(image).value());
-            textureSlotByPath.emplace(texture.path, slot);
+            textureSlotByPath.emplace(texture.path, textureIndex);
         }
         auto textureSlot = [&](const std::string& path) -> std::uint32_t {
             if (path.empty()) {
@@ -2192,7 +2208,7 @@ int main(int argc, char** argv) {
                        {0.0f, std::sin(yaw * 0.5f), 0.0f, std::cos(yaw * 0.5f)},
                        {load.cmd.scale, load.cmd.scale, load.cmd.scale});
 
-        const std::uint32_t firstNewDraw = static_cast<std::uint32_t>(draws.size());
+        const std::uint32_t oldDrawCount = static_cast<std::uint32_t>(draws.size());
         RuntimeModel record{.handle = load.cmd.handle, .loaded = true};
         for (PreparedMesh& mesh : load.meshes) {
             // Placement rides the per-object transform buffer (SetTransform
@@ -2221,13 +2237,26 @@ int main(int argc, char** argv) {
                     "staging failed: {}",
                     (!stagedVerts ? stagedVerts.error() : stagedIndices.error()).message)};
             }
-            const auto objectIndex = static_cast<std::uint32_t>(geometry.size());
-            geometry.push_back({.vertices = vertexSlice.value(),
-                                .indices = indexSlice.value(),
-                                .indexCount = static_cast<std::uint32_t>(mesh.indices.size()),
-                                .materialIndex = mesh.materialIndex});
-            objectData.push_back(mesh.object);
-            draws.push_back({
+            // Recycle a retired draw-table row when one is free; only
+            // append when the free list is empty (bounds the table under
+            // steady-state churn).
+            std::uint32_t objectIndex;
+            if (!freeObjectIndices.empty()) {
+                objectIndex = freeObjectIndices.back();
+                freeObjectIndices.pop_back();
+            } else {
+                objectIndex = static_cast<std::uint32_t>(geometry.size());
+                geometry.emplace_back();
+                objectData.emplace_back();
+                draws.emplace_back();
+            }
+            geometry[objectIndex] = {.vertices = vertexSlice.value(),
+                                     .indices = indexSlice.value(),
+                                     .indexCount =
+                                         static_cast<std::uint32_t>(mesh.indices.size()),
+                                     .materialIndex = mesh.materialIndex};
+            objectData[objectIndex] = mesh.object;
+            draws[objectIndex] = {
                 .indexCount = static_cast<std::uint32_t>(mesh.indices.size()),
                 .instanceCount = 1,
                 .firstIndex = static_cast<std::uint32_t>(indexSlice.value().offset /
@@ -2235,7 +2264,7 @@ int main(int argc, char** argv) {
                 .vertexOffset =
                     static_cast<std::int32_t>(vertexSlice.value().offset / kVertexStride),
                 .firstInstance = objectIndex,
-            });
+            };
             record.drawIndices.push_back(objectIndex);
             objectTransforms[objectIndex] = placement;
 
@@ -2255,12 +2284,14 @@ int main(int argc, char** argv) {
                             std::max(sceneMax.z, w.z)};
             }
         }
-        // New SSBO rows ride the same flush as the geometry.
-        if (auto staged = transfer->stage(*objectBuffer, firstNewDraw * sizeof(ObjectData),
-                                          objectData.data() + firstNewDraw,
-                                          record.drawIndices.size() * sizeof(ObjectData));
-            !staged) {
-            return staged.error();
+        // New SSBO rows (possibly scattered across recycled indices) ride
+        // the same flush as the geometry.
+        for (std::uint32_t index : record.drawIndices) {
+            if (auto staged = transfer->stage(*objectBuffer, index * sizeof(ObjectData),
+                                              &objectData[index], sizeof(ObjectData));
+                !staged) {
+                return staged.error();
+            }
         }
         {
             REND_PROFILE_ZONE("RuntimeUploadFlush");
@@ -2268,18 +2299,33 @@ int main(int argc, char** argv) {
                 return flushed.error();
             }
         }
-        // Template entries beyond the previously visible drawCount are
-        // unread by in-flight frames, so every slot region is safe to
-        // extend right now — only then does drawCount grow.
-        for (std::uint32_t slot = 0; slot < gpu::FrameRenderer::kFramesInFlight; ++slot) {
-            std::memcpy(static_cast<std::byte*>(indirectBuffer->mapped()) +
-                            slot * batch.indirectRegionStride +
-                            firstNewDraw * sizeof(gpu::DrawIndexedIndirect),
-                        draws.data() + firstNewDraw,
-                        record.drawIndices.size() * sizeof(gpu::DrawIndexedIndirect));
-        }
         batch.drawCount = static_cast<std::uint32_t>(draws.size());
         batch.cpuDraws = draws.data();
+        // Template entries beyond the old drawCount are unread by any
+        // in-flight frame: extend every slot region immediately. Recycled
+        // entries sit BELOW it, where other slots' in-flight frames still
+        // read — those get the current slot's region now (safe after
+        // waitFrameSlot) and the dirty-resync at their own drains; until
+        // then they read the retired entry, which is instanceCount 0 (the
+        // model is simply absent there one extra frame).
+        bool recycledAny = false;
+        for (std::uint32_t index : record.drawIndices) {
+            if (index < oldDrawCount) {
+                recycledAny = true;
+                continue;
+            }
+            for (std::uint32_t s = 0; s < gpu::FrameRenderer::kFramesInFlight; ++s) {
+                std::memcpy(static_cast<std::byte*>(indirectBuffer->mapped()) +
+                                s * batch.indirectRegionStride +
+                                index * sizeof(gpu::DrawIndexedIndirect),
+                            &draws[index], sizeof(gpu::DrawIndexedIndirect));
+            }
+        }
+        if (recycledAny) {
+            templatesDirty.fill(true);
+            writeTemplates(slot);
+            templatesDirty[slot] = false;
+        }
         runtimeModels.push_back(std::move(record));
         // Static recordings bake the draw count; rebuild lazily (waits
         // idle — the ~2 ms integration hitch, paid once per finished load).
@@ -2288,17 +2334,21 @@ int main(int argc, char** argv) {
     };
 
     auto applyUnloadModel = [&](const renderer::UnloadModelCmd& cmd) {
-        for (RuntimeModel& model : runtimeModels) {
-            if (model.handle != cmd.handle || !model.loaded) {
+        for (auto it = runtimeModels.begin(); it != runtimeModels.end(); ++it) {
+            if (it->handle != cmd.handle || !it->loaded) {
                 continue;
             }
-            for (std::uint32_t index : model.drawIndices) {
+            PendingReclaim reclaim;
+            for (std::uint32_t index : it->drawIndices) {
                 draws[index].instanceCount = 0;
+                reclaim.slices.push_back(geometry[index].vertices);
+                reclaim.slices.push_back(geometry[index].indices);
             }
-            model.loaded = false;
+            reclaim.objectIndices = std::move(it->drawIndices);
+            reclaim.retireAtDrain = drainFrame + gpu::FrameRenderer::kFramesInFlight;
+            pendingReclaims.push_back(std::move(reclaim));
+            runtimeModels.erase(it);
             templatesDirty.fill(true);
-            // Pool slices are NOT reclaimed yet (test harness; freeing
-            // safely needs the deferred-destruction that async brings).
             renderer->invalidateStaticRecordings();
             return;
         }
@@ -2306,6 +2356,23 @@ int main(int argc, char** argv) {
     };
 
     auto processMessages = [&](std::uint32_t slot) {
+        ++drainFrame;
+        // Retire due reclaims first (we are past waitFrameSlot, so every
+        // submission that could read these slices/rows has completed).
+        while (!pendingReclaims.empty() &&
+               drainFrame >= pendingReclaims.front().retireAtDrain) {
+            PendingReclaim& reclaim = pendingReclaims.front();
+            for (const gpu::BufferSlice& slice : reclaim.slices) {
+                geometryPool->free(slice);
+            }
+            freeObjectIndices.insert(freeObjectIndices.end(), reclaim.objectIndices.begin(),
+                                     reclaim.objectIndices.end());
+            log::trace("Reclaimed {} pool slices; pool {:.1f} MiB in {} allocations",
+                       reclaim.slices.size(),
+                       static_cast<double>(geometryPool->usedBytes()) / (1024.0 * 1024.0),
+                       geometryPool->allocationCount());
+            pendingReclaims.pop_front();
+        }
         if (templatesDirty[slot] && indirectBuffer) {
             writeTemplates(slot);
             templatesDirty[slot] = false;
@@ -2358,7 +2425,7 @@ int main(int argc, char** argv) {
             ready.swap(preparedLoads);
         }
         for (PreparedLoad& load : ready) {
-            auto applied = integrateLoad(load);
+            auto applied = integrateLoad(load, slot);
             renderer::Event event;
             event.type = renderer::Event::Type::ModelReady;
             event.ready.handle = load.cmd.handle;
@@ -2367,8 +2434,13 @@ int main(int argc, char** argv) {
                                      std::chrono::steady_clock::now() - load.requested)
                                      .count();
             if (applied) {
-                log::info("Runtime model '{}' ready in {:.1f} ms (handle {})", load.cmd.path,
-                          event.ready.millis, load.cmd.handle);
+                // Pool + draw-table figures are the memory-churn test's
+                // metric: both must plateau under steady load/unload.
+                log::info("Runtime model '{}' ready in {:.1f} ms (handle {}) | pool {:.1f} "
+                          "MiB in {} allocations, {} draw entries",
+                          load.cmd.path, event.ready.millis, load.cmd.handle,
+                          static_cast<double>(geometryPool->usedBytes()) / (1024.0 * 1024.0),
+                          geometryPool->allocationCount(), draws.size());
             } else {
                 std::snprintf(event.ready.error, sizeof(event.ready.error), "%s",
                               applied.error().message.c_str());
