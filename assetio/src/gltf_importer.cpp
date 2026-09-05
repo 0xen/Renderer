@@ -64,6 +64,14 @@ MaterialData convertMaterial(const cgltf_material& m, const std::filesystem::pat
     out.alphaMasked = m.alpha_mode == cgltf_alpha_mode_mask;
     out.alphaCutoff = m.alpha_cutoff;
     out.transparent = m.alpha_mode == cgltf_alpha_mode_blend;
+    // KHR_materials_transmission (glass) approximated as alpha blending
+    // until real refraction lands: opacity = 1 - transmission.
+    if (m.has_transmission) {
+        out.transparent = true;
+        out.baseColorFactor[3] = std::min(
+            out.baseColorFactor[3],
+            std::max(1.0f - m.transmission.transmission_factor, 0.05f));
+    }
     return out;
 }
 
