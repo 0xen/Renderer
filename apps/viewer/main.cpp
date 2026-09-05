@@ -23,6 +23,7 @@
 #include <imgui.h>
 
 #include <algorithm>
+#include <atomic>
 #include <charconv>
 #include <chrono>
 #include <cmath>
@@ -30,6 +31,7 @@
 #include <cstddef>
 #include <cstring>
 #include <optional>
+#include <thread>
 #include <unordered_map>
 
 using namespace rend;
@@ -1302,23 +1304,51 @@ int main(int argc, char** argv) {
         auto uploader = std::move(uploaderResult).value();
 
         std::uint64_t texelBytes = 0;
+        // Decode on worker threads — stbi is CPU-bound and stateless, and
+        // single-threaded decode dominated scene load (~2.1 s of Sponza's
+        // load was 69 sequential decodes). Threads pull indices from an
+        // atomic counter; the graphics-queue uploads stay on this thread.
+        std::vector<Result<assetio::TextureData>> decodedTextures(
+            texturePaths.size(), Error{"not decoded"});
+        {
+            REND_PROFILE_ZONE("TextureDecodeAll");
+            std::atomic<std::size_t> nextTexture{1}; // 0 is the white fallback
+            const std::size_t workerCount =
+                std::min<std::size_t>(std::max(1u, std::thread::hardware_concurrency()),
+                                      texturePaths.size() > 1 ? texturePaths.size() - 1 : 1);
+            std::vector<std::thread> decoders;
+            decoders.reserve(workerCount);
+            for (std::size_t w = 0; w < workerCount; ++w) {
+                decoders.emplace_back([&] {
+                    for (std::size_t i = nextTexture.fetch_add(1); i < texturePaths.size();
+                         i = nextTexture.fetch_add(1)) {
+                        REND_PROFILE_ZONE("TextureDecode");
+                        decodedTextures[i] = assetio::loadTexture(texturePaths[i].path);
+                    }
+                });
+            }
+            for (std::thread& decoder : decoders) {
+                decoder.join();
+            }
+        }
         for (std::size_t i = 0; i < texturePaths.size(); ++i) {
             Result<std::unique_ptr<gpu::Image>> uploaded = [&]() {
                 if (i == 0) {
                     const std::uint8_t white[4] = {255, 255, 255, 255};
                     return uploader->upload(1, 1, white);
                 }
-                auto decoded = [&] {
-                    REND_PROFILE_ZONE("TextureDecode");
-                    return assetio::loadTexture(texturePaths[i].path);
-                }();
+                auto& decoded = decodedTextures[i];
                 if (!decoded) {
                     return Result<std::unique_ptr<gpu::Image>>{decoded.error()};
                 }
                 const auto& t = decoded.value();
                 texelBytes += t.rgba.size();
-                return uploader->upload(t.width, t.height, t.rgba.data(),
-                                        texturePaths[i].srgb);
+                auto image = uploader->upload(t.width, t.height, t.rgba.data(),
+                                              texturePaths[i].srgb);
+                // Drop the CPU copy as soon as it is on the GPU: peak decoded
+                // memory otherwise holds every image at once (~270 MiB Sponza).
+                decoded = Error{"uploaded"};
+                return image;
             }();
             if (!uploaded) {
                 log::error("Texture {} failed: {}", texturePaths[i].path.filename().string(),
