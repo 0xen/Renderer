@@ -542,7 +542,7 @@ int main(int argc, char** argv) {
     bool forceProbeReflections = false;
     std::uint64_t benchFrames = 0; // non-zero: exit after N frames with a report
     // Streaming test harness: auto-spawn this model at random intervals
-    // through the message queue (also driveable from the Settings panel).
+    // through the message queue.
     const char* spawnTestPath = nullptr;
     // Caps the draw-submit ladder for testing the fallbacks; the actual mode
     // is still limited by what the device supports.
@@ -1943,9 +1943,9 @@ int main(int argc, char** argv) {
     // slot's fence), where the current slot's buffers are CPU-writable.
     renderer::MessageQueue messageQueue;
     renderer::Sender messageSender = messageQueue.createSender();
-    // The viewer's own event view (the Python host holds its second one —
-    // events broadcast to every receiver).
-    renderer::EventReceiver messageEvents = messageQueue.createEventReceiver();
+    // Events broadcast to per-consumer receivers; the Python host holds
+    // one. The viewer itself currently consumes none (a receiver nothing
+    // polls would only accumulate, so don't create one idly).
     struct RuntimeModel {
         renderer::ModelHandle handle = renderer::kInvalidModel;
         std::vector<std::uint32_t> drawIndices; // rows in draws/objectData
@@ -2305,7 +2305,6 @@ int main(int argc, char** argv) {
         log::warn("UnloadModel: unknown handle {}", cmd.handle);
     };
 
-    float lastLoadMillis = 0.0f;
     auto processMessages = [&](std::uint32_t slot) {
         if (templatesDirty[slot] && indirectBuffer) {
             writeTemplates(slot);
@@ -2378,15 +2377,10 @@ int main(int argc, char** argv) {
             }
             messageQueue.pushEvent(event);
         }
-        for (const renderer::Event& event : messageEvents.poll()) {
-            if (event.type == renderer::Event::Type::ModelReady && event.ready.ok) {
-                lastLoadMillis = event.ready.millis;
-            }
-        }
     };
 
-    // Test-harness producer state: manual spawns from the Settings panel,
-    // or nondeterministic auto-spawns (--spawn-test / checkbox).
+    // Test-harness producer state: nondeterministic auto-spawns driven by
+    // the --spawn-test flag (the Python host is the interactive producer).
     char spawnPathBuf[512] = "C:/github/scenes/flight_helmet/model/FlightHelmet.gltf";
     if (spawnTestPath) {
         std::snprintf(spawnPathBuf, sizeof(spawnPathBuf), "%s", spawnTestPath);
@@ -2829,36 +2823,6 @@ int main(int argc, char** argv) {
                         }
                     }
                     ImGui::EndCombo();
-                }
-                if (ImGui::TreeNode("Streaming test")) {
-                    // Manual producer for the renderer message queue: spawn
-                    // and unload runtime models to measure load cost live.
-                    ImGui::InputText("Model", spawnPathBuf, sizeof(spawnPathBuf));
-                    if (ImGui::Button("Spawn")) {
-                        requestSpawn();
-                    }
-                    ImGui::SameLine();
-                    if (ImGui::Button("Unload last")) {
-                        for (auto it = runtimeModels.rbegin(); it != runtimeModels.rend(); ++it) {
-                            if (it->loaded) {
-                                renderer::Command cmd;
-                                cmd.type = renderer::Command::Type::UnloadModel;
-                                cmd.unload.handle = it->handle;
-                                messageSender.push(cmd);
-                                messageSender.flush();
-                                break;
-                            }
-                        }
-                    }
-                    ImGui::Checkbox("Auto-spawn", &autoSpawn);
-                    ImGui::SliderFloat("Min interval", &spawnIntervalMin, 0.1f, 10.0f, "%.1f s");
-                    ImGui::SliderFloat("Max interval", &spawnIntervalMax, 0.1f, 10.0f, "%.1f s");
-                    spawnIntervalMax = std::max(spawnIntervalMin, spawnIntervalMax);
-                    const auto liveCount = static_cast<int>(std::count_if(
-                        runtimeModels.begin(), runtimeModels.end(),
-                        [](const RuntimeModel& m) { return m.loaded; }));
-                    ImGui::Text("Loaded: %d | last load %.1f ms", liveCount, lastLoadMillis);
-                    ImGui::TreePop();
                 }
                 if (ImGui::TreeNode("Advanced")) {
                     ImGui::SliderFloat("Azimuth", &sun.azimuthDeg, -180.0f, 180.0f, "%.0f deg");
