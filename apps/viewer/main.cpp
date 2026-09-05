@@ -17,6 +17,7 @@
 #include "rend/gpu/memory_pool.h"
 #include "rend/gpu/transfer.h"
 #include "rend/platform/backend.h"
+#include "rend/renderer/message_queue.h"
 
 #include "ui.h"
 
@@ -30,7 +31,9 @@
 #include <format>
 #include <cstddef>
 #include <cstring>
+#include <cstdio>
 #include <optional>
+#include <random>
 #include <thread>
 #include <unordered_map>
 
@@ -45,6 +48,12 @@ struct GeometryLocation {
     std::uint32_t indexCount = 0;
     std::uint32_t materialIndex = 0;
 };
+
+// Headroom for runtime-spawned objects: buffers and per-slot indirect
+// regions are sized for this many extra draw entries beyond the scene's,
+// so runtime loads never recreate buffers or rewrite non-bindless
+// descriptors. Exceeding it fails the load with an event.
+constexpr std::uint32_t kRuntimeObjectCapacity = 256;
 
 // One row per object in the bindless table's SSBO, found by the indirect
 // entry's firstInstance. Must match ObjectData in scene.hlsl.
@@ -140,6 +149,37 @@ math::Mat4 transformMatrix(const assetio::TransformDesc& t) {
 }
 
 // Column-major TRS matrix from decomposed translation/quaternion/scale.
+// Bakes a world matrix into a mesh's CPU data (positions, normals, morph
+// deltas) — scene <Transform>s at load, and placement of runtime-spawned
+// models. Morph deltas are direction-like: rotate/scale, no translation.
+void bakeMeshTransform(assetio::MeshData& mesh, const math::Mat4& m) {
+    for (std::size_t v = 0; v + 2 < mesh.positions.size(); v += 3) {
+        const float x = mesh.positions[v], y = mesh.positions[v + 1], z = mesh.positions[v + 2];
+        mesh.positions[v] = m[0] * x + m[4] * y + m[8] * z + m[12];
+        mesh.positions[v + 1] = m[1] * x + m[5] * y + m[9] * z + m[13];
+        mesh.positions[v + 2] = m[2] * x + m[6] * y + m[10] * z + m[14];
+    }
+    for (std::size_t v = 0; v + 2 < mesh.normals.size(); v += 3) {
+        const float x = mesh.normals[v], y = mesh.normals[v + 1], z = mesh.normals[v + 2];
+        const math::Vec3 n = math::normalize({m[0] * x + m[4] * y + m[8] * z,
+                                              m[1] * x + m[5] * y + m[9] * z,
+                                              m[2] * x + m[6] * y + m[10] * z});
+        mesh.normals[v] = n.x;
+        mesh.normals[v + 1] = n.y;
+        mesh.normals[v + 2] = n.z;
+    }
+    for (auto& target : mesh.morphTargets) {
+        for (auto* deltas : {&target.positionDeltas, &target.normalDeltas}) {
+            for (std::size_t v = 0; v + 2 < deltas->size(); v += 3) {
+                const float x = (*deltas)[v], y = (*deltas)[v + 1], z = (*deltas)[v + 2];
+                (*deltas)[v] = m[0] * x + m[4] * y + m[8] * z;
+                (*deltas)[v + 1] = m[1] * x + m[5] * y + m[9] * z;
+                (*deltas)[v + 2] = m[2] * x + m[6] * y + m[10] * z;
+            }
+        }
+    }
+}
+
 math::Mat4 composeTrs(const std::array<float, 3>& t, const std::array<float, 4>& r,
                       const std::array<float, 3>& s) {
     const float x = r[0], y = r[1], z = r[2], w = r[3];
@@ -485,6 +525,9 @@ int main(int argc, char** argv) {
     // Optional cap on the reflection technique (default: best offered).
     bool forceProbeReflections = false;
     std::uint64_t benchFrames = 0; // non-zero: exit after N frames with a report
+    // Streaming test harness: auto-spawn this model at random intervals
+    // through the message queue (also driveable from the Settings panel).
+    const char* spawnTestPath = nullptr;
     // Caps the draw-submit ladder for testing the fallbacks; the actual mode
     // is still limited by what the device supports.
     auto maxDrawMode = gpu::DrawSubmitMode::IndirectCount;
@@ -509,6 +552,8 @@ int main(int argc, char** argv) {
                 log::error("Unknown --reflections '{}' (probe|traced)", technique);
                 return 1;
             }
+        } else if (arg == "--spawn-test" && i + 1 < argc) {
+            spawnTestPath = argv[++i];
         } else if (arg == "--bench" && i + 1 < argc) {
             const std::string_view count = argv[++i];
             std::from_chars(count.data(), count.data() + count.size(), benchFrames);
@@ -601,42 +646,13 @@ int main(int argc, char** argv) {
                 const math::Mat4 m = world.empty()
                                          ? modelMatrix
                                          : math::mul(modelMatrix, world[mesh.sourceNode]);
-                for (std::size_t v = 0; v + 2 < mesh.positions.size(); v += 3) {
-                    const float x = mesh.positions[v], y = mesh.positions[v + 1],
-                                z = mesh.positions[v + 2];
-                    mesh.positions[v] = m[0] * x + m[4] * y + m[8] * z + m[12];
-                    mesh.positions[v + 1] = m[1] * x + m[5] * y + m[9] * z + m[13];
-                    mesh.positions[v + 2] = m[2] * x + m[6] * y + m[10] * z + m[14];
-                }
-                for (std::size_t v = 0; v + 2 < mesh.normals.size(); v += 3) {
-                    const float x = mesh.normals[v], y = mesh.normals[v + 1],
-                                z = mesh.normals[v + 2];
-                    const math::Vec3 n = math::normalize({m[0] * x + m[4] * y + m[8] * z,
-                                                          m[1] * x + m[5] * y + m[9] * z,
-                                                          m[2] * x + m[6] * y + m[10] * z});
-                    mesh.normals[v] = n.x;
-                    mesh.normals[v + 1] = n.y;
-                    mesh.normals[v + 2] = n.z;
-                }
-                // Morph deltas are direction-like: rotate/scale, no
-                // translation, and position deltas keep their magnitudes.
-                for (auto& target : mesh.morphTargets) {
-                    for (auto* deltas : {&target.positionDeltas, &target.normalDeltas}) {
-                        for (std::size_t v = 0; v + 2 < deltas->size(); v += 3) {
-                            const float x = (*deltas)[v], y = (*deltas)[v + 1],
-                                        z = (*deltas)[v + 2];
-                            (*deltas)[v] = m[0] * x + m[4] * y + m[8] * z;
-                            (*deltas)[v + 1] = m[1] * x + m[5] * y + m[9] * z;
-                            (*deltas)[v + 2] = m[2] * x + m[6] * y + m[10] * z;
-                        }
-                    }
-                }
+                bakeMeshTransform(mesh, m);
             }
         }
     } else {
         log::info("No scene file given "
                   "(usage: viewer [--debug] [--novsync] [--static] [--bench N] "
-                  "[--draw-mode count|indirect|direct] <scene.xml>)");
+                  "[--draw-mode count|indirect|direct] [--spawn-test model.gltf] <scene.xml>)");
     }
 
     auto backendResult = platform::createBackend(platform::BackendKind::SDL3);
@@ -702,6 +718,15 @@ int main(int argc, char** argv) {
     std::unique_ptr<gpu::DescriptorTable> descriptorTable;
     std::vector<std::unique_ptr<gpu::Image>> textures;
     std::vector<GeometryLocation> geometry;
+    // Kept alive past load for the runtime model-load path (message queue):
+    // the transfer context and texture uploader do the GPU work, the
+    // texture map dedups repeat spawns, objectData mirrors the GPU SSBO.
+    std::unique_ptr<gpu::TransferContext> transfer;
+    std::unique_ptr<gpu::TextureUploader> uploader;
+    std::unordered_map<std::string, std::uint32_t> textureSlotByPath;
+    std::vector<ObjectData> objectData;
+    std::uint32_t templateCapacity = 0; // indirect entries per slot region
+    const auto importers = assetio::ImporterRegistry::withBuiltins();
     // Capability offer from the gpu layer: which shadow techniques this
     // device can run. The UI is built from this list, never from
     // hard-coded assumptions.
@@ -739,7 +764,7 @@ int main(int argc, char** argv) {
             log::error("Transfer context creation failed: {}", transferResult.error().message);
             return 1;
         }
-        auto transfer = std::move(transferResult).value();
+        transfer = std::move(transferResult).value();
 
         // Slot 0 of the bindless texture array is a 1x1 white fallback so
         // untextured materials sample neutrally; index 0 doubles as "no
@@ -749,7 +774,6 @@ int main(int argc, char** argv) {
             bool srgb = true; // normal/MR maps decode linear (UNORM)
         };
         std::vector<TextureRequest> texturePaths{{}};
-        std::unordered_map<std::string, std::uint32_t> textureSlotByPath;
         auto registerTexture = [&](const std::filesystem::path& path, bool srgb) {
             if (path.empty()) {
                 return 0u;
@@ -761,7 +785,6 @@ int main(int argc, char** argv) {
             }
             return it->second;
         };
-        std::vector<ObjectData> objectData;
 
         // Animation wiring accumulated across the upload loop: packed skin
         // vertices, concatenated morph deltas (6 floats per vertex/target)
@@ -919,7 +942,10 @@ int main(int argc, char** argv) {
         // One indirect entry per mesh, addressing its slices by offset.
         // instanceCount is the milestone-7 load/unload toggle; firstInstance
         // becomes the object-SSBO index in step 3.
-        draws.reserve(geometry.size());
+        // Reserve to full capacity so batch.cpuDraws (Direct mode) never
+        // dangles when runtime loads append entries.
+        templateCapacity = static_cast<std::uint32_t>(geometry.size()) + kRuntimeObjectCapacity;
+        draws.reserve(templateCapacity);
         for (std::size_t i = 0; i < geometry.size(); ++i) {
             const GeometryLocation& location = geometry[i];
             draws.push_back({
@@ -932,9 +958,12 @@ int main(int argc, char** argv) {
             });
         }
         // Host-visible with one region per frame in flight: the CPU rewrites
-        // the current slot's instanceCounts every frame (the milestone-7
-        // load/unload toggle) while the other slot's region is in flight.
-        const std::uint64_t indirectRegion = draws.size() * sizeof(gpu::DrawIndexedIndirect);
+        // the current slot's instanceCounts (the milestone-7 load/unload
+        // toggle, now driven by runtime load/unload messages) while the
+        // other slot's region is in flight. Regions are CAPACITY-sized:
+        // runtime loads append entries without moving the slot bases.
+        const std::uint64_t indirectRegion =
+            std::uint64_t{templateCapacity} * sizeof(gpu::DrawIndexedIndirect);
         auto indirectResult = gpu::Buffer::create(
             *device, {
                          .size = indirectRegion * gpu::FrameRenderer::kFramesInFlight,
@@ -957,7 +986,7 @@ int main(int argc, char** argv) {
                     static_cast<std::int32_t>(entry.dstVertexBase + slot * entry.vertexCount);
             }
             std::memcpy(static_cast<std::byte*>(indirectBuffer->mapped()) + slot * indirectRegion,
-                        slotDraws.data(), indirectRegion);
+                        slotDraws.data(), slotDraws.size() * sizeof(gpu::DrawIndexedIndirect));
         }
 
         // Cull-pass output: the compacted indirect list the GPU builds each
@@ -1039,7 +1068,9 @@ int main(int argc, char** argv) {
 
         auto objectResult = gpu::Buffer::create(
             *device, {
-                         .size = objectData.size() * sizeof(ObjectData),
+                         // Capacity headroom: runtime loads stage new rows
+                         // in place; the descriptor is written once, full-size.
+                         .size = (objectData.size() + kRuntimeObjectCapacity) * sizeof(ObjectData),
                          .usage = gpu::kUsageStorage | gpu::kUsageTransferDst,
                          .location = gpu::MemoryLocation::DeviceLocal,
                          .sharedWithTransferQueue = true,
@@ -1255,8 +1286,7 @@ int main(int argc, char** argv) {
             return 1;
         }
         descriptorTable = std::move(tableResult).value();
-        descriptorTable->writeObjectBuffer(objectBuffer->handle(),
-                                           objectData.size() * sizeof(ObjectData));
+        descriptorTable->writeObjectBuffer(objectBuffer->handle(), objectBuffer->size());
         descriptorTable->writeStorageBuffer(3, indirectBuffer->handle(), indirectBuffer->size());
         descriptorTable->writeStorageBuffer(4, compactedBuffer->handle(),
                                             compactedBuffer->size());
@@ -1301,7 +1331,7 @@ int main(int argc, char** argv) {
             log::error("Texture uploader creation failed: {}", uploaderResult.error().message);
             return 1;
         }
-        auto uploader = std::move(uploaderResult).value();
+        uploader = std::move(uploaderResult).value();
 
         std::uint64_t texelBytes = 0;
         // Decode on worker threads — stbi is CPU-bound and stateless, and
@@ -1608,7 +1638,7 @@ int main(int argc, char** argv) {
                 *device, {
                              .shader = cullShader.get(),
                              .descriptorLayout = descriptorTable->layout(),
-                             .pushConstantBytes = 2 * sizeof(std::uint32_t),
+                             .pushConstantBytes = 3 * sizeof(std::uint32_t),
                          });
             if (cullResult) {
                 cullPipeline = std::move(cullResult).value();
@@ -1737,7 +1767,7 @@ int main(int argc, char** argv) {
 
         batch.geometry = geometryPool->buffer().handle();
         batch.drawCount = static_cast<std::uint32_t>(geometry.size());
-        batch.indirectRegionStride = geometry.size() * sizeof(gpu::DrawIndexedIndirect);
+        batch.indirectRegionStride = templateCapacity * sizeof(gpu::DrawIndexedIndirect);
         if (batch.mode == gpu::DrawSubmitMode::IndirectCount) {
             // The GPU draws what the cull pass compacted, not the templates.
             batch.indirect = compactedBuffer->handle();
@@ -1855,6 +1885,286 @@ int main(int argc, char** argv) {
                   sun.azimuthDeg, sun.elevationDeg, sun.intensity,
                   batch.shadowPipeline ? "on" : "off");
     }
+    // ---- Runtime model loading over the renderer message queue ----
+    // The viewer is the first producer (Settings panel + --spawn-test);
+    // Python and other clients speak the same Command/Event schema later.
+    // Commands drain once per frame at the safe point (after the frame
+    // slot's fence), where the current slot's buffers are CPU-writable.
+    renderer::MessageQueue messageQueue;
+    renderer::Sender messageSender = messageQueue.createSender();
+    struct RuntimeModel {
+        renderer::ModelHandle handle = renderer::kInvalidModel;
+        std::vector<std::uint32_t> drawIndices; // rows in draws/objectData
+        bool loaded = false;
+    };
+    std::vector<RuntimeModel> runtimeModels;
+    // Slots whose template region must be resynced from the canonical
+    // `draws` (unloads flip instanceCounts; each slot syncs when it is the
+    // current one — its region is guaranteed not in flight then).
+    std::array<bool, gpu::FrameRenderer::kFramesInFlight> templatesDirty{};
+
+    // Rewrites one slot's whole template region from the canonical draw
+    // list, reapplying that slot's animated posed-vertex overrides.
+    auto writeTemplates = [&](std::uint32_t slot) {
+        std::vector<gpu::DrawIndexedIndirect> slotDraws = draws;
+        for (const AnimatedMeshEntry& entry : animatedMeshes) {
+            slotDraws[entry.objectIndex].vertexOffset =
+                static_cast<std::int32_t>(entry.dstVertexBase + slot * entry.vertexCount);
+        }
+        std::memcpy(static_cast<std::byte*>(indirectBuffer->mapped()) +
+                        slot * batch.indirectRegionStride,
+                    slotDraws.data(), slotDraws.size() * sizeof(gpu::DrawIndexedIndirect));
+    };
+
+    // Decode + upload a texture on first sight; repeat spawns of the same
+    // model reuse slots. Returns bindless slot 0 (white) on failure.
+    auto registerTextureRuntime = [&](const std::filesystem::path& path,
+                                      bool srgb) -> std::uint32_t {
+        if (path.empty() || !uploader) {
+            return 0u;
+        }
+        auto [it, inserted] = textureSlotByPath.try_emplace(
+            path.string(), static_cast<std::uint32_t>(textures.size()));
+        if (!inserted) {
+            return it->second;
+        }
+        auto decoded = [&] {
+            REND_PROFILE_ZONE("TextureDecode");
+            return assetio::loadTexture(path);
+        }();
+        auto image = decoded ? uploader->upload(decoded.value().width, decoded.value().height,
+                                                decoded.value().rgba.data(), srgb)
+                             : Result<std::unique_ptr<gpu::Image>>{decoded.error()};
+        if (!image) {
+            log::warn("Runtime texture '{}' failed: {}", path.filename().string(),
+                      image.error().message);
+            textureSlotByPath.erase(it);
+            return 0u;
+        }
+        // Binding 1 is UPDATE_AFTER_BIND + partially bound: writing a slot
+        // no in-flight frame references is legal mid-run.
+        descriptorTable->writeTexture(it->second, image.value()->view());
+        textures.push_back(std::move(image).value());
+        return it->second;
+    };
+
+    // Synchronous consumer for LoadModel — deliberately: milestone 1
+    // measures what a naive runtime load costs before threading it.
+    auto applyLoadModel = [&](const renderer::LoadModelCmd& cmd) -> Result<void> {
+        REND_PROFILE_ZONE("RuntimeLoadModel");
+        auto imported = importers.import(std::filesystem::path(cmd.path));
+        if (!imported) {
+            return imported.error();
+        }
+        assetio::ModelData data = std::move(imported).value();
+        bool animated = !data.skeleton.empty() || !data.animations.empty();
+        for (const auto& mesh : data.meshes) {
+            animated = animated || mesh.skinned || !mesh.morphTargets.empty();
+        }
+        if (animated) {
+            return Error{"animated models are not supported at runtime yet"};
+        }
+        if (geometry.size() + data.meshes.size() > templateCapacity) {
+            return Error{std::format("runtime capacity exhausted ({} + {} > {})",
+                                     geometry.size(), data.meshes.size(), templateCapacity)};
+        }
+
+        const float yaw = cmd.yawDegrees * kPi / 180.0f;
+        const math::Mat4 placement =
+            composeTrs({cmd.position[0], cmd.position[1], cmd.position[2]},
+                       {0.0f, std::sin(yaw * 0.5f), 0.0f, std::cos(yaw * 0.5f)},
+                       {cmd.scale, cmd.scale, cmd.scale});
+
+        const std::uint32_t firstNewDraw = static_cast<std::uint32_t>(draws.size());
+        RuntimeModel record{.handle = cmd.handle, .loaded = true};
+        for (auto& mesh : data.meshes) {
+            bakeMeshTransform(mesh, placement);
+
+            ObjectData object;
+            if (mesh.materialIndex < data.materials.size()) {
+                const auto& material = data.materials[mesh.materialIndex];
+                object.flags = (material.alphaMasked ? kObjectAlphaMasked : 0u) |
+                               (material.transparent ? kObjectTransparent : 0u);
+                object.alphaCutoff = material.alphaCutoff;
+                object.baseAlpha = material.baseColorFactor[3];
+                object.metallicFactor = material.metallicFactor;
+                object.roughnessFactor = material.roughnessFactor;
+                object.textureIndex = registerTextureRuntime(material.baseColorTexture, true);
+                object.normalIndex = registerTextureRuntime(material.normalTexture, false);
+                object.mrIndex = registerTextureRuntime(material.metallicRoughnessTexture, false);
+            }
+
+            const std::vector<float> vertexData = interleave(mesh);
+            auto vertexSlice =
+                geometryPool->allocate(vertexData.size() * sizeof(float), kVertexStride);
+            auto indexSlice =
+                geometryPool->allocate(mesh.indices.size() * sizeof(std::uint32_t), 4);
+            if (!vertexSlice || !indexSlice) {
+                return Error{std::format(
+                    "pool allocation failed: {}",
+                    (!vertexSlice ? vertexSlice.error() : indexSlice.error()).message)};
+            }
+            auto stagedVerts = transfer->stage(geometryPool->buffer(), vertexSlice.value().offset,
+                                               vertexData.data(), vertexSlice.value().size);
+            auto stagedIndices = transfer->stage(geometryPool->buffer(),
+                                                 indexSlice.value().offset, mesh.indices.data(),
+                                                 indexSlice.value().size);
+            if (!stagedVerts || !stagedIndices) {
+                return Error{std::format(
+                    "staging failed: {}",
+                    (!stagedVerts ? stagedVerts.error() : stagedIndices.error()).message)};
+            }
+            const auto objectIndex = static_cast<std::uint32_t>(geometry.size());
+            geometry.push_back({.vertices = vertexSlice.value(),
+                                .indices = indexSlice.value(),
+                                .indexCount = static_cast<std::uint32_t>(mesh.indices.size()),
+                                .materialIndex = mesh.materialIndex});
+            objectData.push_back(object);
+            draws.push_back({
+                .indexCount = static_cast<std::uint32_t>(mesh.indices.size()),
+                .instanceCount = 1,
+                .firstIndex = static_cast<std::uint32_t>(indexSlice.value().offset /
+                                                         sizeof(std::uint32_t)),
+                .vertexOffset =
+                    static_cast<std::int32_t>(vertexSlice.value().offset / kVertexStride),
+                .firstInstance = objectIndex,
+            });
+            record.drawIndices.push_back(objectIndex);
+            for (std::size_t v = 0; v + 2 < mesh.positions.size(); v += 3) {
+                sceneMin.x = std::min(sceneMin.x, mesh.positions[v]);
+                sceneMin.y = std::min(sceneMin.y, mesh.positions[v + 1]);
+                sceneMin.z = std::min(sceneMin.z, mesh.positions[v + 2]);
+                sceneMax.x = std::max(sceneMax.x, mesh.positions[v]);
+                sceneMax.y = std::max(sceneMax.y, mesh.positions[v + 1]);
+                sceneMax.z = std::max(sceneMax.z, mesh.positions[v + 2]);
+            }
+        }
+        // New SSBO rows ride the same flush as the geometry.
+        if (auto staged = transfer->stage(*objectBuffer, firstNewDraw * sizeof(ObjectData),
+                                          objectData.data() + firstNewDraw,
+                                          record.drawIndices.size() * sizeof(ObjectData));
+            !staged) {
+            return staged.error();
+        }
+        {
+            REND_PROFILE_ZONE("RuntimeUploadFlush");
+            if (auto flushed = transfer->flush(); !flushed) {
+                return flushed.error();
+            }
+        }
+        // Template entries beyond the previously visible drawCount are
+        // unread by in-flight frames, so every slot region is safe to
+        // extend right now — only then does drawCount grow.
+        for (std::uint32_t slot = 0; slot < gpu::FrameRenderer::kFramesInFlight; ++slot) {
+            std::memcpy(static_cast<std::byte*>(indirectBuffer->mapped()) +
+                            slot * batch.indirectRegionStride +
+                            firstNewDraw * sizeof(gpu::DrawIndexedIndirect),
+                        draws.data() + firstNewDraw,
+                        record.drawIndices.size() * sizeof(gpu::DrawIndexedIndirect));
+        }
+        batch.drawCount = static_cast<std::uint32_t>(draws.size());
+        batch.cpuDraws = draws.data();
+        runtimeModels.push_back(std::move(record));
+        // Static recordings bake the draw count; rebuild lazily (waits
+        // idle — part of the measured cost, async is the next milestone).
+        renderer->invalidateStaticRecordings();
+        return {};
+    };
+
+    auto applyUnloadModel = [&](const renderer::UnloadModelCmd& cmd) {
+        for (RuntimeModel& model : runtimeModels) {
+            if (model.handle != cmd.handle || !model.loaded) {
+                continue;
+            }
+            for (std::uint32_t index : model.drawIndices) {
+                draws[index].instanceCount = 0;
+            }
+            model.loaded = false;
+            templatesDirty.fill(true);
+            // Pool slices are NOT reclaimed yet (test harness; freeing
+            // safely needs the deferred-destruction that async brings).
+            renderer->invalidateStaticRecordings();
+            return;
+        }
+        log::warn("UnloadModel: unknown handle {}", cmd.handle);
+    };
+
+    float lastLoadMillis = 0.0f;
+    auto processMessages = [&](std::uint32_t slot) {
+        if (templatesDirty[slot] && indirectBuffer) {
+            writeTemplates(slot);
+            templatesDirty[slot] = false;
+        }
+        for (const renderer::Command& cmd : messageQueue.drain()) {
+            switch (cmd.type) {
+            case renderer::Command::Type::LoadModel: {
+                const auto start = std::chrono::steady_clock::now();
+                auto applied = applyLoadModel(cmd.load);
+                renderer::Event event;
+                event.type = renderer::Event::Type::ModelReady;
+                event.ready.handle = cmd.load.handle;
+                event.ready.ok = applied.ok();
+                event.ready.millis =
+                    std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() -
+                                                             start)
+                        .count();
+                if (applied) {
+                    log::info("Runtime model '{}' loaded in {:.1f} ms (handle {})",
+                              cmd.load.path, event.ready.millis, cmd.load.handle);
+                } else {
+                    std::snprintf(event.ready.error, sizeof(event.ready.error), "%s",
+                                  applied.error().message.c_str());
+                    log::warn("Runtime model '{}' failed: {}", cmd.load.path,
+                              applied.error().message);
+                }
+                messageQueue.pushEvent(event);
+                break;
+            }
+            case renderer::Command::Type::SetTransform:
+                log::warn("SetTransform: not implemented yet (handle {})",
+                          cmd.transform.handle);
+                break;
+            case renderer::Command::Type::UnloadModel:
+                applyUnloadModel(cmd.unload);
+                break;
+            }
+        }
+        for (const renderer::Event& event : messageQueue.pollEvents()) {
+            if (event.type == renderer::Event::Type::ModelReady && event.ready.ok) {
+                lastLoadMillis = event.ready.millis;
+            }
+        }
+    };
+
+    // Test-harness producer state: manual spawns from the Settings panel,
+    // or nondeterministic auto-spawns (--spawn-test / checkbox).
+    char spawnPathBuf[512] = "C:/github/scenes/flight_helmet/model/FlightHelmet.gltf";
+    if (spawnTestPath) {
+        std::snprintf(spawnPathBuf, sizeof(spawnPathBuf), "%s", spawnTestPath);
+    }
+    bool autoSpawn = spawnTestPath != nullptr;
+    float spawnIntervalMin = 0.5f, spawnIntervalMax = 2.5f;
+    float nextSpawnIn = 0.5f;
+    std::mt19937 spawnRng{1234}; // fixed seed: reproducible test runs
+    auto requestSpawn = [&]() {
+        const math::Vec3 f = camera.forward();
+        const math::Vec3 right = math::normalize(math::cross(f, {0.0f, 1.0f, 0.0f}));
+        std::uniform_real_distribution<float> side(-1.5f, 1.5f);
+        std::uniform_real_distribution<float> angle(0.0f, 360.0f);
+        const float s = side(spawnRng);
+        renderer::Command cmd;
+        cmd.type = renderer::Command::Type::LoadModel;
+        cmd.load.handle = messageQueue.allocateHandle();
+        std::snprintf(cmd.load.path, sizeof(cmd.load.path), "%s", spawnPathBuf);
+        cmd.load.position[0] = camera.position.x + f.x * 3.0f + right.x * s;
+        cmd.load.position[1] = camera.position.y - 0.5f;
+        cmd.load.position[2] = camera.position.z + f.z * 3.0f + right.z * s;
+        cmd.load.yawDegrees = angle(spawnRng);
+        cmd.load.scale = 1.0f;
+        messageSender.push(cmd);
+        messageSender.flush();
+    };
+
     // Held-key state for camera movement; mouselook while RMB is held.
     bool keyHeld[static_cast<int>(platform::Key::LeftCtrl) + 1] = {};
     bool mouselook = false;
@@ -1960,6 +2270,36 @@ int main(int argc, char** argv) {
                 log::error("Frame failed: {}", r.error().message);
                 break;
             }
+            // Streaming test: nondeterministic spawn requests, then the
+            // frame's message drain (this slot's buffers are now safe).
+            if (autoSpawn) {
+                nextSpawnIn -= deltaSeconds;
+                if (nextSpawnIn <= 0.0f) {
+                    requestSpawn();
+                    // Keep the population bounded: unload the oldest once
+                    // more than four are live, so long test runs churn
+                    // load AND unload instead of accumulating forever.
+                    int live = 0;
+                    for (const RuntimeModel& model : runtimeModels) {
+                        live += model.loaded ? 1 : 0;
+                    }
+                    if (live >= 4) {
+                        for (const RuntimeModel& model : runtimeModels) {
+                            if (model.loaded) {
+                                renderer::Command cmd;
+                                cmd.type = renderer::Command::Type::UnloadModel;
+                                cmd.unload.handle = model.handle;
+                                messageSender.push(cmd);
+                                messageSender.flush();
+                                break;
+                            }
+                        }
+                    }
+                    nextSpawnIn = std::uniform_real_distribution<float>(
+                        spawnIntervalMin, spawnIntervalMax)(spawnRng);
+                }
+            }
+            processMessages(renderer->frameSlot());
             // Animation playback: sample every channel, rebuild node worlds
             // and joint matrices, and write this slot's regions (safe after
             // waitFrameSlot). The skinning pass consumes them this frame.
@@ -2164,6 +2504,36 @@ int main(int argc, char** argv) {
                         }
                     }
                     ImGui::EndCombo();
+                }
+                if (ImGui::TreeNode("Streaming test")) {
+                    // Manual producer for the renderer message queue: spawn
+                    // and unload runtime models to measure load cost live.
+                    ImGui::InputText("Model", spawnPathBuf, sizeof(spawnPathBuf));
+                    if (ImGui::Button("Spawn")) {
+                        requestSpawn();
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::Button("Unload last")) {
+                        for (auto it = runtimeModels.rbegin(); it != runtimeModels.rend(); ++it) {
+                            if (it->loaded) {
+                                renderer::Command cmd;
+                                cmd.type = renderer::Command::Type::UnloadModel;
+                                cmd.unload.handle = it->handle;
+                                messageSender.push(cmd);
+                                messageSender.flush();
+                                break;
+                            }
+                        }
+                    }
+                    ImGui::Checkbox("Auto-spawn", &autoSpawn);
+                    ImGui::SliderFloat("Min interval", &spawnIntervalMin, 0.1f, 10.0f, "%.1f s");
+                    ImGui::SliderFloat("Max interval", &spawnIntervalMax, 0.1f, 10.0f, "%.1f s");
+                    spawnIntervalMax = std::max(spawnIntervalMin, spawnIntervalMax);
+                    const auto liveCount = static_cast<int>(std::count_if(
+                        runtimeModels.begin(), runtimeModels.end(),
+                        [](const RuntimeModel& m) { return m.loaded; }));
+                    ImGui::Text("Loaded: %d | last load %.1f ms", liveCount, lastLoadMillis);
+                    ImGui::TreePop();
                 }
                 if (ImGui::TreeNode("Advanced")) {
                     ImGui::SliderFloat("Azimuth", &sun.azimuthDeg, -180.0f, 180.0f, "%.0f deg");

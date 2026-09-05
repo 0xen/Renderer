@@ -315,7 +315,12 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
                                     batch->cullPipeline->layout(), 0, 1, &batch->descriptors, 0,
                                     nullptr);
         }
-        const std::uint32_t push[2] = {batch->drawCount, slot};
+        // capacity = the per-slot region stride in entries; drawCount can
+        // grow at runtime (model loads) while the regions stay put.
+        const std::uint32_t push[3] = {
+            batch->drawCount, slot,
+            static_cast<std::uint32_t>(batch->indirectRegionStride /
+                                       sizeof(DrawIndexedIndirect))};
         vkCmdPushConstants(cmd, batch->cullPipeline->layout(), VK_SHADER_STAGE_COMPUTE_BIT, 0,
                            sizeof(push), push);
         vkCmdDispatch(cmd, (batch->drawCount + 63) / 64, 1, 1);

@@ -15,8 +15,10 @@ struct DrawCommand {
 };
 
 struct CullPush {
-    uint drawCount; // templates per frame slot
+    uint drawCount; // live templates this frame (may grow at runtime)
     uint slot;      // frame-in-flight index selecting the buffer regions
+    uint capacity;  // entries per slot region — the fixed stride; runtime
+                    // model loads change drawCount but never this
 };
 [[vk::push_constant]] CullPush push;
 
@@ -29,7 +31,7 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     if (id.x >= push.drawCount) {
         return;
     }
-    const uint base = push.slot * push.drawCount;
+    const uint base = push.slot * push.capacity;
     DrawCommand cmd = templates[base + id.x];
     if (cmd.instanceCount == 0) {
         return; // hidden (or later: culled)
