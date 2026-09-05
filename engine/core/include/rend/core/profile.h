@@ -10,7 +10,10 @@
 #define REND_PROFILE_ZONE(name) ZoneScopedN(name)
 // Frame boundary; call once per frame, after present.
 #define REND_PROFILE_FRAME() FrameMark
+// Labels the calling thread in captures; call once at thread start.
+#define REND_PROFILE_THREAD(name) tracy::SetThreadName(name)
 #else
 #define REND_PROFILE_ZONE(name)
 #define REND_PROFILE_FRAME()
+#define REND_PROFILE_THREAD(name)
 #endif

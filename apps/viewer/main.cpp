@@ -28,14 +28,18 @@
 #include <charconv>
 #include <chrono>
 #include <cmath>
+#include <condition_variable>
+#include <deque>
 #include <format>
 #include <cstddef>
 #include <cstring>
 #include <cstdio>
+#include <mutex>
 #include <optional>
 #include <random>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 
 using namespace rend;
 
@@ -1957,45 +1961,69 @@ int main(int argc, char** argv) {
                     slotDraws.data(), slotDraws.size() * sizeof(gpu::DrawIndexedIndirect));
     };
 
-    // Decode + upload a texture on first sight; repeat spawns of the same
-    // model reuse slots. Returns bindless slot 0 (white) on failure.
-    auto registerTextureRuntime = [&](const std::filesystem::path& path,
-                                      bool srgb) -> std::uint32_t {
-        if (path.empty() || !uploader) {
-            return 0u;
-        }
-        auto [it, inserted] = textureSlotByPath.try_emplace(
-            path.string(), static_cast<std::uint32_t>(textures.size()));
-        if (!inserted) {
-            return it->second;
-        }
-        auto decoded = [&] {
-            REND_PROFILE_ZONE("TextureDecode");
-            return assetio::loadTexture(path);
-        }();
-        auto image = decoded ? uploader->upload(decoded.value().width, decoded.value().height,
-                                                decoded.value().rgba.data(), srgb)
-                             : Result<std::unique_ptr<gpu::Image>>{decoded.error()};
-        if (!image) {
-            log::warn("Runtime texture '{}' failed: {}", path.filename().string(),
-                      image.error().message);
-            textureSlotByPath.erase(it);
-            return 0u;
-        }
-        // Binding 1 is UPDATE_AFTER_BIND + partially bound: writing a slot
-        // no in-flight frame references is legal mid-run.
-        descriptorTable->writeTexture(it->second, image.value()->view());
-        textures.push_back(std::move(image).value());
-        return it->second;
+    // ---- Async loader (milestone 2) ----
+    // The expensive parts of a runtime load — glTF import, CPU interleave,
+    // texture decode (~2 s cold, ~50 ms warm) — run on a dedicated worker
+    // thread; the frame loop never touches files. The drain only INTEGRATES
+    // finished loads: pool alloc + staging + upload flush + template append
+    // (~2 ms, GPU objects are main-thread-only). ModelReady fires at
+    // integration, so its millis is request→integrated wall time.
+    struct PreparedTexture {
+        std::string path;
+        bool srgb = true;
+        bool decoded = false;
+        assetio::TextureData data;
     };
+    struct PreparedMesh {
+        std::vector<float> vertexData; // interleaved, ready for the pool
+        std::vector<std::uint32_t> indices;
+        std::uint32_t materialIndex = 0;
+        ObjectData object; // texture slots resolved at integration by path
+        std::string baseColorPath;
+        std::string normalPath;
+        std::string mrPath;
+        math::Vec3 localMin{1e30f, 1e30f, 1e30f};
+        math::Vec3 localMax{-1e30f, -1e30f, -1e30f};
+    };
+    struct PreparedLoad {
+        renderer::LoadModelCmd cmd{};
+        std::chrono::steady_clock::time_point requested;
+        std::string error; // non-empty: preparation failed on the worker
+        std::vector<PreparedMesh> meshes;
+        std::vector<PreparedTexture> textures; // freshly decoded, uncached
+    };
+    struct PendingLoad {
+        renderer::LoadModelCmd cmd{};
+        std::chrono::steady_clock::time_point requested;
+    };
+    std::mutex loaderMutex; // guards loadRequests + loaderQuit
+    std::condition_variable loaderWake;
+    std::deque<PendingLoad> loadRequests;
+    bool loaderQuit = false;
+    std::mutex preparedMutex;
+    std::vector<PreparedLoad> preparedLoads;
+    // Texture paths decoded (or being decoded) by ANYONE — seeded with the
+    // scene's uploads. The worker claims paths here before decoding;
+    // textureSlotByPath itself stays main-thread-only. A claim without a
+    // map entry yet means "an earlier in-flight load carries the bytes",
+    // which FIFO integration resolves before anything can look it up.
+    std::mutex textureClaimMutex;
+    std::unordered_set<std::string> claimedTexturePaths;
+    for (const auto& [path, slot] : textureSlotByPath) {
+        claimedTexturePaths.insert(path);
+    }
 
-    // Synchronous consumer for LoadModel — deliberately: milestone 1
-    // measures what a naive runtime load costs before threading it.
-    auto applyLoadModel = [&](const renderer::LoadModelCmd& cmd) -> Result<void> {
-        REND_PROFILE_ZONE("RuntimeLoadModel");
-        auto imported = importers.import(std::filesystem::path(cmd.path));
+    // Worker-side preparation: everything that needs no GPU objects.
+    auto prepareLoad = [&](PendingLoad&& pending) {
+        REND_PROFILE_ZONE("PrepareLoad");
+        PreparedLoad out{.cmd = pending.cmd, .requested = pending.requested};
+        auto imported = [&] {
+            REND_PROFILE_ZONE("LoaderImport");
+            return importers.import(std::filesystem::path(out.cmd.path));
+        }();
         if (!imported) {
-            return imported.error();
+            out.error = imported.error().message;
+            return out;
         }
         assetio::ModelData data = std::move(imported).value();
         bool animated = !data.skeleton.empty() || !data.animations.empty();
@@ -2003,41 +2031,169 @@ int main(int argc, char** argv) {
             animated = animated || mesh.skinned || !mesh.morphTargets.empty();
         }
         if (animated) {
-            return Error{"animated models are not supported at runtime yet"};
+            out.error = "animated models are not supported at runtime yet";
+            return out;
         }
-        if (geometry.size() + data.meshes.size() > templateCapacity) {
-            return Error{std::format("runtime capacity exhausted ({} + {} > {})",
-                                     geometry.size(), data.meshes.size(), templateCapacity)};
-        }
-
-        const float yaw = cmd.yawDegrees * kPi / 180.0f;
-        const math::Mat4 placement =
-            composeTrs({cmd.position[0], cmd.position[1], cmd.position[2]},
-                       {0.0f, std::sin(yaw * 0.5f), 0.0f, std::cos(yaw * 0.5f)},
-                       {cmd.scale, cmd.scale, cmd.scale});
-
-        const std::uint32_t firstNewDraw = static_cast<std::uint32_t>(draws.size());
-        RuntimeModel record{.handle = cmd.handle, .loaded = true};
+        auto claimTexture = [&](const std::filesystem::path& path, bool srgb) {
+            if (path.empty()) {
+                return;
+            }
+            std::lock_guard lock(textureClaimMutex);
+            if (claimedTexturePaths.insert(path.string()).second) {
+                out.textures.push_back({.path = path.string(), .srgb = srgb});
+            }
+        };
         for (auto& mesh : data.meshes) {
-            // Placement rides the per-object transform buffer (SetTransform
-            // can move it later); vertices stay in model space.
-            ObjectData object;
+            PreparedMesh prepared;
+            prepared.materialIndex = mesh.materialIndex;
             if (mesh.materialIndex < data.materials.size()) {
                 const auto& material = data.materials[mesh.materialIndex];
-                object.flags = (material.alphaMasked ? kObjectAlphaMasked : 0u) |
-                               (material.transparent ? kObjectTransparent : 0u);
-                object.alphaCutoff = material.alphaCutoff;
-                object.baseAlpha = material.baseColorFactor[3];
-                object.metallicFactor = material.metallicFactor;
-                object.roughnessFactor = material.roughnessFactor;
-                object.textureIndex = registerTextureRuntime(material.baseColorTexture, true);
-                object.normalIndex = registerTextureRuntime(material.normalTexture, false);
-                object.mrIndex = registerTextureRuntime(material.metallicRoughnessTexture, false);
+                prepared.object.flags = (material.alphaMasked ? kObjectAlphaMasked : 0u) |
+                                        (material.transparent ? kObjectTransparent : 0u);
+                prepared.object.alphaCutoff = material.alphaCutoff;
+                prepared.object.baseAlpha = material.baseColorFactor[3];
+                prepared.object.metallicFactor = material.metallicFactor;
+                prepared.object.roughnessFactor = material.roughnessFactor;
+                prepared.baseColorPath = material.baseColorTexture.string();
+                prepared.normalPath = material.normalTexture.string();
+                prepared.mrPath = material.metallicRoughnessTexture.string();
+                claimTexture(material.baseColorTexture, true);
+                claimTexture(material.normalTexture, false);
+                claimTexture(material.metallicRoughnessTexture, false);
             }
+            prepared.vertexData = interleave(mesh);
+            for (std::size_t v = 0; v + 2 < mesh.positions.size(); v += 3) {
+                prepared.localMin.x = std::min(prepared.localMin.x, mesh.positions[v]);
+                prepared.localMin.y = std::min(prepared.localMin.y, mesh.positions[v + 1]);
+                prepared.localMin.z = std::min(prepared.localMin.z, mesh.positions[v + 2]);
+                prepared.localMax.x = std::max(prepared.localMax.x, mesh.positions[v]);
+                prepared.localMax.y = std::max(prepared.localMax.y, mesh.positions[v + 1]);
+                prepared.localMax.z = std::max(prepared.localMax.z, mesh.positions[v + 2]);
+            }
+            prepared.indices = std::move(mesh.indices);
+            out.meshes.push_back(std::move(prepared));
+        }
+        // Decode claimed textures in parallel (same atomic-counter pool as
+        // the scene load); failures release the claim so a later spawn
+        // retries instead of resolving to white forever.
+        if (!out.textures.empty()) {
+            REND_PROFILE_ZONE("LoaderTextureDecode");
+            std::atomic<std::size_t> nextTexture{0};
+            const std::size_t workerCount = std::min<std::size_t>(
+                out.textures.size(), std::max(1u, std::thread::hardware_concurrency()));
+            std::vector<std::thread> decodePool;
+            decodePool.reserve(workerCount);
+            for (std::size_t w = 0; w < workerCount; ++w) {
+                decodePool.emplace_back([&] {
+                    for (std::size_t i = nextTexture.fetch_add(1); i < out.textures.size();
+                         i = nextTexture.fetch_add(1)) {
+                        PreparedTexture& texture = out.textures[i];
+                        if (auto result = assetio::loadTexture(texture.path)) {
+                            texture.data = std::move(result).value();
+                            texture.decoded = true;
+                        }
+                    }
+                });
+            }
+            for (std::thread& worker : decodePool) {
+                worker.join();
+            }
+            std::erase_if(out.textures, [&](const PreparedTexture& texture) {
+                if (texture.decoded) {
+                    return false;
+                }
+                log::warn("Runtime texture '{}' failed to decode", texture.path);
+                std::lock_guard lock(textureClaimMutex);
+                claimedTexturePaths.erase(texture.path);
+                return true;
+            });
+        }
+        return out;
+    };
 
-            const std::vector<float> vertexData = interleave(mesh);
+    std::thread loaderThread([&] {
+        REND_PROFILE_THREAD("loader");
+        for (;;) {
+            PendingLoad pending;
+            {
+                std::unique_lock lock(loaderMutex);
+                loaderWake.wait(lock, [&] { return loaderQuit || !loadRequests.empty(); });
+                if (loaderQuit) {
+                    return; // pending requests are dropped on shutdown
+                }
+                pending = std::move(loadRequests.front());
+                loadRequests.pop_front();
+            }
+            PreparedLoad prepared = prepareLoad(std::move(pending));
+            std::lock_guard lock(preparedMutex);
+            preparedLoads.push_back(std::move(prepared));
+        }
+    });
+
+    // Main-thread integration of one prepared load: the only remaining
+    // frame-loop cost of a runtime load.
+    auto integrateLoad = [&](PreparedLoad& load) -> Result<void> {
+        REND_PROFILE_ZONE("RuntimeLoadModel");
+        auto releaseClaims = [&] {
+            std::lock_guard lock(textureClaimMutex);
+            for (const PreparedTexture& texture : load.textures) {
+                claimedTexturePaths.erase(texture.path);
+            }
+        };
+        if (!load.error.empty()) {
+            return Error{load.error};
+        }
+        if (geometry.size() + load.meshes.size() > templateCapacity) {
+            releaseClaims(); // carried decodes never upload; let retries re-decode
+            return Error{std::format("runtime capacity exhausted ({} + {} > {})",
+                                     geometry.size(), load.meshes.size(), templateCapacity)};
+        }
+        // Upload this load's carried textures first so its own meshes (and
+        // any later load that saw the claim) can resolve them by path.
+        // Binding 1 is UPDATE_AFTER_BIND + partially bound: writing a slot
+        // no in-flight frame references is legal mid-run.
+        for (PreparedTexture& texture : load.textures) {
+            auto image = uploader
+                             ? uploader->upload(texture.data.width, texture.data.height,
+                                                texture.data.rgba.data(), texture.srgb)
+                             : Result<std::unique_ptr<gpu::Image>>{Error{"no uploader"}};
+            if (!image) {
+                log::warn("Runtime texture '{}' failed: {}", texture.path,
+                          image.error().message);
+                std::lock_guard lock(textureClaimMutex);
+                claimedTexturePaths.erase(texture.path);
+                continue;
+            }
+            const auto slot = static_cast<std::uint32_t>(textures.size());
+            descriptorTable->writeTexture(slot, image.value()->view());
+            textures.push_back(std::move(image).value());
+            textureSlotByPath.emplace(texture.path, slot);
+        }
+        auto textureSlot = [&](const std::string& path) -> std::uint32_t {
+            if (path.empty()) {
+                return 0u;
+            }
+            const auto it = textureSlotByPath.find(path);
+            return it != textureSlotByPath.end() ? it->second : 0u;
+        };
+
+        const float yaw = load.cmd.yawDegrees * kPi / 180.0f;
+        const math::Mat4 placement =
+            composeTrs({load.cmd.position[0], load.cmd.position[1], load.cmd.position[2]},
+                       {0.0f, std::sin(yaw * 0.5f), 0.0f, std::cos(yaw * 0.5f)},
+                       {load.cmd.scale, load.cmd.scale, load.cmd.scale});
+
+        const std::uint32_t firstNewDraw = static_cast<std::uint32_t>(draws.size());
+        RuntimeModel record{.handle = load.cmd.handle, .loaded = true};
+        for (PreparedMesh& mesh : load.meshes) {
+            // Placement rides the per-object transform buffer (SetTransform
+            // can move it later); vertices stay in model space.
+            mesh.object.textureIndex = textureSlot(mesh.baseColorPath);
+            mesh.object.normalIndex = textureSlot(mesh.normalPath);
+            mesh.object.mrIndex = textureSlot(mesh.mrPath);
+
             auto vertexSlice =
-                geometryPool->allocate(vertexData.size() * sizeof(float), kVertexStride);
+                geometryPool->allocate(mesh.vertexData.size() * sizeof(float), kVertexStride);
             auto indexSlice =
                 geometryPool->allocate(mesh.indices.size() * sizeof(std::uint32_t), 4);
             if (!vertexSlice || !indexSlice) {
@@ -2045,8 +2201,9 @@ int main(int argc, char** argv) {
                     "pool allocation failed: {}",
                     (!vertexSlice ? vertexSlice.error() : indexSlice.error()).message)};
             }
-            auto stagedVerts = transfer->stage(geometryPool->buffer(), vertexSlice.value().offset,
-                                               vertexData.data(), vertexSlice.value().size);
+            auto stagedVerts =
+                transfer->stage(geometryPool->buffer(), vertexSlice.value().offset,
+                                mesh.vertexData.data(), vertexSlice.value().size);
             auto stagedIndices = transfer->stage(geometryPool->buffer(),
                                                  indexSlice.value().offset, mesh.indices.data(),
                                                  indexSlice.value().size);
@@ -2060,7 +2217,7 @@ int main(int argc, char** argv) {
                                 .indices = indexSlice.value(),
                                 .indexCount = static_cast<std::uint32_t>(mesh.indices.size()),
                                 .materialIndex = mesh.materialIndex});
-            objectData.push_back(object);
+            objectData.push_back(mesh.object);
             draws.push_back({
                 .indexCount = static_cast<std::uint32_t>(mesh.indices.size()),
                 .instanceCount = 1,
@@ -2075,19 +2232,10 @@ int main(int argc, char** argv) {
 
             // Grow the scene AABB (shadow cascade fitting) by the mesh's
             // local bounds pushed through the placement matrix.
-            math::Vec3 localMin{1e30f, 1e30f, 1e30f}, localMax{-1e30f, -1e30f, -1e30f};
-            for (std::size_t v = 0; v + 2 < mesh.positions.size(); v += 3) {
-                localMin.x = std::min(localMin.x, mesh.positions[v]);
-                localMin.y = std::min(localMin.y, mesh.positions[v + 1]);
-                localMin.z = std::min(localMin.z, mesh.positions[v + 2]);
-                localMax.x = std::max(localMax.x, mesh.positions[v]);
-                localMax.y = std::max(localMax.y, mesh.positions[v + 1]);
-                localMax.z = std::max(localMax.z, mesh.positions[v + 2]);
-            }
             for (int corner = 0; corner < 8; ++corner) {
-                const float x = (corner & 1) ? localMax.x : localMin.x;
-                const float y = (corner & 2) ? localMax.y : localMin.y;
-                const float z = (corner & 4) ? localMax.z : localMin.z;
+                const float x = (corner & 1) ? mesh.localMax.x : mesh.localMin.x;
+                const float y = (corner & 2) ? mesh.localMax.y : mesh.localMin.y;
+                const float z = (corner & 4) ? mesh.localMax.z : mesh.localMin.z;
                 const math::Mat4& m = placement;
                 const math::Vec3 w{m[0] * x + m[4] * y + m[8] * z + m[12],
                                    m[1] * x + m[5] * y + m[9] * z + m[13],
@@ -2125,7 +2273,7 @@ int main(int argc, char** argv) {
         batch.cpuDraws = draws.data();
         runtimeModels.push_back(std::move(record));
         // Static recordings bake the draw count; rebuild lazily (waits
-        // idle — part of the measured cost, async is the next milestone).
+        // idle — the ~2 ms integration hitch, paid once per finished load).
         renderer->invalidateStaticRecordings();
         return {};
     };
@@ -2157,26 +2305,13 @@ int main(int argc, char** argv) {
         for (const renderer::Command& cmd : messageQueue.drain()) {
             switch (cmd.type) {
             case renderer::Command::Type::LoadModel: {
-                const auto start = std::chrono::steady_clock::now();
-                auto applied = applyLoadModel(cmd.load);
-                renderer::Event event;
-                event.type = renderer::Event::Type::ModelReady;
-                event.ready.handle = cmd.load.handle;
-                event.ready.ok = applied.ok();
-                event.ready.millis =
-                    std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() -
-                                                             start)
-                        .count();
-                if (applied) {
-                    log::info("Runtime model '{}' loaded in {:.1f} ms (handle {})",
-                              cmd.load.path, event.ready.millis, cmd.load.handle);
-                } else {
-                    std::snprintf(event.ready.error, sizeof(event.ready.error), "%s",
-                                  applied.error().message.c_str());
-                    log::warn("Runtime model '{}' failed: {}", cmd.load.path,
-                              applied.error().message);
+                // Hand the file work to the loader thread; the model shows
+                // up (and ModelReady fires) at a later drain.
+                {
+                    std::lock_guard lock(loaderMutex);
+                    loadRequests.push_back({cmd.load, std::chrono::steady_clock::now()});
                 }
-                messageQueue.pushEvent(event);
+                loaderWake.notify_one();
                 break;
             }
             case renderer::Command::Type::SetTransform: {
@@ -2205,6 +2340,34 @@ int main(int argc, char** argv) {
                 applyUnloadModel(cmd.unload);
                 break;
             }
+        }
+        // Integrate whatever the loader finished, in completion order —
+        // which the single worker keeps FIFO, so a load that skipped a
+        // texture decode always integrates after the load carrying it.
+        std::vector<PreparedLoad> ready;
+        {
+            std::lock_guard lock(preparedMutex);
+            ready.swap(preparedLoads);
+        }
+        for (PreparedLoad& load : ready) {
+            auto applied = integrateLoad(load);
+            renderer::Event event;
+            event.type = renderer::Event::Type::ModelReady;
+            event.ready.handle = load.cmd.handle;
+            event.ready.ok = applied.ok();
+            event.ready.millis = std::chrono::duration<float, std::milli>(
+                                     std::chrono::steady_clock::now() - load.requested)
+                                     .count();
+            if (applied) {
+                log::info("Runtime model '{}' ready in {:.1f} ms (handle {})", load.cmd.path,
+                          event.ready.millis, load.cmd.handle);
+            } else {
+                std::snprintf(event.ready.error, sizeof(event.ready.error), "%s",
+                              applied.error().message.c_str());
+                log::warn("Runtime model '{}' failed: {}", load.cmd.path,
+                          applied.error().message);
+            }
+            messageQueue.pushEvent(event);
         }
         for (const renderer::Event& event : messageQueue.pollEvents()) {
             if (event.type == renderer::Event::Type::ModelReady && event.ready.ok) {
@@ -2684,6 +2847,14 @@ int main(int argc, char** argv) {
     }
 
     log::info("Shutting down");
+    // The loader references importers + the claim set; stop it before any
+    // teardown. Pending requests and undelivered prepared loads just drop.
+    {
+        std::lock_guard lock(loaderMutex);
+        loaderQuit = true;
+    }
+    loaderWake.notify_one();
+    loaderThread.join();
     renderer->waitIdle();
     ui.reset(); // ImGui's Vulkan objects go while the device is idle and alive
     // The swapchain goes first: destroying it retires presents that are still
