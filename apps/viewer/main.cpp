@@ -1217,8 +1217,10 @@ int main(int argc, char** argv) {
                 const float tanHalf = std::tan(camera.fovDegrees * kPi / 360.0f);
                 const float rayAspect =
                     viewHeight > 0 ? static_cast<float>(viewWidth) / viewHeight : 1.0f;
+                // position.w = per-pixel ray-cone spread angle: how much a
+                // pixel's footprint widens per unit distance (traced LOD).
                 cameraData.position = {camera.position.x, camera.position.y, camera.position.z,
-                                       1.0f};
+                                       viewHeight > 0 ? 2.0f * tanHalf / viewHeight : 0.001f};
                 cameraData.rightAxis = {camRight.x * tanHalf * rayAspect,
                                         camRight.y * tanHalf * rayAspect,
                                         camRight.z * tanHalf * rayAspect, 0.0f};

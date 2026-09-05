@@ -17,6 +17,7 @@ struct PushConstants {
 
 // Must match CameraData in the viewer / scene.hlsl. The ray-generation
 // axes are premultiplied: right *= tan(fov/2)*aspect, up *= tan(fov/2).
+// position.w = per-pixel ray-cone spread angle (traced texture LOD).
 struct CameraData {
     column_major float4x4 viewProj;
     float4 position;
@@ -147,9 +148,29 @@ float shadowRay(float3 worldPos, float3 n, LightData light) {
     return q.CommittedStatus() == COMMITTED_TRIANGLE_HIT ? 0.0f : 1.0f;
 }
 
+// Ray-cone texture LOD (rays have no screen derivatives, so mip selection
+// is manual): the triangle's uv-per-world-unit density, in log2 space.
+// Final mip = base + 0.5*log2(texel count) + log2(cone width), stretched
+// at grazing incidence. Keeps distant surfaces from mip-0 moire/grain.
+float triangleLodBase(uint3 tri) {
+    const float3 e1 = vertexPosition(tri.y) - vertexPosition(tri.x);
+    const float3 e2 = vertexPosition(tri.z) - vertexPosition(tri.x);
+    const float2 d1 = vertexUv(tri.y) - vertexUv(tri.x);
+    const float2 d2 = vertexUv(tri.z) - vertexUv(tri.x);
+    const float worldArea = max(length(cross(e1, e2)), 1.0e-12f);
+    const float uvArea = max(abs(d1.x * d2.y - d2.x * d1.y), 1.0e-12f);
+    return 0.5f * log2(uvArea / worldArea);
+}
+
+float textureLod(uint textureIndex, float lodBase, float coneWidth, float ndotd) {
+    float w, h;
+    textures[NonUniformResourceIndex(textureIndex)].GetDimensions(w, h);
+    return lodBase + 0.5f * log2(w * h) + log2(coneWidth / max(ndotd, 0.05f));
+}
+
 // Tangent-space normal map for a traced hit: no screen derivatives here,
 // so the tangent frame comes from the triangle's edges and uv deltas.
-float3 applyNormalMap(uint normalIndex, float3 n, uint3 tri, float2 uv) {
+float3 applyNormalMap(uint normalIndex, float3 n, uint3 tri, float2 uv, float lod) {
     if (normalIndex == 0) {
         return n;
     }
@@ -166,7 +187,7 @@ float3 applyNormalMap(uint normalIndex, float3 n, uint3 tri, float2 uv) {
     t = normalize(t - n * dot(n, t)); // orthonormalize against the normal
     const float3 b = cross(n, t) * (det < 0.0f ? -1.0f : 1.0f);
     const float3 tn = textures[NonUniformResourceIndex(normalIndex)]
-                          .SampleLevel(linearSampler, uv, 0)
+                          .SampleLevel(linearSampler, uv, lod)
                           .xyz *
                           2.0f -
                       1.0f;
@@ -217,6 +238,7 @@ float4 PSMain(VSOutput input) : SV_Target0 {
 
     float3 color = 0.0f;
     float3 throughput = 1.0f;
+    float travelled = 0.0f; // cone width grows across transparency steps
     [loop] for (uint step = 0; step < kMaxTransparencySteps; ++step) {
         RayQuery<RAY_FLAG_NONE> q;
         RayDesc ray;
@@ -245,19 +267,29 @@ float4 PSMain(VSOutput input) : SV_Target0 {
         const float2 uv =
             vertexUv(tri.x) * w0 + vertexUv(tri.y) * bary.x + vertexUv(tri.z) * bary.y;
         const float3 hitPos = origin + dir * q.CommittedRayT();
+        travelled += q.CommittedRayT();
 
-        n = applyNormalMap(object.normalIndex, n, tri, uv);
+        // Manual mip selection from the pixel's ray cone at this distance.
+        const float coneWidth = max(travelled * cam.position.w, 1.0e-6f);
+        const float ndotd = abs(dot(n, dir));
+        const float lodBase = triangleLodBase(tri);
+        n = applyNormalMap(object.normalIndex, n, tri, uv,
+                           textureLod(object.normalIndex, lodBase, coneWidth, ndotd));
         float metallic = object.metallicFactor;
         float roughness = object.roughnessFactor;
         if (object.mrIndex != 0) {
-            const float2 mr = textures[NonUniformResourceIndex(object.mrIndex)]
-                                  .SampleLevel(linearSampler, uv, 0)
-                                  .gb;
+            const float2 mr =
+                textures[NonUniformResourceIndex(object.mrIndex)]
+                    .SampleLevel(linearSampler, uv,
+                                 textureLod(object.mrIndex, lodBase, coneWidth, ndotd))
+                    .gb;
             roughness *= mr.x;
             metallic *= mr.y;
         }
         const float4 albedo =
-            textures[NonUniformResourceIndex(object.textureIndex)].SampleLevel(linearSampler, uv, 0);
+            textures[NonUniformResourceIndex(object.textureIndex)]
+                .SampleLevel(linearSampler, uv,
+                             textureLod(object.textureIndex, lodBase, coneWidth, ndotd));
         const float3 l = -normalize(light.direction);
         const float direct = saturate(dot(n, l));
         const float shadow = direct > 0.0f ? shadowRay(hitPos, n, light) : 0.0f;
