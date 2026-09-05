@@ -277,9 +277,20 @@ Result<void> convertAnimations(const cgltf_data& data, const std::vector<std::ui
                 out.interpolation = AnimationInterpolation::Linear;
                 break;
             }
+            // Output accessors are vec3/vec4 per key for T/R/S but SCALAR
+            // with count = keys*targets for weights — size from the
+            // accessor itself, then validate against the expected shape.
+            out.values.resize(channel.sampler->output->count *
+                              cgltf_num_components(channel.sampler->output->type));
             if (!unpackFloats(channel.sampler->input, 1, out.times) ||
-                !unpackFloats(channel.sampler->output, components, out.values)) {
+                cgltf_accessor_unpack_floats(channel.sampler->output, out.values.data(),
+                                             out.values.size()) != out.values.size()) {
                 return Error{std::format("Failed to unpack animation '{}'", anim.name)};
+            }
+            if (out.values.size() != out.times.size() * components) {
+                return Error{std::format("Animation '{}': {} values for {} keys x {} components",
+                                         anim.name, out.values.size(), out.times.size(),
+                                         components)};
             }
             if (!out.times.empty()) {
                 anim.duration = std::max(anim.duration, out.times.back());

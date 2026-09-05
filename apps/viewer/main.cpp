@@ -88,6 +88,32 @@ math::Vec3 vadd(const math::Vec3& a, const math::Vec3& b) {
     return {a.x + b.x, a.y + b.y, a.z + b.z};
 }
 
+// Column-major matrix from a scene <Transform> (XYZ euler degrees).
+math::Mat4 transformMatrix(const assetio::TransformDesc& t) {
+    const float cx = std::cos(t.rotationDegrees[0] * kPi / 180.0f);
+    const float sx = std::sin(t.rotationDegrees[0] * kPi / 180.0f);
+    const float cy = std::cos(t.rotationDegrees[1] * kPi / 180.0f);
+    const float sy = std::sin(t.rotationDegrees[1] * kPi / 180.0f);
+    const float cz = std::cos(t.rotationDegrees[2] * kPi / 180.0f);
+    const float sz = std::sin(t.rotationDegrees[2] * kPi / 180.0f);
+    // R = Rz * Ry * Rx, columns scaled, translation last.
+    math::Mat4 m{};
+    m[0] = cz * cy * t.scale[0];
+    m[1] = sz * cy * t.scale[0];
+    m[2] = -sy * t.scale[0];
+    m[4] = (cz * sy * sx - sz * cx) * t.scale[1];
+    m[5] = (sz * sy * sx + cz * cx) * t.scale[1];
+    m[6] = cy * sx * t.scale[1];
+    m[8] = (cz * sy * cx + sz * sx) * t.scale[2];
+    m[9] = (sz * sy * cx - cz * sx) * t.scale[2];
+    m[10] = cy * cx * t.scale[2];
+    m[12] = t.position[0];
+    m[13] = t.position[1];
+    m[14] = t.position[2];
+    m[15] = 1.0f;
+    return m;
+}
+
 // Column-major TRS matrix from a skeleton node's local rest pose.
 math::Mat4 trsMatrix(const assetio::SkeletonNode& node) {
     const float x = node.rotation[0], y = node.rotation[1], z = node.rotation[2],
@@ -388,23 +414,31 @@ int main(int argc, char** argv) {
         log::info("Scene '{}' loaded in {} ms: {} models, {} vertices, {} triangles", scene->name,
                   ms, scene->models.size(), vertices, triangles);
 
-        // Animated models arrive with a live hierarchy and unbaked meshes.
-        // Until the GPU skinning pass lands, pose them at rest on the CPU
-        // so they render in place; joints/weights/morphs ride along unused.
+        // Bake each model's scene <Transform>; animated models additionally
+        // arrive with a live hierarchy and unbaked meshes, so pose them at
+        // rest on the CPU until the GPU skinning pass lands (joints/
+        // weights/morphs ride along unused for now).
         for (auto& model : scene->models) {
-            if (model.data.skeleton.empty()) {
-                continue;
-            }
-            const auto& nodes = model.data.skeleton.nodes;
-            std::vector<math::Mat4> world(nodes.size());
-            for (std::size_t i = 0; i < nodes.size(); ++i) {
-                const math::Mat4 local = trsMatrix(nodes[i]);
-                world[i] = nodes[i].parent >= 0
-                               ? math::mul(world[static_cast<std::size_t>(nodes[i].parent)], local)
-                               : local;
+            const math::Mat4 modelMatrix = transformMatrix(model.desc.transform);
+            std::vector<math::Mat4> world;
+            if (!model.data.skeleton.empty()) {
+                const auto& nodes = model.data.skeleton.nodes;
+                world.resize(nodes.size());
+                for (std::size_t i = 0; i < nodes.size(); ++i) {
+                    const math::Mat4 local = trsMatrix(nodes[i]);
+                    world[i] =
+                        nodes[i].parent >= 0
+                            ? math::mul(world[static_cast<std::size_t>(nodes[i].parent)], local)
+                            : local;
+                }
+                log::info("  '{}' posed at rest: {} nodes, {} joints, {} animations",
+                          model.desc.name, nodes.size(), model.data.skeleton.jointNodes.size(),
+                          model.data.animations.size());
             }
             for (auto& mesh : model.data.meshes) {
-                const math::Mat4& m = world[mesh.sourceNode];
+                const math::Mat4 m = world.empty()
+                                         ? modelMatrix
+                                         : math::mul(modelMatrix, world[mesh.sourceNode]);
                 for (std::size_t v = 0; v + 2 < mesh.positions.size(); v += 3) {
                     const float x = mesh.positions[v], y = mesh.positions[v + 1],
                                 z = mesh.positions[v + 2];
@@ -422,10 +456,20 @@ int main(int argc, char** argv) {
                     mesh.normals[v + 1] = n.y;
                     mesh.normals[v + 2] = n.z;
                 }
+                // Morph deltas are direction-like: rotate/scale, no
+                // translation, and position deltas keep their magnitudes.
+                for (auto& target : mesh.morphTargets) {
+                    for (auto* deltas : {&target.positionDeltas, &target.normalDeltas}) {
+                        for (std::size_t v = 0; v + 2 < deltas->size(); v += 3) {
+                            const float x = (*deltas)[v], y = (*deltas)[v + 1],
+                                        z = (*deltas)[v + 2];
+                            (*deltas)[v] = m[0] * x + m[4] * y + m[8] * z;
+                            (*deltas)[v + 1] = m[1] * x + m[5] * y + m[9] * z;
+                            (*deltas)[v + 2] = m[2] * x + m[6] * y + m[10] * z;
+                        }
+                    }
+                }
             }
-            log::info("  '{}' posed at rest: {} nodes, {} joints, {} animations",
-                      model.desc.name, nodes.size(), model.data.skeleton.jointNodes.size(),
-                      model.data.animations.size());
         }
     } else {
         log::info("No scene file given "
