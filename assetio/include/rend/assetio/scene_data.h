@@ -144,6 +144,10 @@ struct ModelNodeDesc {
     std::filesystem::path fragmentShaderPath;
     std::filesystem::path meshPath; // resolved to an absolute path
     TransformDesc transform;
+    // Semantic surface tag (intent model: says what the object IS, never
+    // the technique): reflective objects may get traced reflections on
+    // hardware that offers them; elsewhere they shade as plain surfaces.
+    bool reflective = false;
 };
 
 struct SceneDesc {

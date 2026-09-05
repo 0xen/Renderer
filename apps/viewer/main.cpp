@@ -46,11 +46,12 @@ struct GeometryLocation {
 // entry's firstInstance. Must match ObjectData in scene.hlsl.
 constexpr std::uint32_t kObjectAlphaMasked = 1u;
 constexpr std::uint32_t kObjectTransparent = 2u;
+constexpr std::uint32_t kObjectReflective = 4u; // per-object RT reflections
 struct ObjectData {
     std::uint32_t textureIndex = 0;
     std::uint32_t normalIndex = 0; // 0 = no normal map (use vertex normal)
     std::uint32_t mrIndex = 0;     // 0 = factors only (glTF: B=metal, G=rough)
-    std::uint32_t flags = 0;       // kObjectAlphaMasked | kObjectTransparent
+    std::uint32_t flags = 0;       // kObject* bits above
     float alphaCutoff = 0.5f;
     float baseAlpha = 1.0f; // baseColorFactor.a: blend opacity multiplier
     float metallicFactor = 1.0f;
@@ -714,6 +715,11 @@ int main(int argc, char** argv) {
                     object.textureIndex = registerTexture(material.baseColorTexture, true);
                     object.normalIndex = registerTexture(material.normalTexture, false);
                     object.mrIndex = registerTexture(material.metallicRoughnessTexture, false);
+                }
+                // Semantic scene tag; the RT-variant shaders decide whether
+                // to trace it (offer model — non-RT devices just ignore it).
+                if (model.desc.reflective) {
+                    object.flags |= kObjectReflective;
                 }
                 objectData.push_back(object);
 

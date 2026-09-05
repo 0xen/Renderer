@@ -58,7 +58,11 @@ foreach(stage IN LISTS REND_SHADER_STAGES)
                 -T ${profile} -E ${entrypoint} -fspv-entrypoint-name=main
                 ${defines}
                 -Fo "${artifact_path}" "${source_path}"
+        # Every stage depends on the shared includes; dxc resolves the
+        # #include paths relative to the source file itself.
         DEPENDS "${source_path}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/shaders/shading.hlsli"
+                "${CMAKE_CURRENT_SOURCE_DIR}/shaders/rt_common.hlsli"
         COMMENT "dxc ${source} [${profile} ${entrypoint}] -> ${artifact}"
         VERBATIM)
     list(APPEND REND_SHADER_ARTIFACTS "${artifact_path}")
@@ -68,10 +72,11 @@ endforeach()
 # otherwise hand them to its built-in FXC rule instead of our dxc command.
 set_source_files_properties(
     shaders/triangle.hlsl shaders/scene.hlsl shaders/cull.hlsl shaders/shadow.hlsl
-    shaders/rt_primary.hlsl shaders/skin.hlsl
+    shaders/rt_primary.hlsl shaders/skin.hlsl shaders/shading.hlsli shaders/rt_common.hlsli
     PROPERTIES VS_TOOL_OVERRIDE "None")
 
 add_custom_target(shaders ALL DEPENDS ${REND_SHADER_ARTIFACTS}
     SOURCES shaders/triangle.hlsl shaders/scene.hlsl shaders/cull.hlsl shaders/shadow.hlsl
-            shaders/rt_primary.hlsl shaders/skin.hlsl)
+            shaders/rt_primary.hlsl shaders/skin.hlsl shaders/shading.hlsli
+            shaders/rt_common.hlsli)
 set_target_properties(shaders PROPERTIES FOLDER "assets")

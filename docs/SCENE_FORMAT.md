@@ -76,6 +76,12 @@ registry (currently glTF 2.0 via cgltf; new formats = new importer, nothing else
 </Scene>
 ```
 
+`Model` takes an optional `reflective="true"` attribute — a semantic surface tag in
+the intent-model sense: it says the object *is* mirror-like, never how to render it.
+On hardware offering ray queries the renderer traces per-object reflections for its
+fragments (cost scales with screen coverage); everywhere else the object shades as a
+plain surface.
+
 `Light` describes what the light *is* (direction points from the light toward the
 scene), never the rendering technique — shadow maps vs ray tracing is the renderer's
 offer, per the intent/offer model in ARCHITECTURE.md. `type` is `directional` only for

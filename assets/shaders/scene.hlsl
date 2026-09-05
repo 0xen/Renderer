@@ -11,64 +11,17 @@ struct PushConstants {
 };
 [[vk::push_constant]] PushConstants pc;
 
-// Explicitly column_major: dxc does NOT apply the cbuffer default to
-// matrices inside structured buffers, so an unqualified float4x4 here
-// reads transposed (wrong camera position/orientation).
-struct CameraData {
-    column_major float4x4 viewProj; // matches rend::math memcpy
-    // Ray-generation extras for the traced primary pass (rt_primary.hlsl);
-    // unused here but part of the shared per-slot layout.
-    float4 position;
-    float4 rightAxis;
-    float4 upAxis;
-    float4 forwardAxis;
-};
-[[vk::binding(6, 0)]] StructuredBuffer<CameraData> cameras;
+// Data layouts, common bindings (0-2, 6, 7) and the BRDF live in the
+// shared include so the raster and traced paths can never drift apart.
+#include "shading.hlsli"
 
-struct ObjectData {
-    uint textureIndex; // into the bindless texture array
-    uint normalIndex;  // 0 = no normal map (use the vertex normal)
-    uint mrIndex;      // 0 = factors only (glTF: B = metallic, G = roughness)
-    uint flags;        // bit 0: alpha-masked, bit 1: transparent (blend)
-    float alphaCutoff;
-    float baseAlpha; // baseColorFactor.a: blend opacity multiplier
-    float metallicFactor;
-    float roughnessFactor;
-};
-
-static const uint kFlagAlphaMasked = 1u;
-static const float kPi = 3.14159265f;
-
-// Must match LightData in the viewer / shadow.hlsl. One region per frame
-// slot, like the camera.
-struct LightData {
-    column_major float4x4 cascadeViewProj[4]; // light-space transforms per cascade
-    float4 splitDepths; // view-space depth where each cascade ends
-    float3 direction;   // world space, from the light toward the scene
-    float intensity;
-    float3 color;
-    float pcfRadius; // filter radius in shadow-map texels (0 = hard 2x2)
-    float biasBase;  // depth-compare bias floor; slope-scaled up to 8x
-    float mapSize;   // shadow map resolution (texel size = 1/mapSize)
-    uint cascadeCount;
-    uint debugTint; // non-zero: tint output by cascade for inspection
-    uint rtShadows; // non-zero: trace shadow rays instead of sampling maps
-    uint pad2;
-    uint pad3;
-    uint pad4;
-};
-
-[[vk::binding(0, 0)]] StructuredBuffer<ObjectData> objects;
-[[vk::binding(1, 0)]] Texture2D textures[];
-[[vk::binding(2, 0)]] SamplerState linearSampler;
-[[vk::binding(7, 0)]] StructuredBuffer<LightData> lights;
 [[vk::binding(8, 0)]] Texture2D<float> shadowMaps[4];
 [[vk::binding(9, 0)]] SamplerComparisonState shadowSampler;
 #if RT_SHADOWS
-// Hybrid ray-traced shadows (compiled only into scene_rt.frag.spv, used on
-// RayQuery devices): rasterization stays primary visibility, only the
-// shadow ray is traced — pixel toward the sun through the scene TLAS.
-[[vk::binding(10, 0)]] RaytracingAccelerationStructure sceneBVH;
+// Ray-query machinery (compiled only into scene_rt.frag.spv, used on
+// RayQuery devices): the scene TLAS + geometry fetch for hybrid traced
+// shadows (shadowRay) and per-object reflection rays (traceReflection).
+#include "rt_common.hlsli"
 #endif
 
 struct VSInput {
@@ -155,23 +108,6 @@ float shadowFactor(float3 worldPos, float3 n, float viewDepth, LightData light,
     return shadow;
 }
 
-#if RT_SHADOWS
-// One opaque any-hit ray from the surface toward the sun. Alpha-masked
-// casters count as solid here (colored/cutout shadow rays are a later
-// any-hit refinement).
-float rtShadowFactor(float3 worldPos, float3 n, LightData light) {
-    RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_FORCE_OPAQUE> q;
-    RayDesc ray;
-    ray.Origin = worldPos + n * 0.02f;
-    ray.Direction = -light.direction;
-    ray.TMin = 0.0f;
-    ray.TMax = 1.0e4f;
-    q.TraceRayInline(sceneBVH, RAY_FLAG_NONE, 0xff, ray);
-    q.Proceed();
-    return q.CommittedStatus() == COMMITTED_TRIANGLE_HIT ? 0.0f : 1.0f;
-}
-#endif
-
 // Tangent-space normal map applied via the screen-space cotangent frame
 // (Schueler): derivatives of position and uv rebuild the tangent basis, so
 // the vertex layout needs no baked tangents.
@@ -194,33 +130,6 @@ float3 applyNormalMap(uint normalIndex, float3 n, float3 worldPos, float2 uv) {
         textures[NonUniformResourceIndex(normalIndex)].Sample(linearSampler, uv).xyz * 2.0f -
         1.0f;
     return normalize(t * tn.x + b * tn.y + n * tn.z);
-}
-
-// One directional light, glTF metallic-roughness: Lambert diffuse + GGX
-// specular (Smith-Schlick visibility, Schlick Fresnel). Scaled by pi so a
-// white dielectric matches the old albedo*NdotL model's brightness.
-float3 shadeSurface(float3 albedo, float metallic, float roughness, float3 n, float3 v, float3 l,
-                    float3 lightColor, float intensity, float shadow) {
-    const float ndotl = saturate(dot(n, l));
-    if (ndotl <= 0.0f || shadow <= 0.0f) {
-        return 0.0f;
-    }
-    const float3 h = normalize(v + l);
-    const float ndotv = max(dot(n, v), 1.0e-4f);
-    const float ndoth = saturate(dot(n, h));
-    const float vdoth = saturate(dot(v, h));
-    const float a = max(roughness * roughness, 1.0e-3f);
-    const float a2 = a * a;
-    const float dDenom = ndoth * ndoth * (a2 - 1.0f) + 1.0f;
-    const float d = a2 / (kPi * dDenom * dDenom);
-    const float k = a * 0.5f;
-    const float gv = ndotv / (ndotv * (1.0f - k) + k);
-    const float gl = ndotl / (ndotl * (1.0f - k) + k);
-    const float3 f0 = lerp(0.04f, albedo, metallic);
-    const float3 f = f0 + (1.0f - f0) * pow(1.0f - vdoth, 5.0f);
-    const float3 specular = d * gv * gl * f / (4.0f * ndotv * ndotl + 1.0e-4f);
-    const float3 diffuse = albedo * (1.0f - metallic) / kPi;
-    return (diffuse + specular) * lightColor * (intensity * ndotl * shadow * kPi);
 }
 
 float4 PSMain(VSOutput input) : SV_Target0 {
@@ -248,7 +157,7 @@ float4 PSMain(VSOutput input) : SV_Target0 {
     float shadow = 1.0f;
 #if RT_SHADOWS
     if (light.rtShadows != 0) {
-        shadow = direct > 0.0f ? rtShadowFactor(input.worldPos, n, light) : 0.0f;
+        shadow = direct > 0.0f ? shadowRay(input.worldPos, n, light) : 0.0f;
     } else
 #endif
     if (light.cascadeCount > 0) {
@@ -260,8 +169,21 @@ float4 PSMain(VSOutput input) : SV_Target0 {
     const float3 v = normalize(cameras[pc.cameraSlot].position.xyz - input.worldPos);
     const float3 sun = shadeSurface(albedo.rgb, metallic, roughness, n, v, l, light.color,
                                     light.intensity, shadow);
-    const float3 ambient = float3(0.30f, 0.32f, 0.36f) * (n.y * 0.2f + 0.5f);
-    float3 color = albedo.rgb * ambient + sun;
+    float3 color = albedo.rgb * ambientLight(n) + sun;
+#if RT_SHADOWS
+    // Per-object RT: reflective-flagged fragments fire one reflection ray
+    // through the TLAS and Fresnel-mix the traced result into their base
+    // shading. Cost scales with the flagged objects' screen coverage.
+    if ((object.flags & kFlagReflective) != 0) {
+        const float3 camPos = cameras[pc.cameraSlot].position.xyz;
+        const float3 reflected = traceReflection(
+            input.worldPos + n * 1.0e-3f, reflect(-v, n),
+            length(input.worldPos - camPos), cameras[pc.cameraSlot].position.w, light);
+        const float3 f0 = lerp(0.04f, albedo.rgb, metallic);
+        const float3 f = f0 + (1.0f - f0) * pow(1.0f - saturate(dot(n, v)), 5.0f);
+        color = lerp(color, reflected, f * (1.0f - roughness));
+    }
+#endif
     if (light.debugTint != 0) {
         const float3 tints[4] = {float3(1.0f, 0.6f, 0.6f), float3(0.6f, 1.0f, 0.6f),
                                  float3(0.6f, 0.6f, 1.0f), float3(1.0f, 1.0f, 0.6f)};
