@@ -91,6 +91,14 @@ struct DrawBatch {
     // buffer (binding 6); only the slot index is pushed, so a moving
     // camera never invalidates static recordings.
     VkDescriptorSet descriptors = nullptr;  // bindless table set, bound once if set
+    // Ray-traced primary visibility (optional): when rtPrimary is set and
+    // the pipeline is present, the frame skips the shadow cascades, the
+    // compaction dispatch and the indirect draw stream entirely and instead
+    // draws one fullscreen triangle whose fragment shader traces the scene
+    // through the TLAS (bindings 10-12). Toggling rtPrimary changes what
+    // gets recorded — invalidate static recordings after flipping it.
+    const Pipeline* rtPrimaryPipeline = nullptr;
+    bool rtPrimary = false;
 };
 
 // Per-frame-recorded baseline frame loop: acquire, record, submit, present,
@@ -122,6 +130,11 @@ public:
     // indirect buffer, never through re-recording.
     void setStaticRecording(bool enabled);
     bool staticRecording() const { return staticEnabled_; }
+
+    // Drops any static recordings (they rebuild lazily on the next
+    // drawFrame). Call after changing what a frame records — e.g. flipping
+    // DrawBatch::rtPrimary. Waits for the device to go idle first.
+    void invalidateStaticRecordings() { invalidateStatic(); }
 
     // Per-frame overlay (UI) recorded into its own small command buffer
     // after the scene: the callback runs inside an active dynamic rendering

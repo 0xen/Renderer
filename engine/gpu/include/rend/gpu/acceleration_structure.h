@@ -28,6 +28,10 @@ public:
         std::uint32_t vertexCount = 0;
         std::uint64_t indexOffset = 0;
         std::uint32_t indexCount = 0;
+        // Opaque geometries never surface as ray-query candidates; leave
+        // false for alpha-masked or blended surfaces so shaders can run
+        // the any-hit alpha test / transparency march on them.
+        bool opaque = true;
     };
 
     struct Instance {

@@ -63,6 +63,7 @@ MaterialData convertMaterial(const cgltf_material& m, const std::filesystem::pat
     out.normalTexture = resolveTexture(m.normal_texture, baseDir);
     out.alphaMasked = m.alpha_mode == cgltf_alpha_mode_mask;
     out.alphaCutoff = m.alpha_cutoff;
+    out.transparent = m.alpha_mode == cgltf_alpha_mode_blend;
     return out;
 }
 

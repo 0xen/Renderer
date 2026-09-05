@@ -45,6 +45,9 @@ struct MaterialData {
     std::filesystem::path metallicRoughnessTexture; // empty = none
     bool alphaMasked = false;
     float alphaCutoff = 0.5f;
+    // Alpha-blend material (glTF alphaMode BLEND): drawn see-through;
+    // opacity = baseColorFactor.a x base-color texture alpha.
+    bool transparent = false;
 };
 
 // One drawable chunk: a single material over one vertex/index range.

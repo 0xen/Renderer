@@ -165,7 +165,7 @@ Result<std::unique_ptr<AccelerationStructure>> AccelerationStructure::buildBotto
         auto& geo = geos[i];
         geo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
         geo.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
-        geo.flags = VK_GEOMETRY_OPAQUE_BIT_KHR;
+        geo.flags = g.opaque ? VK_GEOMETRY_OPAQUE_BIT_KHR : 0;
         auto& tris = geo.geometry.triangles;
         tris.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR;
         tris.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;

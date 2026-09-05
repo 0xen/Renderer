@@ -31,6 +31,10 @@ class Device;
 //   8 — shadow cascade maps [4] (fragment; depth images the scene samples)
 //   9 — shadow comparison sampler (fragment; PCF, owned here)
 //   10 — scene TLAS (fragment; only on devices with Feature::RayQuery)
+//   11 — geometry pool raw bytes (fragment; RayQuery only — hit-attribute
+//        fetch for traced primary rays)
+//   12 — per-object geometry info SSBO (fragment; RayQuery only —
+//        firstIndex/vertexOffset per BLAS geometry index)
 class DescriptorTable {
 public:
     static Result<std::unique_ptr<DescriptorTable>> create(const Device& device,

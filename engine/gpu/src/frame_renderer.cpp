@@ -192,7 +192,12 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
         return Error{std::format("vkBeginCommandBuffer failed ({})", static_cast<int>(r))};
     }
 
-    if (batch && batch->cullPipeline && batch->mode == DrawSubmitMode::IndirectCount) {
+    // Traced primary visibility replaces the raster pipeline: no shadow
+    // cascades, no compaction, no indirect stream — one fullscreen triangle
+    // whose fragments walk the TLAS instead.
+    const bool rtDraw = batch && batch->rtPrimary && batch->rtPrimaryPipeline;
+
+    if (batch && !rtDraw && batch->cullPipeline && batch->mode == DrawSubmitMode::IndirectCount) {
         // GPU compaction: zero the slot's draw count, run one thread per
         // template, then make the writes visible to the indirect fetch.
         vkCmdFillBuffer(cmd, batch->count, slot * batch->countRegionStride,
@@ -274,7 +279,7 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
     shadowDependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
     shadowDependency.imageMemoryBarrierCount = 1;
 
-    if (batch && batch->shadowPipeline && batch->cascadeCount > 0) {
+    if (batch && !rtDraw && batch->shadowPipeline && batch->cascadeCount > 0) {
         for (std::uint32_t c = 0; c < batch->cascadeCount; ++c) {
             const Image* map = batch->shadowCascades[c];
             // Depth-only pass from the light's view. Contents are cleared,
@@ -350,7 +355,7 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
     dependency.pImageMemoryBarriers = &toColor;
     vkCmdPipelineBarrier2(cmd, &dependency);
 
-    if (batch) {
+    if (batch && !rtDraw) {
         // Depth contents are cleared each frame, so the previous frame's
         // layout is irrelevant (UNDEFINED); the barrier orders against the
         // prior frame's depth accesses.
@@ -389,9 +394,9 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
     rendering.layerCount = 1;
     rendering.colorAttachmentCount = 1;
     rendering.pColorAttachments = &color;
-    // Depth only when drawing a batch: the attachment set must match the
-    // pipeline's declared depthFormat.
-    rendering.pDepthAttachment = batch ? &depth : nullptr;
+    // Depth only when rasterizing a batch: the attachment set must match
+    // the pipeline's declared depthFormat (traced primary needs none).
+    rendering.pDepthAttachment = (batch && !rtDraw) ? &depth : nullptr;
     vkCmdBeginRendering(cmd, &rendering);
 
     const VkViewport viewport{0.0f, 0.0f, static_cast<float>(extent.width),
@@ -400,12 +405,30 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
     vkCmdSetViewport(cmd, 0, 1, &viewport);
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.handle());
-    if (batch) {
-        // The whole scene: geometry pool bound once, one indirect stream.
-        bindAndDraw(pipeline, 0);
-    } else {
+    if (rtDraw) {
+        // Fullscreen traced pass: every pixel fires a camera ray in the
+        // fragment shader; camera/light/slot data flow exactly as in the
+        // raster path, so static recordings survive camera motion here too.
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                          batch->rtPrimaryPipeline->handle());
+        if (batch->descriptors != VK_NULL_HANDLE) {
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                    batch->rtPrimaryPipeline->layout(), 0, 1,
+                                    &batch->descriptors, 0, nullptr);
+        }
+        const std::uint32_t push[2] = {slot, 0};
+        vkCmdPushConstants(cmd, batch->rtPrimaryPipeline->layout(),
+                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                           sizeof(push), push);
         vkCmdDraw(cmd, 3, 1, 0, 0);
+    } else {
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.handle());
+        if (batch) {
+            // The whole scene: geometry pool bound once, one indirect stream.
+            bindAndDraw(pipeline, 0);
+        } else {
+            vkCmdDraw(cmd, 3, 1, 0, 0);
+        }
     }
 
     vkCmdEndRendering(cmd);

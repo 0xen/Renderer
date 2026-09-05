@@ -44,11 +44,33 @@ struct GeometryLocation {
 
 // One row per object in the bindless table's SSBO, found by the indirect
 // entry's firstInstance. Must match ObjectData in scene.hlsl.
+constexpr std::uint32_t kObjectAlphaMasked = 1u;
+constexpr std::uint32_t kObjectTransparent = 2u;
 struct ObjectData {
     std::uint32_t textureIndex = 0;
-    std::uint32_t alphaMasked = 0;
+    std::uint32_t flags = 0; // kObjectAlphaMasked | kObjectTransparent
     float alphaCutoff = 0.5f;
-    float pad = 0.0f;
+    float baseAlpha = 1.0f; // baseColorFactor.a: blend opacity multiplier
+};
+
+// Per-slot camera region. viewProj feeds the raster vertex shader; the
+// extra vectors are ray-generation axes for the traced primary pass
+// (right/up premultiplied by tan(fov/2)*aspect and tan(fov/2)).
+// Must match CameraData in scene.hlsl / rt_primary.hlsl.
+struct CameraData {
+    math::Mat4 viewProj{};
+    std::array<float, 4> position{};
+    std::array<float, 4> rightAxis{};
+    std::array<float, 4> upAxis{};
+    std::array<float, 4> forwardAxis{};
+};
+static_assert(sizeof(CameraData) == 128);
+
+// Per BLAS-geometry (== object) index: {firstIndex, vertexOffset} in
+// uint32/vertex-stride units — the traced pass pulls hit triangles itself.
+struct GeometryInfo {
+    std::uint32_t firstIndex = 0;
+    std::uint32_t vertexOffset = 0;
 };
 
 // Interleaved vertex layout of the scene pass: position, normal, uv.
@@ -263,6 +285,7 @@ int main(int argc, char** argv) {
     bool vsync = true;
     bool staticMode = false;
     bool rtFromStart = false; // start with ray-traced shadows on (if supported)
+    bool rtPrimaryFromStart = false; // start with traced primary rays (if supported)
     std::uint64_t benchFrames = 0; // non-zero: exit after N frames with a report
     // Caps the draw-submit ladder for testing the fallbacks; the actual mode
     // is still limited by what the device supports.
@@ -278,6 +301,8 @@ int main(int argc, char** argv) {
             staticMode = true;
         } else if (arg == "--rt") {
             rtFromStart = true;
+        } else if (arg == "--rtprimary") {
+            rtPrimaryFromStart = true;
         } else if (arg == "--bench" && i + 1 < argc) {
             const std::string_view count = argv[++i];
             std::from_chars(count.data(), count.data() + count.size(), benchFrames);
@@ -380,7 +405,8 @@ int main(int argc, char** argv) {
     std::unique_ptr<gpu::Buffer> indirectBuffer;
     std::unique_ptr<gpu::Buffer> compactedBuffer;
     std::unique_ptr<gpu::Buffer> countBuffer;
-    std::unique_ptr<gpu::Buffer> cameraBuffer; // one viewProj per frame slot, CPU-written
+    std::unique_ptr<gpu::Buffer> cameraBuffer; // one CameraData per frame slot, CPU-written
+    std::unique_ptr<gpu::Buffer> geometryInfoBuffer; // per-object triangle lookup (RT primary)
     std::unique_ptr<gpu::Buffer> lightBuffer;  // one LightData per frame slot, CPU-written
     std::vector<std::unique_ptr<gpu::Image>> shadowMaps; // one per cascade
     std::unique_ptr<gpu::AccelerationStructure> blas, tlas; // RT shadow BVH
@@ -403,9 +429,13 @@ int main(int argc, char** argv) {
         const auto start = std::chrono::steady_clock::now();
         // With ray tracing, the geometry pool doubles as the BLAS build
         // input, which needs device-address usage.
+        // Storage usage too: the traced primary pass reads hit triangles
+        // straight out of the pool (descriptor binding 11).
         auto poolResult = gpu::MemoryPool::create(
             *device, 128ull * 1024 * 1024,
-            rtSupported ? (gpu::kUsageShaderDeviceAddress | gpu::kUsageAccelBuildInput) : 0);
+            rtSupported ? (gpu::kUsageShaderDeviceAddress | gpu::kUsageAccelBuildInput |
+                           gpu::kUsageStorage)
+                        : 0);
         if (!poolResult) {
             log::error("Memory pool creation failed: {}", poolResult.error().message);
             return 1;
@@ -430,8 +460,10 @@ int main(int argc, char** argv) {
                 ObjectData object;
                 if (mesh.materialIndex < model.data.materials.size()) {
                     const auto& material = model.data.materials[mesh.materialIndex];
-                    object.alphaMasked = material.alphaMasked ? 1u : 0u;
+                    object.flags = (material.alphaMasked ? kObjectAlphaMasked : 0u) |
+                                   (material.transparent ? kObjectTransparent : 0u);
                     object.alphaCutoff = material.alphaCutoff;
+                    object.baseAlpha = material.baseColorFactor[3];
                     if (!material.baseColorTexture.empty()) {
                         const std::string key = material.baseColorTexture.string();
                         auto [it, inserted] = textureSlotByPath.try_emplace(
@@ -554,7 +586,7 @@ int main(int argc, char** argv) {
         // buffers valid while the camera moves.
         auto cameraResult = gpu::Buffer::create(
             *device, {
-                         .size = sizeof(math::Mat4) * gpu::FrameRenderer::kFramesInFlight,
+                         .size = sizeof(CameraData) * gpu::FrameRenderer::kFramesInFlight,
                          .usage = gpu::kUsageStorage,
                          .location = gpu::MemoryLocation::HostVisible,
                      });
@@ -612,6 +644,39 @@ int main(int argc, char** argv) {
             return 1;
         }
 
+        // Triangle lookup for the traced primary pass: where each object's
+        // indices/vertices sit in the pool, in element units.
+        if (rtSupported) {
+            std::vector<GeometryInfo> geometryInfo;
+            geometryInfo.reserve(geometry.size());
+            for (const GeometryLocation& location : geometry) {
+                geometryInfo.push_back({
+                    .firstIndex = static_cast<std::uint32_t>(location.indices.offset /
+                                                             sizeof(std::uint32_t)),
+                    .vertexOffset =
+                        static_cast<std::uint32_t>(location.vertices.offset / kVertexStride),
+                });
+            }
+            auto infoResult = gpu::Buffer::create(
+                *device, {
+                             .size = geometryInfo.size() * sizeof(GeometryInfo),
+                             .usage = gpu::kUsageStorage | gpu::kUsageTransferDst,
+                             .location = gpu::MemoryLocation::DeviceLocal,
+                             .sharedWithTransferQueue = true,
+                         });
+            if (!infoResult) {
+                log::error("Geometry info buffer creation failed: {}", infoResult.error().message);
+                return 1;
+            }
+            geometryInfoBuffer = std::move(infoResult).value();
+            if (auto staged = transfer->stage(*geometryInfoBuffer, 0, geometryInfo.data(),
+                                              geometryInfo.size() * sizeof(GeometryInfo));
+                !staged) {
+                log::error("Geometry info staging failed: {}", staged.error().message);
+                return 1;
+            }
+        }
+
         if (auto flushed = transfer->flush(); !flushed) {
             log::error("Geometry upload failed: {}", flushed.error().message);
             return 1;
@@ -627,7 +692,8 @@ int main(int argc, char** argv) {
             const auto rtStart = std::chrono::steady_clock::now();
             std::vector<gpu::AccelerationStructure::TriangleGeometry> triangles;
             triangles.reserve(geometry.size());
-            for (const GeometryLocation& location : geometry) {
+            for (std::size_t i = 0; i < geometry.size(); ++i) {
+                const GeometryLocation& location = geometry[i];
                 triangles.push_back({
                     .buffer = &geometryPool->buffer(),
                     .vertexOffset = location.vertices.offset,
@@ -636,6 +702,10 @@ int main(int argc, char** argv) {
                         static_cast<std::uint32_t>(location.vertices.size / kVertexStride),
                     .indexOffset = location.indices.offset,
                     .indexCount = location.indexCount,
+                    // Masked/blended surfaces stay non-opaque so traced
+                    // rays can alpha-test or march through them.
+                    .opaque = (objectData[i].flags &
+                               (kObjectAlphaMasked | kObjectTransparent)) == 0,
                 });
             }
             auto blasResult = gpu::AccelerationStructure::buildBottomLevel(*device, triangles);
@@ -688,6 +758,12 @@ int main(int argc, char** argv) {
         }
         if (rtReady) {
             descriptorTable->writeAccelerationStructure(tlas->handle());
+            // Traced-primary triangle fetch: the pool's raw bytes plus the
+            // per-object index/vertex offsets.
+            descriptorTable->writeStorageBuffer(11, geometryPool->buffer().handle(),
+                                                geometryPool->buffer().size());
+            descriptorTable->writeStorageBuffer(12, geometryInfoBuffer->handle(),
+                                                geometryInfoBuffer->size());
         }
 
         auto uploaderResult = gpu::TextureUploader::create(*device);
@@ -876,6 +952,37 @@ int main(int argc, char** argv) {
         }
     }
 
+    // Traced primary visibility: fullscreen pass whose fragments walk the
+    // TLAS (ps_6_5 — only loadable where RayQuery is enabled). Optional:
+    // failure just leaves the raster path.
+    std::unique_ptr<gpu::Pipeline> rtPrimaryPipeline;
+    std::unique_ptr<gpu::Shader> rtPrimaryVert, rtPrimaryFrag;
+    if (scene && rtReady) {
+        auto vertResult = gpu::Shader::createFromFile(*device, shaderDir / "rt_primary.vert.spv");
+        auto fragResult = gpu::Shader::createFromFile(*device, shaderDir / "rt_primary.frag.spv");
+        if (vertResult && fragResult) {
+            rtPrimaryVert = std::move(vertResult).value();
+            rtPrimaryFrag = std::move(fragResult).value();
+            auto pipeResult = gpu::Pipeline::createGraphics(
+                *device, {
+                             .vertexShader = rtPrimaryVert.get(),
+                             .fragmentShader = rtPrimaryFrag.get(),
+                             .colorFormat = swapchain->imageFormat(),
+                             .depthFormat = 0, // rays need no depth buffer
+                             .pushConstantBytes = 2 * sizeof(std::uint32_t),
+                             .descriptorLayout = descriptorTable->layout(),
+                         });
+            if (pipeResult) {
+                rtPrimaryPipeline = std::move(pipeResult).value();
+            } else {
+                log::warn("RT primary pipeline unavailable: {}", pipeResult.error().message);
+            }
+        } else {
+            log::warn("RT primary shaders unavailable: {}",
+                      (!vertResult ? vertResult : fragResult).error().message);
+        }
+    }
+
     auto rendererResult = gpu::FrameRenderer::create(*device, *swapchain);
     if (!rendererResult) {
         log::error("Frame renderer creation failed: {}", rendererResult.error().message);
@@ -927,6 +1034,8 @@ int main(int argc, char** argv) {
             }
             batch.cascadeCount = kShadowCascades;
         }
+        batch.rtPrimaryPipeline = rtPrimaryPipeline.get();
+        batch.rtPrimary = rtPrimaryFromStart && rtPrimaryPipeline != nullptr;
 
         const char* modeName = batch.mode == gpu::DrawSubmitMode::IndirectCount
                                    ? "indirect-count + GPU compaction"
@@ -1079,10 +1188,30 @@ int main(int argc, char** argv) {
                 log::error("Frame failed: {}", r.error().message);
                 break;
             }
-            const math::Mat4 viewProj = camera.viewProj(viewWidth, viewHeight);
+            CameraData cameraData;
+            cameraData.viewProj = camera.viewProj(viewWidth, viewHeight);
+            {
+                // Ray-generation basis for the traced primary pass: the
+                // lookAt frame with right/up prescaled by the frustum.
+                const math::Vec3 camFwd = camera.forward();
+                const math::Vec3 camRight =
+                    math::normalize(math::cross(camFwd, {0.0f, 1.0f, 0.0f}));
+                const math::Vec3 camUp = math::cross(camRight, camFwd);
+                const float tanHalf = std::tan(camera.fovDegrees * kPi / 360.0f);
+                const float rayAspect =
+                    viewHeight > 0 ? static_cast<float>(viewWidth) / viewHeight : 1.0f;
+                cameraData.position = {camera.position.x, camera.position.y, camera.position.z,
+                                       1.0f};
+                cameraData.rightAxis = {camRight.x * tanHalf * rayAspect,
+                                        camRight.y * tanHalf * rayAspect,
+                                        camRight.z * tanHalf * rayAspect, 0.0f};
+                cameraData.upAxis = {camUp.x * tanHalf, camUp.y * tanHalf, camUp.z * tanHalf,
+                                     0.0f};
+                cameraData.forwardAxis = {camFwd.x, camFwd.y, camFwd.z, 0.0f};
+            }
             std::memcpy(static_cast<std::byte*>(cameraBuffer->mapped()) +
-                            renderer->frameSlot() * sizeof(math::Mat4),
-                        viewProj.data(), sizeof(math::Mat4));
+                            renderer->frameSlot() * sizeof(CameraData),
+                        &cameraData, sizeof(CameraData));
             LightData lightData;
             const math::Vec3 direction = sun.direction();
             const float aspect =
@@ -1117,7 +1246,20 @@ int main(int argc, char** argv) {
                 const gpu::ShadowTechnique active = (rtReady && sun.rtShadows)
                                                         ? gpu::ShadowTechnique::RayTraced
                                                         : gpu::ShadowTechnique::CascadedShadowMaps;
-                if (ImGui::BeginCombo("Shadows", gpu::shadowTechniqueName(active))) {
+                if (batch.rtPrimaryPipeline) {
+                    // Recording differs between the two modes, so flipping
+                    // drops any static command buffers (lazy rebuild).
+                    const char* primaryNames[] = {"Raster", "Ray traced"};
+                    int primary = batch.rtPrimary ? 1 : 0;
+                    if (ImGui::Combo("Primary rays", &primary, primaryNames, 2)) {
+                        batch.rtPrimary = primary == 1;
+                        renderer->invalidateStaticRecordings();
+                    }
+                }
+                if (!batch.rtPrimary &&
+                    ImGui::BeginCombo("Shadows", gpu::shadowTechniqueName(active))) {
+                    // Hidden while primary rays are traced: that path fires
+                    // its shadow rays from the hit points regardless.
                     for (gpu::ShadowTechnique offer : shadowOffers) {
                         if (offer == gpu::ShadowTechnique::RayTraced && !rtReady) {
                             continue;

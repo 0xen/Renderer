@@ -23,6 +23,9 @@ set(REND_SHADER_STAGES
     # ps_6_5: RayQuery needs shader model 6.5 (SPV_KHR_ray_query).
     "scene.hlsl|PSMain|ps_6_5|scene_rt.frag.spv|-DRT_SHADOWS=1"
     "cull.hlsl|CSMain|cs_6_0|cull.comp.spv"
+    "rt_primary.hlsl|VSMain|vs_6_0|rt_primary.vert.spv"
+    # ps_6_5: RayQuery needs shader model 6.5 (SPV_KHR_ray_query).
+    "rt_primary.hlsl|PSMain|ps_6_5|rt_primary.frag.spv"
     "shadow.hlsl|VSMain|vs_6_0|shadow.vert.spv"
     "shadow.hlsl|PSMain|ps_6_0|shadow.frag.spv"
 )
@@ -64,8 +67,10 @@ endforeach()
 # otherwise hand them to its built-in FXC rule instead of our dxc command.
 set_source_files_properties(
     shaders/triangle.hlsl shaders/scene.hlsl shaders/cull.hlsl shaders/shadow.hlsl
+    shaders/rt_primary.hlsl
     PROPERTIES VS_TOOL_OVERRIDE "None")
 
 add_custom_target(shaders ALL DEPENDS ${REND_SHADER_ARTIFACTS}
-    SOURCES shaders/triangle.hlsl shaders/scene.hlsl shaders/cull.hlsl shaders/shadow.hlsl)
+    SOURCES shaders/triangle.hlsl shaders/scene.hlsl shaders/cull.hlsl shaders/shadow.hlsl
+            shaders/rt_primary.hlsl)
 set_target_properties(shaders PROPERTIES FOLDER "assets")

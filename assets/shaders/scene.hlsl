@@ -16,15 +16,23 @@ struct PushConstants {
 // reads transposed (wrong camera position/orientation).
 struct CameraData {
     column_major float4x4 viewProj; // matches rend::math memcpy
+    // Ray-generation extras for the traced primary pass (rt_primary.hlsl);
+    // unused here but part of the shared per-slot layout.
+    float4 position;
+    float4 rightAxis;
+    float4 upAxis;
+    float4 forwardAxis;
 };
 [[vk::binding(6, 0)]] StructuredBuffer<CameraData> cameras;
 
 struct ObjectData {
     uint textureIndex; // into the bindless texture array
-    uint alphaMasked;  // non-zero: discard below alphaCutoff
+    uint flags;        // bit 0: alpha-masked, bit 1: transparent (blend)
     float alphaCutoff;
-    float pad;
+    float baseAlpha; // baseColorFactor.a: blend opacity multiplier
 };
+
+static const uint kFlagAlphaMasked = 1u;
 
 // Must match LightData in the viewer / shadow.hlsl. One region per frame
 // slot, like the camera.
@@ -163,7 +171,7 @@ float4 PSMain(VSOutput input) : SV_Target0 {
     const ObjectData object = objects[input.objectIndex];
     const float4 albedo =
         textures[NonUniformResourceIndex(object.textureIndex)].Sample(linearSampler, input.uv);
-    if (object.alphaMasked != 0 && albedo.a < object.alphaCutoff) {
+    if ((object.flags & kFlagAlphaMasked) != 0 && albedo.a < object.alphaCutoff) {
         discard;
     }
 

@@ -28,10 +28,12 @@ struct LightData {
 
 struct ObjectData {
     uint textureIndex;
-    uint alphaMasked;
+    uint flags; // bit 0: alpha-masked, bit 1: transparent (blend)
     float alphaCutoff;
-    float pad;
+    float baseAlpha;
 };
+
+static const uint kFlagAlphaMasked = 1u;
 
 [[vk::binding(0, 0)]] StructuredBuffer<ObjectData> objects;
 [[vk::binding(1, 0)]] Texture2D textures[];
@@ -61,7 +63,7 @@ VSOutput VSMain(VSInput input) {
 
 void PSMain(VSOutput input) {
     const ObjectData object = objects[input.objectIndex];
-    if (object.alphaMasked != 0) {
+    if ((object.flags & kFlagAlphaMasked) != 0) {
         const float alpha = textures[NonUniformResourceIndex(object.textureIndex)]
                                 .Sample(linearSampler, input.uv)
                                 .a;
