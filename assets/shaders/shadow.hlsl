@@ -43,6 +43,9 @@ static const uint kFlagAlphaMasked = 1u;
 [[vk::binding(1, 0)]] Texture2D textures[];
 [[vk::binding(2, 0)]] SamplerState linearSampler;
 [[vk::binding(7, 0)]] StructuredBuffer<LightData> lights;
+// Must match shading.hlsli: per-slot per-object world transforms.
+static const uint kTransformCapacity = 4096;
+[[vk::binding(19, 0)]] StructuredBuffer<column_major float4x4> objectTransforms;
 
 struct VSInput {
     float3 position : POSITION;
@@ -59,7 +62,11 @@ struct VSOutput {
 
 VSOutput VSMain(VSInput input) {
     VSOutput output;
-    output.position = mul(lights[pc.slot].cascadeViewProj[pc.cascade], float4(input.position, 1.0f));
+    const float3 worldPos =
+        mul(objectTransforms[pc.slot * kTransformCapacity + input.instanceId],
+            float4(input.position, 1.0f))
+            .xyz;
+    output.position = mul(lights[pc.slot].cascadeViewProj[pc.cascade], float4(worldPos, 1.0f));
     output.uv = input.uv;
     output.objectIndex = input.instanceId;
     return output;

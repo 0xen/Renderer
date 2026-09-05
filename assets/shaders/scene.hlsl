@@ -42,10 +42,15 @@ struct VSOutput {
 
 VSOutput VSMain(VSInput input) {
     VSOutput output;
-    output.position = mul(cameras[pc.cameraSlot].viewProj, float4(input.position, 1.0f));
-    output.worldPos = input.position;
+    const float4x4 world =
+        objectTransforms[pc.cameraSlot * kTransformCapacity + input.instanceId];
+    const float3 worldPos = mul(world, float4(input.position, 1.0f)).xyz;
+    output.position = mul(cameras[pc.cameraSlot].viewProj, float4(worldPos, 1.0f));
+    output.worldPos = worldPos;
     output.viewDepth = output.position.w;
-    output.normal = input.normal;
+    // Uniform-scale transforms only (yaw + scale), so the upper 3x3 works
+    // for normals after renormalization.
+    output.normal = normalize(mul((float3x3)world, input.normal));
     output.uv = input.uv;
     output.objectIndex = input.instanceId;
     return output;

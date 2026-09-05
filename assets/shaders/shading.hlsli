@@ -67,6 +67,12 @@ static const uint kReflectionNone = 2u;   // shade plain (probe capture pass)
 // sampled when reflections == kReflectionProbe, so the binding may stay
 // unwritten on scenes that never captured one (partially bound).
 [[vk::binding(18, 0)]] TextureCube probeMap;
+// Per-object world transforms: one region per camera slot (frame slots +
+// probe faces), kTransformCapacity entries each, indexed by the object
+// index. Scene geometry is world-baked and rides identity; runtime-spawned
+// models are placed and moved through these (renderer message queue).
+static const uint kTransformCapacity = 4096;
+[[vk::binding(19, 0)]] StructuredBuffer<column_major float4x4> objectTransforms;
 
 // One directional light, glTF metallic-roughness: Lambert diffuse + GGX
 // specular (Smith-Schlick visibility, Schlick Fresnel). Scaled by pi so a

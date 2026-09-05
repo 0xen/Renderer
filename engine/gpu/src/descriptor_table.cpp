@@ -98,6 +98,14 @@ Result<std::unique_ptr<DescriptorTable>> DescriptorTable::create(const Device& d
                             .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT});
         bindingFlags.push_back(VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT);
     }
+    // Per-object world transforms (binding 19, vertex): per-camera-slot
+    // regions the CPU rewrites each frame; runtime-spawned models are
+    // placed/moved through them, everything else rides identity.
+    bindings.push_back({.binding = 19,
+                        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                        .descriptorCount = 1,
+                        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT});
+    bindingFlags.push_back(VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT);
     // Reflection probe cubemap (binding 18): written after the load-time
     // capture; shaders only sample it when the light buffer selects the
     // probe tier, so it may stay unwritten (partially bound).
@@ -125,7 +133,7 @@ Result<std::unique_ptr<DescriptorTable>> DescriptorTable::create(const Device& d
     }
 
     std::vector<VkDescriptorPoolSize> poolSizes{
-        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 13},
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 14},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, maxTextures + 5},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_SAMPLER, 2}};
     if (rayQuery) {

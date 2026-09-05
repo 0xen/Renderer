@@ -55,6 +55,12 @@ struct GeometryLocation {
 // descriptors. Exceeding it fails the load with an event.
 constexpr std::uint32_t kRuntimeObjectCapacity = 256;
 
+// Per-slot regions of the per-object transform buffer (binding 19). Must
+// match kTransformCapacity in shading.hlsli / shadow.hlsl.
+constexpr std::uint32_t kTransformCapacity = 4096;
+constexpr math::Mat4 kIdentityMat4 = {1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+                                      0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f};
+
 // One row per object in the bindless table's SSBO, found by the indirect
 // entry's firstInstance. Must match ObjectData in scene.hlsl.
 constexpr std::uint32_t kObjectAlphaMasked = 1u;
@@ -726,6 +732,11 @@ int main(int argc, char** argv) {
     std::unordered_map<std::string, std::uint32_t> textureSlotByPath;
     std::vector<ObjectData> objectData;
     std::uint32_t templateCapacity = 0; // indirect entries per slot region
+    // Canonical per-object world matrices, copied into the current slot's
+    // transform-buffer region every frame (identity for scene geometry,
+    // which is world-baked; runtime models are placed/moved through them).
+    std::unique_ptr<gpu::Buffer> transformBuffer;
+    std::vector<math::Mat4> objectTransforms;
     const auto importers = assetio::ImporterRegistry::withBuiltins();
     // Capability offer from the gpu layer: which shadow techniques this
     // device can run. The UI is built from this list, never from
@@ -1037,6 +1048,34 @@ int main(int argc, char** argv) {
         }
         cameraBuffer = std::move(cameraResult).value();
 
+        // Per-object transforms: per-camera-slot regions (frame slots +
+        // probe capture faces), all seeded identity — scene geometry is
+        // world-baked, only runtime-spawned models carry real matrices.
+        if (templateCapacity > kTransformCapacity) {
+            log::error("Scene needs {} transform rows, capacity {}", templateCapacity,
+                       kTransformCapacity);
+            return 1;
+        }
+        auto transformResult = gpu::Buffer::create(
+            *device, {
+                         .size = std::uint64_t{kTransformCapacity} * sizeof(math::Mat4) *
+                                 kCameraRegions,
+                         .usage = gpu::kUsageStorage,
+                         .location = gpu::MemoryLocation::HostVisible,
+                     });
+        if (!transformResult) {
+            log::error("Transform buffer creation failed: {}", transformResult.error().message);
+            return 1;
+        }
+        transformBuffer = std::move(transformResult).value();
+        {
+            auto* mats = static_cast<math::Mat4*>(transformBuffer->mapped());
+            for (std::size_t i = 0; i < std::size_t{kTransformCapacity} * kCameraRegions; ++i) {
+                mats[i] = kIdentityMat4;
+            }
+        }
+        objectTransforms.assign(templateCapacity, kIdentityMat4);
+
         // Light data, same per-slot scheme (and capture regions) as the camera.
         auto lightResult = gpu::Buffer::create(
             *device, {
@@ -1287,6 +1326,8 @@ int main(int argc, char** argv) {
         }
         descriptorTable = std::move(tableResult).value();
         descriptorTable->writeObjectBuffer(objectBuffer->handle(), objectBuffer->size());
+        descriptorTable->writeStorageBuffer(19, transformBuffer->handle(),
+                                            transformBuffer->size());
         descriptorTable->writeStorageBuffer(3, indirectBuffer->handle(), indirectBuffer->size());
         descriptorTable->writeStorageBuffer(4, compactedBuffer->handle(),
                                             compactedBuffer->size());
@@ -1978,8 +2019,8 @@ int main(int argc, char** argv) {
         const std::uint32_t firstNewDraw = static_cast<std::uint32_t>(draws.size());
         RuntimeModel record{.handle = cmd.handle, .loaded = true};
         for (auto& mesh : data.meshes) {
-            bakeMeshTransform(mesh, placement);
-
+            // Placement rides the per-object transform buffer (SetTransform
+            // can move it later); vertices stay in model space.
             ObjectData object;
             if (mesh.materialIndex < data.materials.size()) {
                 const auto& material = data.materials[mesh.materialIndex];
@@ -2030,13 +2071,31 @@ int main(int argc, char** argv) {
                 .firstInstance = objectIndex,
             });
             record.drawIndices.push_back(objectIndex);
+            objectTransforms[objectIndex] = placement;
+
+            // Grow the scene AABB (shadow cascade fitting) by the mesh's
+            // local bounds pushed through the placement matrix.
+            math::Vec3 localMin{1e30f, 1e30f, 1e30f}, localMax{-1e30f, -1e30f, -1e30f};
             for (std::size_t v = 0; v + 2 < mesh.positions.size(); v += 3) {
-                sceneMin.x = std::min(sceneMin.x, mesh.positions[v]);
-                sceneMin.y = std::min(sceneMin.y, mesh.positions[v + 1]);
-                sceneMin.z = std::min(sceneMin.z, mesh.positions[v + 2]);
-                sceneMax.x = std::max(sceneMax.x, mesh.positions[v]);
-                sceneMax.y = std::max(sceneMax.y, mesh.positions[v + 1]);
-                sceneMax.z = std::max(sceneMax.z, mesh.positions[v + 2]);
+                localMin.x = std::min(localMin.x, mesh.positions[v]);
+                localMin.y = std::min(localMin.y, mesh.positions[v + 1]);
+                localMin.z = std::min(localMin.z, mesh.positions[v + 2]);
+                localMax.x = std::max(localMax.x, mesh.positions[v]);
+                localMax.y = std::max(localMax.y, mesh.positions[v + 1]);
+                localMax.z = std::max(localMax.z, mesh.positions[v + 2]);
+            }
+            for (int corner = 0; corner < 8; ++corner) {
+                const float x = (corner & 1) ? localMax.x : localMin.x;
+                const float y = (corner & 2) ? localMax.y : localMin.y;
+                const float z = (corner & 4) ? localMax.z : localMin.z;
+                const math::Mat4& m = placement;
+                const math::Vec3 w{m[0] * x + m[4] * y + m[8] * z + m[12],
+                                   m[1] * x + m[5] * y + m[9] * z + m[13],
+                                   m[2] * x + m[6] * y + m[10] * z + m[14]};
+                sceneMin = {std::min(sceneMin.x, w.x), std::min(sceneMin.y, w.y),
+                            std::min(sceneMin.z, w.z)};
+                sceneMax = {std::max(sceneMax.x, w.x), std::max(sceneMax.y, w.y),
+                            std::max(sceneMax.z, w.z)};
             }
         }
         // New SSBO rows ride the same flush as the geometry.
@@ -2120,10 +2179,28 @@ int main(int argc, char** argv) {
                 messageQueue.pushEvent(event);
                 break;
             }
-            case renderer::Command::Type::SetTransform:
-                log::warn("SetTransform: not implemented yet (handle {})",
-                          cmd.transform.handle);
+            case renderer::Command::Type::SetTransform: {
+                const float yaw = cmd.transform.yawDegrees * kPi / 180.0f;
+                const math::Mat4 placement = composeTrs(
+                    {cmd.transform.position[0], cmd.transform.position[1],
+                     cmd.transform.position[2]},
+                    {0.0f, std::sin(yaw * 0.5f), 0.0f, std::cos(yaw * 0.5f)},
+                    {cmd.transform.scale, cmd.transform.scale, cmd.transform.scale});
+                bool found = false;
+                for (const RuntimeModel& model : runtimeModels) {
+                    if (model.handle == cmd.transform.handle && model.loaded) {
+                        for (std::uint32_t index : model.drawIndices) {
+                            objectTransforms[index] = placement;
+                        }
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    log::warn("SetTransform: unknown handle {}", cmd.transform.handle);
+                }
                 break;
+            }
             case renderer::Command::Type::UnloadModel:
                 applyUnloadModel(cmd.unload);
                 break;
@@ -2295,11 +2372,48 @@ int main(int argc, char** argv) {
                             }
                         }
                     }
+                    // Exercise SetTransform too: shove one live model to a
+                    // fresh spot near the camera with a new heading.
+                    std::vector<const RuntimeModel*> liveModels;
+                    for (const RuntimeModel& model : runtimeModels) {
+                        if (model.loaded) {
+                            liveModels.push_back(&model);
+                        }
+                    }
+                    if (!liveModels.empty()) {
+                        const auto pick = std::uniform_int_distribution<std::size_t>(
+                            0, liveModels.size() - 1)(spawnRng);
+                        const math::Vec3 fwd = camera.forward();
+                        const math::Vec3 side =
+                            math::normalize(math::cross(fwd, {0.0f, 1.0f, 0.0f}));
+                        const float s =
+                            std::uniform_real_distribution<float>(-2.0f, 2.0f)(spawnRng);
+                        renderer::Command cmd;
+                        cmd.type = renderer::Command::Type::SetTransform;
+                        cmd.transform.handle = liveModels[pick]->handle;
+                        cmd.transform.position[0] = camera.position.x + fwd.x * 4.0f + side.x * s;
+                        cmd.transform.position[1] = camera.position.y - 0.5f;
+                        cmd.transform.position[2] = camera.position.z + fwd.z * 4.0f + side.z * s;
+                        cmd.transform.yawDegrees =
+                            std::uniform_real_distribution<float>(0.0f, 360.0f)(spawnRng);
+                        cmd.transform.scale = 1.0f;
+                        messageSender.push(cmd);
+                        messageSender.flush();
+                    }
                     nextSpawnIn = std::uniform_real_distribution<float>(
                         spawnIntervalMin, spawnIntervalMax)(spawnRng);
                 }
             }
             processMessages(renderer->frameSlot());
+            // Publish this frame's object transforms into the slot's region
+            // (scene rows stay identity; runtime models carry placement).
+            if (transformBuffer && !objectTransforms.empty()) {
+                std::memcpy(static_cast<std::byte*>(transformBuffer->mapped()) +
+                                std::uint64_t{renderer->frameSlot()} * kTransformCapacity *
+                                    sizeof(math::Mat4),
+                            objectTransforms.data(),
+                            objectTransforms.size() * sizeof(math::Mat4));
+            }
             // Animation playback: sample every channel, rebuild node worlds
             // and joint matrices, and write this slot's regions (safe after
             // waitFrameSlot). The skinning pass consumes them this frame.
