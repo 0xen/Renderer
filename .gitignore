@@ -3,6 +3,7 @@ Scratch/
 
 # Build output
 build/
+build-tracy/
 out/
 cmake-build-*/
 

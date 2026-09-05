@@ -31,6 +31,13 @@ include(cmake/FetchImgui.cmake)
 # One shared output dir so viewer.exe sits next to rend.dll.
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
+# Opt-in Tracy profiling: normal builds carry zero overhead (the zone
+# macros in rend/core/profile.h compile away without REND_TRACY).
+option(REND_TRACY "Build with the Tracy profiler client (CPU zones + frame marks)" OFF)
+if(REND_TRACY)
+    include(cmake/FetchTracy.cmake)
+endif()
+
 add_subdirectory(assets)
 add_subdirectory(engine)
 add_subdirectory(assetio)

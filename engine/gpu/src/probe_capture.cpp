@@ -1,5 +1,6 @@
 #include "rend/gpu/probe_capture.h"
 
+#include "rend/core/profile.h"
 #include "rend/gpu/device.h"
 #include "rend/gpu/image.h"
 #include "rend/gpu/pipeline.h"
@@ -47,6 +48,7 @@ void applyBarrier(VkCommandBuffer cmd, VkImageMemoryBarrier2 barrier) {
 
 Result<std::unique_ptr<Image>> ProbeCapture::render(const Device& device,
                                                     const ProbeCaptureDesc& desc) {
+    REND_PROFILE_ZONE("ProbeCapture");
     if (!desc.pipeline || !desc.draws || desc.drawCount == 0 || desc.faceSize == 0) {
         return Error{"Probe capture needs a pipeline and a non-empty draw list"};
     }

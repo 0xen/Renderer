@@ -1,6 +1,7 @@
 #include "rend/gpu/frame_renderer.h"
 
 #include "rend/core/log.h"
+#include "rend/core/profile.h"
 #include "rend/gpu/device.h"
 #include "rend/gpu/image.h"
 #include "rend/gpu/pipeline.h"
@@ -185,6 +186,7 @@ Result<void> FrameRenderer::recreateSwapchain() {
 Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex,
                                    std::uint32_t slot, const Pipeline& pipeline,
                                    const DrawBatch* batch, bool reusable) const {
+    REND_PROFILE_ZONE("RecordScene");
     VkCommandBufferBeginInfo begin{};
     begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     begin.flags = reusable ? 0 : VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
@@ -533,6 +535,7 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
 }
 
 Result<void> FrameRenderer::recordOverlay(VkCommandBuffer cmd, std::uint32_t imageIndex) const {
+    REND_PROFILE_ZONE("RecordOverlay");
     VkCommandBufferBeginInfo begin{};
     begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
@@ -619,6 +622,7 @@ void FrameRenderer::invalidateStatic() {
 }
 
 Result<void> FrameRenderer::prerecordStatic(const Pipeline& pipeline, const DrawBatch* batch) {
+    REND_PROFILE_ZONE("PrerecordStatic");
     invalidateStatic();
 
     const auto imageCount = static_cast<std::uint32_t>(swapchain_->images().size());
@@ -664,6 +668,7 @@ FrameRenderer::Stats FrameRenderer::takeStats() {
 }
 
 Result<void> FrameRenderer::waitForFence(VkFence fence, const char* what) const {
+    REND_PROFILE_ZONE("WaitFence");
     for (int attempt = 0;; ++attempt) {
         const VkResult waited = vkWaitForFences(device_->handle(), 1, &fence, VK_TRUE, kWaitTimeoutNs);
         if (waited == VK_SUCCESS) {
@@ -680,6 +685,7 @@ Result<void> FrameRenderer::waitForFence(VkFence fence, const char* what) const 
 }
 
 Result<void> FrameRenderer::drawFrame(const Pipeline& pipeline, const DrawBatch* batch) {
+    REND_PROFILE_ZONE("DrawFrame");
     if (resizeRequested_) {
         if (pendingWidth_ == 0 || pendingHeight_ == 0) {
             return {}; // minimized: nothing to present to
@@ -696,8 +702,12 @@ Result<void> FrameRenderer::drawFrame(const Pipeline& pipeline, const DrawBatch*
 
     std::uint32_t imageIndex = 0;
     // On VK_TIMEOUT no semaphore is signalled, so the same one is reusable.
-    VkResult acquired = vkAcquireNextImageKHR(device_->handle(), swapchain_->handle(), kWaitTimeoutNs,
-                                              frame.imageAvailable, VK_NULL_HANDLE, &imageIndex);
+    VkResult acquired = VK_SUCCESS;
+    {
+        REND_PROFILE_ZONE("AcquireImage");
+        acquired = vkAcquireNextImageKHR(device_->handle(), swapchain_->handle(), kWaitTimeoutNs,
+                                         frame.imageAvailable, VK_NULL_HANDLE, &imageIndex);
+    }
     if (acquired == VK_TIMEOUT || acquired == VK_NOT_READY) {
         log::warn("No swapchain image available within {} s", kWaitTimeoutNs / 1'000'000'000ull);
         return {};
@@ -767,9 +777,12 @@ Result<void> FrameRenderer::drawFrame(const Pipeline& pipeline, const DrawBatch*
     submit.signalSemaphoreInfoCount = 1;
     submit.pSignalSemaphoreInfos = &signalInfo;
 
-    if (VkResult r = vkQueueSubmit2(device_->graphicsQueue().queue, 1, &submit, frame.inFlight);
-        r != VK_SUCCESS) {
-        return Error{std::format("vkQueueSubmit2 failed ({})", static_cast<int>(r))};
+    {
+        REND_PROFILE_ZONE("QueueSubmit");
+        if (VkResult r = vkQueueSubmit2(device_->graphicsQueue().queue, 1, &submit, frame.inFlight);
+            r != VK_SUCCESS) {
+            return Error{std::format("vkQueueSubmit2 failed ({})", static_cast<int>(r))};
+        }
     }
 
     VkSwapchainKHR swapchainHandle = swapchain_->handle();
@@ -781,7 +794,11 @@ Result<void> FrameRenderer::drawFrame(const Pipeline& pipeline, const DrawBatch*
     present.pSwapchains = &swapchainHandle;
     present.pImageIndices = &imageIndex;
 
-    const VkResult presented = vkQueuePresentKHR(device_->graphicsQueue().queue, &present);
+    VkResult presented = VK_SUCCESS;
+    {
+        REND_PROFILE_ZONE("Present");
+        presented = vkQueuePresentKHR(device_->graphicsQueue().queue, &present);
+    }
     if (presented == VK_ERROR_OUT_OF_DATE_KHR || presented == VK_SUBOPTIMAL_KHR ||
         acquired == VK_SUBOPTIMAL_KHR) {
         resizeRequested_ = true;

@@ -1,6 +1,7 @@
 #include "rend/gpu/acceleration_structure.h"
 
 #include "rend/core/log.h"
+#include "rend/core/profile.h"
 #include "rend/gpu/buffer.h"
 #include "rend/gpu/device.h"
 
@@ -200,6 +201,7 @@ Result<Built> buildCommon(
 
 Result<std::unique_ptr<AccelerationStructure>> AccelerationStructure::buildBottomLevel(
     const Device& device, std::span<const TriangleGeometry> geometries, bool allowUpdate) {
+    REND_PROFILE_ZONE("BuildBLAS");
     if (geometries.empty()) {
         return Error{"BLAS build needs at least one geometry"};
     }
@@ -230,6 +232,7 @@ Result<std::unique_ptr<AccelerationStructure>> AccelerationStructure::buildBotto
 
 Result<std::unique_ptr<AccelerationStructure>> AccelerationStructure::buildTopLevel(
     const Device& device, std::span<const Instance> instances, bool allowUpdate) {
+    REND_PROFILE_ZONE("BuildTLAS");
     if (instances.empty()) {
         return Error{"TLAS build needs at least one instance"};
     }

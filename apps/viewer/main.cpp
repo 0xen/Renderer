@@ -3,6 +3,7 @@
 #include "rend/core/log.h"
 #include "rend/core/math.h"
 #include "rend/core/paths.h"
+#include "rend/core/profile.h"
 #include "rend/gpu/acceleration_structure.h"
 #include "rend/gpu/descriptor_table.h"
 #include "rend/gpu/texture_uploader.h"
@@ -539,7 +540,10 @@ int main(int argc, char** argv) {
     std::optional<assetio::LoadedScene> scene;
     if (scenePath) {
         const auto start = std::chrono::steady_clock::now();
-        auto sceneResult = assetio::loadScene(scenePath, assetio::ImporterRegistry::withBuiltins());
+        auto sceneResult = [&] {
+            REND_PROFILE_ZONE("LoadScene");
+            return assetio::loadScene(scenePath, assetio::ImporterRegistry::withBuiltins());
+        }();
         if (!sceneResult) {
             log::error("Scene load failed: {}", sceneResult.error().message);
             return 1;
@@ -1160,9 +1164,12 @@ int main(int argc, char** argv) {
                       animatedMeshes.size(), totalJoints, morphWeightsFrame.size());
         }
 
-        if (auto flushed = transfer->flush(); !flushed) {
-            log::error("Geometry upload failed: {}", flushed.error().message);
-            return 1;
+        {
+            REND_PROFILE_ZONE("GeometryUpload");
+            if (auto flushed = transfer->flush(); !flushed) {
+                log::error("Geometry upload failed: {}", flushed.error().message);
+                return 1;
+            }
         }
         const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                             std::chrono::steady_clock::now() - start)
@@ -1301,7 +1308,10 @@ int main(int argc, char** argv) {
                     const std::uint8_t white[4] = {255, 255, 255, 255};
                     return uploader->upload(1, 1, white);
                 }
-                auto decoded = assetio::loadTexture(texturePaths[i].path);
+                auto decoded = [&] {
+                    REND_PROFILE_ZONE("TextureDecode");
+                    return assetio::loadTexture(texturePaths[i].path);
+                }();
                 if (!decoded) {
                     return Result<std::unique_ptr<gpu::Image>>{decoded.error()};
                 }
@@ -1828,7 +1838,12 @@ int main(int argc, char** argv) {
     std::uint32_t viewHeight = extent.height;
     auto lastFrameTime = std::chrono::steady_clock::now();
     while (running) {
-        for (const auto& event : backend->pumpEvents()) {
+        REND_PROFILE_ZONE("Frame");
+        const auto events = [&] {
+            REND_PROFILE_ZONE("PumpEvents");
+            return backend->pumpEvents();
+        }();
+        for (const auto& event : events) {
             if (ui) {
                 ui->handleEvent(event);
             }
@@ -1919,6 +1934,7 @@ int main(int argc, char** argv) {
             // and joint matrices, and write this slot's regions (safe after
             // waitFrameSlot). The skinning pass consumes them this frame.
             if (batch.skinPipeline && !animatedStates.empty()) {
+                REND_PROFILE_ZONE("Animation");
                 for (AnimatedModelState& state : animatedStates) {
                     const auto& skeleton = state.data->skeleton;
                     const std::size_t nodeCount = skeleton.nodes.size();
@@ -1996,6 +2012,7 @@ int main(int argc, char** argv) {
                 }
             }
 
+            REND_PROFILE_ZONE("CameraLightWrite");
             CameraData cameraData;
             cameraData.viewProj = camera.viewProj(viewWidth, viewHeight);
             {
@@ -2048,6 +2065,7 @@ int main(int argc, char** argv) {
         }
 
         if (ui && viewWidth > 0 && viewHeight > 0) {
+            REND_PROFILE_ZONE("BuildUi");
             ui->buildFrame(viewWidth, viewHeight, deltaSeconds);
             if (drawScene) {
                 // Sun & shadow tuning; changes land in the light buffer on
@@ -2128,6 +2146,7 @@ int main(int argc, char** argv) {
             log::error("Frame failed: {}", r.error().message);
             running = false;
         }
+        REND_PROFILE_FRAME();
 
         ++frame;
         if (frame % kReportInterval == 0) {

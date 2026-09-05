@@ -1,5 +1,6 @@
 #include "rend/gpu/texture_uploader.h"
 
+#include "rend/core/profile.h"
 #include "rend/gpu/buffer.h"
 #include "rend/gpu/device.h"
 
@@ -110,6 +111,7 @@ Result<void> TextureUploader::ensureStagingCapacity(std::uint64_t required) {
 
 Result<std::unique_ptr<Image>> TextureUploader::upload(std::uint32_t width, std::uint32_t height,
                                                        const void* rgba8, bool srgb) {
+    REND_PROFILE_ZONE("TextureUpload");
     const std::uint64_t byteSize = 4ull * width * height;
     if (byteSize == 0 || !rgba8) {
         return Error{"Texture upload needs non-empty pixels"};
