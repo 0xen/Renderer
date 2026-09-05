@@ -2096,11 +2096,21 @@ int main(int argc, char** argv) {
 
         if (ui && viewWidth > 0 && viewHeight > 0) {
             REND_PROFILE_ZONE("BuildUi");
-            ui->buildFrame(viewWidth, viewHeight, deltaSeconds);
+            const bool vsyncBefore = vsync;
+            ui->buildFrame(viewWidth, viewHeight, deltaSeconds, &vsync);
+            if (vsync != vsyncBefore) {
+                // The preference lands on the next swapchain build; forcing
+                // a same-size resize triggers that recreate (and the static
+                // command-buffer rebuild that comes with it).
+                swapchain->setVsync(vsync);
+                renderer->resize(viewWidth, viewHeight);
+                log::info("VSync {}", vsync ? "on" : "off");
+            }
             if (drawScene) {
                 // Sun & shadow tuning; changes land in the light buffer on
                 // the next frame's write.
-                ImGui::SetNextWindowPos(ImVec2(8.0f, 40.0f), ImGuiCond_FirstUseEver);
+                // Below the debug panel (FPS + graph + VSync) in the corner.
+                ImGui::SetNextWindowPos(ImVec2(8.0f, 160.0f), ImGuiCond_FirstUseEver);
                 ImGui::Begin("Settings", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
                 // One shadow choice, built from the device's offer list.
                 // Ray traced additionally needs the BVH the viewer built.

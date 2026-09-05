@@ -11,6 +11,8 @@
 #include <imgui.h>
 #include <imgui_impl_vulkan.h>
 
+#include <cfloat>
+
 namespace viewer {
 
 namespace {
@@ -143,7 +145,8 @@ void Ui::handleEvent(const rend::platform::Event& event) {
     }
 }
 
-void Ui::buildFrame(std::uint32_t width, std::uint32_t height, float deltaSeconds) {
+void Ui::buildFrame(std::uint32_t width, std::uint32_t height, float deltaSeconds,
+                    bool* vsync) {
     ImGuiIO& io = ImGui::GetIO();
     io.DisplaySize = ImVec2(static_cast<float>(width), static_cast<float>(height));
     io.DeltaTime = deltaSeconds > 0.0f ? deltaSeconds : 1.0f / 60.0f;
@@ -151,19 +154,26 @@ void Ui::buildFrame(std::uint32_t width, std::uint32_t height, float deltaSecond
     ImGui_ImplVulkan_NewFrame();
     ImGui::NewFrame();
 
-    // FPS counter: text only (no background, no borders), top-left corner,
-    // smoothed so it is readable instead of flickering.
+    // Debug panel, top-left corner: smoothed FPS (readable instead of
+    // flickering), a raw per-frame FPS history graph, and the VSync toggle.
     smoothedFrameSeconds_ = smoothedFrameSeconds_ <= 0.0f
                                 ? io.DeltaTime
                                 : smoothedFrameSeconds_ * 0.95f + io.DeltaTime * 0.05f;
+    fpsHistory_[fpsHistoryOffset_] = 1.0f / io.DeltaTime;
+    fpsHistoryOffset_ = (fpsHistoryOffset_ + 1) % fpsHistory_.size();
     ImGui::SetNextWindowPos(ImVec2(8.0f, 8.0f));
-    ImGui::Begin("##fps", nullptr,
-                 ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBackground |
-                     ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoInputs |
-                     ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoMove |
-                     ImGuiWindowFlags_NoSavedSettings);
+    ImGui::Begin("##debug", nullptr,
+                 ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+                     ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
     ImGui::Text("%.0f FPS (%.2f ms)", 1.0f / smoothedFrameSeconds_,
                 smoothedFrameSeconds_ * 1000.0f);
+    ImGui::PlotLines("##fpsHistory", fpsHistory_.data(),
+                     static_cast<int>(fpsHistory_.size()),
+                     static_cast<int>(fpsHistoryOffset_), nullptr, 0.0f, FLT_MAX,
+                     ImVec2(180.0f, 42.0f));
+    if (vsync != nullptr) {
+        ImGui::Checkbox("VSync", vsync);
+    }
     ImGui::End();
 
     frameBuilt_ = true;

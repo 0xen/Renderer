@@ -40,6 +40,11 @@ public:
 
     Result<void> recreate(std::uint32_t width, std::uint32_t height);
 
+    // Present-mode preference; takes effect on the next recreate() (the
+    // caller triggers one, e.g. via FrameRenderer::resize).
+    bool vsync() const { return vsync_; }
+    void setVsync(bool vsync) { vsync_ = vsync; }
+
     VkSwapchainKHR handle() const { return swapchain_; }
     std::uint32_t imageFormat() const { return format_; } // VkFormat value
     std::uint32_t width() const { return width_; }

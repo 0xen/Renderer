@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 
@@ -34,9 +36,12 @@ public:
     // so future interactive widgets work. Call for every pumped event.
     void handleEvent(const rend::platform::Event& event);
 
-    // Starts the ImGui frame and lays out the overlay widgets (currently
-    // the FPS counter). Call once per frame before FrameRenderer::drawFrame.
-    void buildFrame(std::uint32_t width, std::uint32_t height, float deltaSeconds);
+    // Starts the ImGui frame and lays out the debug panel (FPS counter,
+    // frame-rate history graph, and — when vsync is non-null — a VSync
+    // checkbox bound to it). Call once per frame before
+    // FrameRenderer::drawFrame; the caller reacts to a toggled *vsync.
+    void buildFrame(std::uint32_t width, std::uint32_t height, float deltaSeconds,
+                    bool* vsync = nullptr);
 
     // The FrameRenderer overlay recorder: finalizes the ImGui frame and
     // records its draw data. Runs inside an active rendering pass.
@@ -46,6 +51,9 @@ private:
     Ui() = default;
 
     float smoothedFrameSeconds_ = 0.0f;
+    // Instantaneous FPS ring buffer feeding the debug panel's graph.
+    std::array<float, 180> fpsHistory_{};
+    std::size_t fpsHistoryOffset_ = 0;
     bool frameBuilt_ = false;
 };
 
