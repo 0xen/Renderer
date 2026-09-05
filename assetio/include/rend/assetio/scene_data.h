@@ -76,7 +76,11 @@ struct ModelData {
 struct ModelNodeDesc {
     std::string name;
     std::filesystem::path pipelinePath; // engine-data-relative (see SCENE_FORMAT.md)
-    std::filesystem::path meshPath;     // resolved to an absolute path
+    // Optional scene-shipped fragment shader (precompiled SPIR-V, resolved
+    // absolute): replaces the engine's scene fragment stage — scene-local
+    // looks (e.g. toon) without touching the main project.
+    std::filesystem::path fragmentShaderPath;
+    std::filesystem::path meshPath; // resolved to an absolute path
     TransformDesc transform;
 };
 

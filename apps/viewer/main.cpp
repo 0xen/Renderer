@@ -889,10 +889,27 @@ int main(int argc, char** argv) {
     std::unique_ptr<gpu::Shader> sceneVert, sceneFrag, cullShader, shadowVert, shadowFrag;
     if (scene) {
         auto vertResult = gpu::Shader::createFromFile(*device, shaderDir / "scene.vert.spv");
-        // The RT variant traces shadow rays inline; only loadable where the
-        // device enabled RayQuery (the SPIR-V declares the capability).
-        auto fragResult = gpu::Shader::createFromFile(
-            *device, shaderDir / (rtReady ? "scene_rt.frag.spv" : "scene.frag.spv"));
+        // Scene-shipped fragment override (scene-local looks like toon)
+        // beats the built-ins; else the RT variant traces shadow rays
+        // inline — only loadable where the device enabled RayQuery (the
+        // SPIR-V declares the capability). Override applies scene-wide for
+        // now (single pipeline); per-model pipelines arrive with the
+        // renderer layer.
+        std::filesystem::path fragmentPath =
+            shaderDir / (rtReady ? "scene_rt.frag.spv" : "scene.frag.spv");
+        for (const auto& model : scene->models) {
+            if (!model.desc.fragmentShaderPath.empty()) {
+                if (std::filesystem::exists(model.desc.fragmentShaderPath)) {
+                    fragmentPath = model.desc.fragmentShaderPath;
+                    log::info("Scene fragment override: {}", fragmentPath.string());
+                } else {
+                    log::warn("Scene fragment override missing, using built-in: {}",
+                              model.desc.fragmentShaderPath.string());
+                }
+                break;
+            }
+        }
+        auto fragResult = gpu::Shader::createFromFile(*device, fragmentPath);
         if (!vertResult || !fragResult) {
             log::error("{}", (!vertResult ? vertResult : fragResult).error().message);
             return 1;
