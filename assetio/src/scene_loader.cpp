@@ -134,6 +134,15 @@ Result<SceneDesc> parseScene(const std::filesystem::path& xmlFile) {
         }
         scene.models.push_back(std::move(desc));
     }
+    // Optional scene scripts, resolved like mesh paths. Parsing only —
+    // whether/how they run is the app's business.
+    for (const pugi::xml_node script : root.children("Script")) {
+        const char* path = script.attribute("path").as_string("");
+        if (*path == '\0') {
+            return Error{std::format("'{}': <Script> without a path", xmlFile.string())};
+        }
+        scene.scripts.push_back(std::filesystem::absolute(baseDir / path));
+    }
     if (scene.models.empty()) {
         log::warn("Scene '{}' declares no models", scene.name);
     }
@@ -153,6 +162,7 @@ Result<LoadedScene> loadScene(const std::filesystem::path& xmlFile,
     loaded.camera = desc.camera;
     loaded.lights = std::move(desc.lights);
     loaded.reflectionProbes = std::move(desc.reflectionProbes);
+    loaded.scripts = std::move(desc.scripts);
     for (ModelNodeDesc& model : desc.models) {
         auto imported = importers.import(model.meshPath);
         if (!imported) {

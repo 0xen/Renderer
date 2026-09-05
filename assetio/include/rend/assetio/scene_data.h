@@ -165,6 +165,11 @@ struct SceneDesc {
     // default position (see SCENE_FORMAT.md).
     std::vector<ReflectionProbeDesc> reflectionProbes;
     std::vector<ModelNodeDesc> models;
+    // Optional Python scripts to run alongside the scene (<Script path>,
+    // resolved to absolute like mesh paths). A scene listing none runs
+    // with no Python involvement at all; the app decides what "run"
+    // means (assetio only reports the paths — it never executes code).
+    std::vector<std::filesystem::path> scripts;
 };
 
 // --- Fully loaded scene: the description plus every imported payload ---
@@ -180,6 +185,7 @@ struct LoadedScene {
     std::vector<LightDesc> lights;
     std::vector<ReflectionProbeDesc> reflectionProbes;
     std::vector<LoadedModel> models;
+    std::vector<std::filesystem::path> scripts;
 };
 
 } // namespace rend::assetio

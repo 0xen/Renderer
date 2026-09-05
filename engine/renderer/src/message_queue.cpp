@@ -21,14 +21,27 @@ std::vector<Command> MessageQueue::drain() {
     return std::exchange(committed_, {});
 }
 
-void MessageQueue::pushEvent(const Event& event) {
-    std::lock_guard lock(eventMutex_);
-    events_.push_back(event);
+std::vector<Event> EventReceiver::poll() {
+    std::lock_guard lock(state_->mutex);
+    return std::exchange(state_->events, {});
 }
 
-std::vector<Event> MessageQueue::pollEvents() {
-    std::lock_guard lock(eventMutex_);
-    return std::exchange(events_, {});
+EventReceiver MessageQueue::createEventReceiver() {
+    auto state = std::make_shared<EventReceiver::State>();
+    std::lock_guard lock(receiverMutex_);
+    receivers_.push_back(state);
+    return EventReceiver(std::move(state));
+}
+
+void MessageQueue::pushEvent(const Event& event) {
+    std::lock_guard lock(receiverMutex_);
+    std::erase_if(receivers_, [](const auto& weak) { return weak.expired(); });
+    for (const auto& weak : receivers_) {
+        if (const auto state = weak.lock()) {
+            std::lock_guard stateLock(state->mutex);
+            state->events.push_back(event);
+        }
+    }
 }
 
 } // namespace rend::renderer

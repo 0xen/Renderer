@@ -17,9 +17,15 @@
 #include "rend/gpu/memory_pool.h"
 #include "rend/gpu/transfer.h"
 #include "rend/platform/backend.h"
+#include "rend/pyhost/pyhost.h"
 #include "rend/renderer/message_queue.h"
 
 #include "ui.h"
+
+// LoadLibrary only — the Python host DLL is optional at runtime.
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
 
 #include <imgui.h>
 
@@ -1937,6 +1943,9 @@ int main(int argc, char** argv) {
     // slot's fence), where the current slot's buffers are CPU-writable.
     renderer::MessageQueue messageQueue;
     renderer::Sender messageSender = messageQueue.createSender();
+    // The viewer's own event view (the Python host holds its second one —
+    // events broadcast to every receiver).
+    renderer::EventReceiver messageEvents = messageQueue.createEventReceiver();
     struct RuntimeModel {
         renderer::ModelHandle handle = renderer::kInvalidModel;
         std::vector<std::uint32_t> drawIndices; // rows in draws/objectData
@@ -2369,7 +2378,7 @@ int main(int argc, char** argv) {
             }
             messageQueue.pushEvent(event);
         }
-        for (const renderer::Event& event : messageQueue.pollEvents()) {
+        for (const renderer::Event& event : messageEvents.poll()) {
             if (event.type == renderer::Event::Type::ModelReady && event.ready.ok) {
                 lastLoadMillis = event.ready.millis;
             }
@@ -2404,6 +2413,45 @@ int main(int argc, char** argv) {
         messageSender.push(cmd);
         messageSender.flush();
     };
+
+    // Scene-declared Python scripts: load the optional host DLL and run
+    // them against the message queue on the host's own thread. A scene
+    // without <Script> nodes never touches Python — the DLL isn't even
+    // loaded, so it (and the CPython runtime) may be absent entirely.
+    HMODULE pyhostDll = nullptr;
+    pyhost::StopFn pyhostStop = nullptr;
+    if (scene && !scene->scripts.empty()) {
+        const std::filesystem::path dllPath = executableDirectory() / "rend_pyhost.dll";
+        pyhostDll = LoadLibraryW(dllPath.wstring().c_str());
+        const auto start = pyhostDll ? reinterpret_cast<pyhost::StartFn>(
+                                           GetProcAddress(pyhostDll, "rendPyHostStart"))
+                                     : nullptr;
+        pyhostStop = pyhostDll ? reinterpret_cast<pyhost::StopFn>(
+                                     GetProcAddress(pyhostDll, "rendPyHostStop"))
+                               : nullptr;
+        if (start && pyhostStop) {
+            std::vector<std::string> scriptStorage;
+            std::vector<const char*> scriptPtrs;
+            for (const auto& path : scene->scripts) {
+                scriptStorage.push_back(path.string());
+            }
+            for (const std::string& path : scriptStorage) {
+                scriptPtrs.push_back(path.c_str());
+            }
+            if (start(&messageQueue, scriptPtrs.data(),
+                      static_cast<int>(scriptPtrs.size()))) {
+                log::info("Python host started ({} script(s))", scriptPtrs.size());
+            } else {
+                log::warn("Python host refused to start; scene scripts skipped");
+                pyhostStop = nullptr;
+            }
+        } else {
+            log::warn("Scene declares {} Python script(s) but rend_pyhost.dll is "
+                      "unavailable; running without them",
+                      scene->scripts.size());
+            pyhostStop = nullptr;
+        }
+    }
 
     // Held-key state for camera movement; mouselook while RMB is held.
     bool keyHeld[static_cast<int>(platform::Key::LeftCtrl) + 1] = {};
@@ -2847,6 +2895,11 @@ int main(int argc, char** argv) {
     }
 
     log::info("Shutting down");
+    // Python first: scripts may still be pushing commands; after Stop the
+    // queue is quiet. (The DLL stays loaded — CPython dislikes unloading.)
+    if (pyhostStop) {
+        pyhostStop();
+    }
     // The loader references importers + the claim set; stop it before any
     // teardown. Pending requests and undelivered prepared loads just drop.
     {

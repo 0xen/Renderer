@@ -91,6 +91,15 @@ capture is static: animated meshes bake at the bind pose, lighting never re-capt
 and there is no parallax correction — probes are approximate by design, ray traced
 reflections are the exact tier above.
 
+`Script path="scripts/foo.py"` (optional, zero or more) names Python scripts that run
+alongside the scene, resolved against the scene file's directory like mesh paths. The
+viewer feeds them to the optional embedded Python host (`rend_pyhost.dll`), which runs
+them in order on the interpreter's own thread; scripts `import rend` and speak the
+renderer message queue (`load_model` / `set_transform` / `unload_model`, `poll_events`
+/ `wait_model_ready`, `should_quit`, `log`). A scene that lists no scripts involves no
+Python at all — the host DLL is never even loaded, so it and the CPython runtime may
+be absent. assetio only parses the paths; it never executes code.
+
 `Light` describes what the light *is* (direction points from the light toward the
 scene), never the rendering technique — shadow maps vs ray tracing is the renderer's
 offer, per the intent/offer model in ARCHITECTURE.md. `type` is `directional` only for

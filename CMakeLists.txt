@@ -38,7 +38,20 @@ if(REND_TRACY)
     include(cmake/FetchTracy.cmake)
 endif()
 
+# The Python host: a standalone optional DLL (like assetio) that embeds
+# CPython and drives the renderer message queue from scene scripts. The
+# viewer loads it at RUNTIME only when a scene declares <Script> nodes,
+# so turning this off (or deleting the DLL) costs nothing.
+option(REND_PYTHON "Build the embedded Python script host DLL" ON)
+if(REND_PYTHON)
+    include(cmake/FetchPython.cmake)
+    include(cmake/FetchPybind11.cmake)
+endif()
+
 add_subdirectory(assets)
 add_subdirectory(engine)
 add_subdirectory(assetio)
+if(REND_PYTHON)
+    add_subdirectory(pyhost)
+endif()
 add_subdirectory(apps/viewer)

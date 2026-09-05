@@ -3,6 +3,7 @@
 #include "rend/renderer/messages.h"
 
 #include <atomic>
+#include <memory>
 #include <mutex>
 #include <vector>
 
@@ -28,13 +29,35 @@ private:
     std::vector<Command> staged_;
 };
 
-// Command/event pair between producers (app, later Python) and the frame
+// One consumer's view of the event stream. Every pushEvent is broadcast
+// to every live receiver (each producer — the app UI, the Python host —
+// wants to see completions independently; a single shared poll would let
+// consumers steal each other's events). poll() is thread-safe against
+// pushEvent; a receiver itself belongs to one thread. Create receivers
+// BEFORE issuing commands — events push only to receivers alive then.
+class EventReceiver {
+public:
+    std::vector<Event> poll();
+
+private:
+    friend class MessageQueue;
+    struct State {
+        std::mutex mutex;
+        std::vector<Event> events;
+    };
+    explicit EventReceiver(std::shared_ptr<State> state) : state_(std::move(state)) {}
+
+    std::shared_ptr<State> state_;
+};
+
+// Command/event pair between producers (app, Python host) and the frame
 // loop. Deliberately mutex-based, not lock-free: the consumer drains once
 // per frame at its safe point (after the frame-slot fence), so contention
 // is one brief lock per flush/drain — never a stall for either side.
 class MessageQueue {
 public:
     Sender createSender() { return Sender(*this); }
+    EventReceiver createEventReceiver();
 
     // Producer-side unique model identities (0 is reserved as invalid).
     ModelHandle allocateHandle() { return nextHandle_.fetch_add(1); }
@@ -42,10 +65,10 @@ public:
     // Consumer: takes every committed batch, in commit order.
     std::vector<Command> drain();
 
-    // Consumer replies; producers poll. Same visibility contract in
-    // reverse (events are singles, not batches — each is complete).
+    // Consumer replies; producers poll their receivers. Same visibility
+    // contract in reverse (events are singles, not batches — each is
+    // complete). Destroyed receivers are pruned lazily here.
     void pushEvent(const Event& event);
-    std::vector<Event> pollEvents();
 
 private:
     friend class Sender;
@@ -53,8 +76,8 @@ private:
 
     std::mutex commandMutex_;
     std::vector<Command> committed_;
-    std::mutex eventMutex_;
-    std::vector<Event> events_;
+    std::mutex receiverMutex_;
+    std::vector<std::weak_ptr<EventReceiver::State>> receivers_;
     std::atomic<ModelHandle> nextHandle_{1};
 };
 
