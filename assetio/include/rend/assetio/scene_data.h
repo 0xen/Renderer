@@ -50,9 +50,60 @@ struct MaterialData {
     bool transparent = false;
 };
 
+// --- Animation data (node hierarchy, skins, morph targets, keyframes) ---
+
+// One node of an animated model's hierarchy, rest pose as local TRS.
+// Parents always precede children, so world matrices resolve in one pass.
+struct SkeletonNode {
+    std::string name;
+    std::int32_t parent = -1; // index into SkeletonData::nodes; -1 = root
+    std::array<float, 3> translation{0.0f, 0.0f, 0.0f};
+    std::array<float, 4> rotation{0.0f, 0.0f, 0.0f, 1.0f}; // quaternion xyzw
+    std::array<float, 3> scale{1.0f, 1.0f, 1.0f};
+};
+
+// The full node hierarchy of an animated model plus its skin: jointNodes
+// maps skin-local joint indices (what vertices reference) to nodes, with
+// one column-major inverse bind matrix each.
+struct SkeletonData {
+    std::vector<SkeletonNode> nodes;
+    std::vector<std::uint32_t> jointNodes;
+    std::vector<std::array<float, 16>> inverseBind;
+
+    bool empty() const { return nodes.empty(); }
+};
+
+enum class AnimationPath { Translation, Rotation, Scale, Weights };
+enum class AnimationInterpolation { Step, Linear, CubicSpline };
+
+// One keyframe stream targeting one node: times paired with 3 (T/S), 4 (R)
+// or morph-target-count (Weights) floats per key — three value tuples per
+// key (in-tangent, value, out-tangent) when interpolation is CubicSpline.
+struct AnimationChannelData {
+    std::uint32_t node = 0; // into SkeletonData::nodes
+    AnimationPath path = AnimationPath::Translation;
+    AnimationInterpolation interpolation = AnimationInterpolation::Linear;
+    std::vector<float> times;
+    std::vector<float> values;
+};
+
+struct AnimationData {
+    std::string name;
+    float duration = 0.0f; // seconds; max input time over all channels
+    std::vector<AnimationChannelData> channels;
+};
+
+// Per-morph-target vertex deltas (positions required, normals optional).
+struct MorphTargetData {
+    std::vector<float> positionDeltas; // xyz per vertex
+    std::vector<float> normalDeltas;   // xyz per vertex; empty if none
+};
+
 // One drawable chunk: a single material over one vertex/index range.
-// Vertex streams are de-interleaved; positions/normals are model-space with
-// the source node hierarchy already baked in.
+// Vertex streams are de-interleaved. For rigid models positions/normals
+// arrive with the source node hierarchy already baked in; for animated
+// models (skeleton non-empty) they stay in mesh space and sourceNode says
+// where the mesh hangs in the hierarchy.
 struct MeshData {
     std::string name;
     std::uint32_t materialIndex = 0; // into ModelData::materials
@@ -60,6 +111,14 @@ struct MeshData {
     std::vector<float> normals;      // xyz per vertex; empty if the source has none
     std::vector<float> uvs;          // xy per vertex; empty if the source has none
     std::vector<std::uint32_t> indices;
+
+    // Animated models only:
+    std::uint32_t sourceNode = 0; // into SkeletonData::nodes
+    bool skinned = false;
+    std::vector<std::uint16_t> joints; // 4 per vertex, skin-local joint indices
+    std::vector<float> weights;        // 4 per vertex, sum ~1
+    std::vector<MorphTargetData> morphTargets;
+    std::vector<float> morphWeights; // rest weights, one per target
 
     std::size_t vertexCount() const { return positions.size() / 3; }
     std::size_t triangleCount() const { return indices.size() / 3; }
@@ -69,6 +128,9 @@ struct ModelData {
     std::string name;
     std::vector<MaterialData> materials;
     std::vector<MeshData> meshes;
+    // Non-empty skeleton = animated model: meshes are unbaked (see above).
+    SkeletonData skeleton;
+    std::vector<AnimationData> animations;
 };
 
 // --- Scene description (parsed straight from the scene XML) ---

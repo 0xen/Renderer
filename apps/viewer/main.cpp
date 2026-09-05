@@ -87,6 +87,28 @@ constexpr float kPi = 3.14159265358979323846f;
 math::Vec3 vadd(const math::Vec3& a, const math::Vec3& b) {
     return {a.x + b.x, a.y + b.y, a.z + b.z};
 }
+
+// Column-major TRS matrix from a skeleton node's local rest pose.
+math::Mat4 trsMatrix(const assetio::SkeletonNode& node) {
+    const float x = node.rotation[0], y = node.rotation[1], z = node.rotation[2],
+                w = node.rotation[3];
+    const float sx = node.scale[0], sy = node.scale[1], sz = node.scale[2];
+    math::Mat4 m{};
+    m[0] = (1.0f - 2.0f * (y * y + z * z)) * sx;
+    m[1] = (2.0f * (x * y + z * w)) * sx;
+    m[2] = (2.0f * (x * z - y * w)) * sx;
+    m[4] = (2.0f * (x * y - z * w)) * sy;
+    m[5] = (1.0f - 2.0f * (x * x + z * z)) * sy;
+    m[6] = (2.0f * (y * z + x * w)) * sy;
+    m[8] = (2.0f * (x * z + y * w)) * sz;
+    m[9] = (2.0f * (y * z - x * w)) * sz;
+    m[10] = (1.0f - 2.0f * (x * x + y * y)) * sz;
+    m[12] = node.translation[0];
+    m[13] = node.translation[1];
+    m[14] = node.translation[2];
+    m[15] = 1.0f;
+    return m;
+}
 math::Vec3 vmul(const math::Vec3& v, float s) { return {v.x * s, v.y * s, v.z * s}; }
 
 // One region per frame slot in the light buffer (bindless binding 7).
@@ -365,6 +387,46 @@ int main(int argc, char** argv) {
         }
         log::info("Scene '{}' loaded in {} ms: {} models, {} vertices, {} triangles", scene->name,
                   ms, scene->models.size(), vertices, triangles);
+
+        // Animated models arrive with a live hierarchy and unbaked meshes.
+        // Until the GPU skinning pass lands, pose them at rest on the CPU
+        // so they render in place; joints/weights/morphs ride along unused.
+        for (auto& model : scene->models) {
+            if (model.data.skeleton.empty()) {
+                continue;
+            }
+            const auto& nodes = model.data.skeleton.nodes;
+            std::vector<math::Mat4> world(nodes.size());
+            for (std::size_t i = 0; i < nodes.size(); ++i) {
+                const math::Mat4 local = trsMatrix(nodes[i]);
+                world[i] = nodes[i].parent >= 0
+                               ? math::mul(world[static_cast<std::size_t>(nodes[i].parent)], local)
+                               : local;
+            }
+            for (auto& mesh : model.data.meshes) {
+                const math::Mat4& m = world[mesh.sourceNode];
+                for (std::size_t v = 0; v + 2 < mesh.positions.size(); v += 3) {
+                    const float x = mesh.positions[v], y = mesh.positions[v + 1],
+                                z = mesh.positions[v + 2];
+                    mesh.positions[v] = m[0] * x + m[4] * y + m[8] * z + m[12];
+                    mesh.positions[v + 1] = m[1] * x + m[5] * y + m[9] * z + m[13];
+                    mesh.positions[v + 2] = m[2] * x + m[6] * y + m[10] * z + m[14];
+                }
+                for (std::size_t v = 0; v + 2 < mesh.normals.size(); v += 3) {
+                    const float x = mesh.normals[v], y = mesh.normals[v + 1],
+                                z = mesh.normals[v + 2];
+                    const math::Vec3 n = math::normalize({m[0] * x + m[4] * y + m[8] * z,
+                                                          m[1] * x + m[5] * y + m[9] * z,
+                                                          m[2] * x + m[6] * y + m[10] * z});
+                    mesh.normals[v] = n.x;
+                    mesh.normals[v + 1] = n.y;
+                    mesh.normals[v + 2] = n.z;
+                }
+            }
+            log::info("  '{}' posed at rest: {} nodes, {} joints, {} animations",
+                      model.desc.name, nodes.size(), model.data.skeleton.jointNodes.size(),
+                      model.data.animations.size());
+        }
     } else {
         log::info("No scene file given "
                   "(usage: viewer [--debug] [--novsync] [--static] [--bench N] "
