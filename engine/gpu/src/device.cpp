@@ -414,6 +414,25 @@ std::vector<ShadowTechnique> Device::supportedShadowTechniques() const {
     return techniques;
 }
 
+const char* reflectionTechniqueName(ReflectionTechnique technique) {
+    switch (technique) {
+    case ReflectionTechnique::ReflectionProbe:
+        return "Reflection probe";
+    case ReflectionTechnique::RayTraced:
+        return "Ray traced";
+    }
+    return "Unknown";
+}
+
+std::vector<ReflectionTechnique> Device::supportedReflectionTechniques() const {
+    std::vector<ReflectionTechnique> techniques{ReflectionTechnique::ReflectionProbe};
+    if (isEnabled(Feature::AccelerationStructure) && isEnabled(Feature::RayQuery) &&
+        isEnabled(Feature::BufferDeviceAddress)) {
+        techniques.push_back(ReflectionTechnique::RayTraced);
+    }
+    return techniques;
+}
+
 Device::~Device() {
     if (device_ != VK_NULL_HANDLE) {
         vkDestroyDevice(device_, nullptr);

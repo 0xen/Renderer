@@ -242,14 +242,12 @@ float3 traceReflection(float3 origin, float3 dir, float travelled, float conePer
     return color;
 }
 
-// Fresnel-weighted mix of a hit's base shading with its one-bounce
-// reflection, attenuated by roughness (a rough "mirror" barely reflects).
+// One-bounce traced reflection for a committed hit, Fresnel-mixed into its
+// base shading via the shared helper (same math as the probe tier).
 float3 applyReflection(TracedHit hit, float3 dir, float travelled, float conePerUnit,
                        LightData light) {
     const float3 r = reflect(dir, hit.normal);
     const float3 reflected =
         traceReflection(hit.position + hit.normal * 1.0e-3f, r, travelled, conePerUnit, light);
-    const float ndotv = saturate(dot(hit.normal, -dir));
-    const float3 f = hit.f0 + (1.0f - hit.f0) * pow(1.0f - ndotv, 5.0f);
-    return lerp(hit.color, reflected, f * (1.0f - hit.roughness));
+    return mixReflection(hit.color, reflected, hit.f0, hit.roughness, dot(hit.normal, -dir));
 }

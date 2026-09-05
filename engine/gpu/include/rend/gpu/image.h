@@ -2,6 +2,7 @@
 
 #include "rend/core/result.h"
 
+#include <array>
 #include <cstdint>
 #include <memory>
 
@@ -14,7 +15,10 @@ namespace rend::gpu {
 class Device;
 
 // VkImageUsageFlags bits callers need without including Vulkan headers.
+inline constexpr std::uint32_t kImageUsageTransferSrc = 0x1;
+inline constexpr std::uint32_t kImageUsageTransferDst = 0x2;
 inline constexpr std::uint32_t kImageUsageSampled = 0x4;
+inline constexpr std::uint32_t kImageUsageColorAttachment = 0x10;
 inline constexpr std::uint32_t kImageUsageDepthAttachment = 0x20;
 
 struct ImageDesc {
@@ -24,11 +28,15 @@ struct ImageDesc {
     std::uint32_t usage = 0;  // VkImageUsageFlags
     std::uint32_t mipLevels = 1;
     bool depth = false; // view aspect: depth instead of color
+    // Cubemap: six square layers with a cube sampled view plus one 2D
+    // render view per face (faceView) — reflection probes render into the
+    // faces and shaders sample the cube.
+    bool cube = false;
 };
 
 // One VkImage plus its allocation and a single full view — the image
 // sibling of Buffer (see ARCHITECTURE.md base object classes). 2D,
-// single-mip, single-layer for now; extended when textures land.
+// single-layer, or a six-face cube (desc.cube).
 class Image {
 public:
     static Result<std::unique_ptr<Image>> create(const Device& device, const ImageDesc& desc);
@@ -39,10 +47,13 @@ public:
 
     VkImage handle() const { return image_; }
     VkImageView view() const { return view_; }
+    // Cube images only: 2D render view of one face's mip 0.
+    VkImageView faceView(std::uint32_t face) const { return faceViews_[face]; }
     std::uint32_t format() const { return format_; }
     std::uint32_t width() const { return width_; }
     std::uint32_t height() const { return height_; }
     std::uint32_t mipLevels() const { return mipLevels_; }
+    std::uint32_t layerCount() const { return layerCount_; }
 
 private:
     Image() = default;
@@ -51,10 +62,12 @@ private:
     VkImage image_ = nullptr;
     VkDeviceMemory memory_ = nullptr;
     VkImageView view_ = nullptr;
+    std::array<VkImageView, 6> faceViews_{};
     std::uint32_t format_ = 0;
     std::uint32_t width_ = 0;
     std::uint32_t height_ = 0;
     std::uint32_t mipLevels_ = 1;
+    std::uint32_t layerCount_ = 1;
 };
 
 } // namespace rend::gpu

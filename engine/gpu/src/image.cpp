@@ -13,13 +13,15 @@ Result<std::unique_ptr<Image>> Image::create(const Device& device, const ImageDe
         return Error{"Image extent must be non-zero"};
     }
 
+    const std::uint32_t layers = desc.cube ? 6 : 1;
     VkImageCreateInfo info{};
     info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    info.flags = desc.cube ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : 0;
     info.imageType = VK_IMAGE_TYPE_2D;
     info.format = static_cast<VkFormat>(desc.format);
     info.extent = {desc.width, desc.height, 1};
     info.mipLevels = desc.mipLevels;
-    info.arrayLayers = 1;
+    info.arrayLayers = layers;
     info.samples = VK_SAMPLE_COUNT_1_BIT;
     info.tiling = VK_IMAGE_TILING_OPTIMAL;
     info.usage = desc.usage;
@@ -68,12 +70,12 @@ Result<std::unique_ptr<Image>> Image::create(const Device& device, const ImageDe
     VkImageViewCreateInfo viewInfo{};
     viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     viewInfo.image = image;
-    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.viewType = desc.cube ? VK_IMAGE_VIEW_TYPE_CUBE : VK_IMAGE_VIEW_TYPE_2D;
     viewInfo.format = info.format;
     viewInfo.subresourceRange = {
         desc.depth ? static_cast<VkImageAspectFlags>(VK_IMAGE_ASPECT_DEPTH_BIT)
                    : static_cast<VkImageAspectFlags>(VK_IMAGE_ASPECT_COLOR_BIT),
-        0, desc.mipLevels, 0, 1};
+        0, desc.mipLevels, 0, layers};
 
     VkImageView view = VK_NULL_HANDLE;
     if (VkResult r = vkCreateImageView(device.handle(), &viewInfo, nullptr, &view);
@@ -83,21 +85,56 @@ Result<std::unique_ptr<Image>> Image::create(const Device& device, const ImageDe
         return Error{std::format("vkCreateImageView failed ({})", static_cast<int>(r))};
     }
 
+    // One 2D render view of each face's top mip: probe capture renders the
+    // faces individually while the cube view above is what shaders sample.
+    std::array<VkImageView, 6> faceViews{};
+    if (desc.cube) {
+        VkImageViewCreateInfo faceInfo = viewInfo;
+        faceInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        for (std::uint32_t face = 0; face < 6; ++face) {
+            faceInfo.subresourceRange.baseMipLevel = 0;
+            faceInfo.subresourceRange.levelCount = 1;
+            faceInfo.subresourceRange.baseArrayLayer = face;
+            faceInfo.subresourceRange.layerCount = 1;
+            if (VkResult r = vkCreateImageView(device.handle(), &faceInfo, nullptr,
+                                               &faceViews[face]);
+                r != VK_SUCCESS) {
+                for (VkImageView created : faceViews) {
+                    if (created != VK_NULL_HANDLE) {
+                        vkDestroyImageView(device.handle(), created, nullptr);
+                    }
+                }
+                vkDestroyImageView(device.handle(), view, nullptr);
+                vkFreeMemory(device.handle(), memory, nullptr);
+                vkDestroyImage(device.handle(), image, nullptr);
+                return Error{
+                    std::format("vkCreateImageView (face) failed ({})", static_cast<int>(r))};
+            }
+        }
+    }
+
     auto out = std::unique_ptr<Image>(new Image());
     out->device_ = &device;
     out->image_ = image;
     out->memory_ = memory;
     out->view_ = view;
+    out->faceViews_ = faceViews;
     out->format_ = desc.format;
     out->width_ = desc.width;
     out->height_ = desc.height;
     out->mipLevels_ = desc.mipLevels;
+    out->layerCount_ = layers;
     return out;
 }
 
 Image::~Image() {
     if (!device_) {
         return;
+    }
+    for (VkImageView faceView : faceViews_) {
+        if (faceView != VK_NULL_HANDLE) {
+            vkDestroyImageView(device_->handle(), faceView, nullptr);
+        }
     }
     if (view_ != VK_NULL_HANDLE) {
         vkDestroyImageView(device_->handle(), view_, nullptr);

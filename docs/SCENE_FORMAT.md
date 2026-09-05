@@ -78,9 +78,18 @@ registry (currently glTF 2.0 via cgltf; new formats = new importer, nothing else
 
 `Model` takes an optional `reflective="true"` attribute — a semantic surface tag in
 the intent-model sense: it says the object *is* mirror-like, never how to render it.
-On hardware offering ray queries the renderer traces per-object reflections for its
-fragments (cost scales with screen coverage); everywhere else the object shades as a
-plain surface.
+The renderer offers reflection techniques for such objects (reflection probe on every
+device, ray traced where ray queries exist — cost scales with screen coverage); the
+technique is a user/renderer choice, superseded entirely when primary visibility is
+ray traced.
+
+`ReflectionProbe position="x y z"` (optional, zero or more) marks where a probe-based
+renderer captures its environment cubemap at load time. Like lights it describes the
+scene, not the technique. Only the first probe is used for now (single probe, no
+blending); with none listed the renderer defaults to the scene AABB's center. The
+capture is static: animated meshes bake at the bind pose, lighting never re-captures,
+and there is no parallax correction — probes are approximate by design, ray traced
+reflections are the exact tier above.
 
 `Light` describes what the light *is* (direction points from the light toward the
 scene), never the rendering technique — shadow maps vs ray tracing is the renderer's

@@ -25,6 +25,16 @@ enum class ShadowTechnique {
 
 const char* shadowTechniqueName(ShadowTechnique technique);
 
+// Reflection techniques for reflective-tagged objects, ordered cheapest
+// first — same offer pattern as shadows. When primary visibility itself is
+// ray traced the choice is superseded: everything reflects for real.
+enum class ReflectionTechnique {
+    ReflectionProbe, // load-time cubemap capture; runs everywhere
+    RayTraced,       // one inline reflection ray per fragment; needs RT features
+};
+
+const char* reflectionTechniqueName(ReflectionTechnique technique);
+
 struct QueueInfo {
     VkQueue queue = nullptr;
     std::uint32_t familyIndex = ~0u;
@@ -58,6 +68,9 @@ public:
     // Capability offer: which shadow techniques this device can run,
     // derived from the features that were actually enabled.
     std::vector<ShadowTechnique> supportedShadowTechniques() const;
+    // Which reflection techniques this device can run; the probe tier is
+    // the floor and exists everywhere.
+    std::vector<ReflectionTechnique> supportedReflectionTechniques() const;
 
 private:
     Device() = default;

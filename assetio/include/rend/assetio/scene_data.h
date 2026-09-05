@@ -27,6 +27,13 @@ struct LightDesc {
     bool castsShadows = true;
 };
 
+// Where a reflection probe captures its surroundings from. Like lights it
+// describes the scene, never the technique: the renderer decides whether a
+// cubemap is captured there or reflections are traced instead.
+struct ReflectionProbeDesc {
+    std::array<float, 3> position{0.0f, 0.0f, 0.0f};
+};
+
 struct TransformDesc {
     std::array<float, 3> position{0.0f, 0.0f, 0.0f};
     std::array<float, 3> rotationDegrees{0.0f, 0.0f, 0.0f};
@@ -154,6 +161,9 @@ struct SceneDesc {
     std::string name;
     CameraDesc camera;
     std::vector<LightDesc> lights;
+    // Optional; a probe-capable renderer with none listed picks its own
+    // default position (see SCENE_FORMAT.md).
+    std::vector<ReflectionProbeDesc> reflectionProbes;
     std::vector<ModelNodeDesc> models;
 };
 
@@ -168,6 +178,7 @@ struct LoadedScene {
     std::string name;
     CameraDesc camera;
     std::vector<LightDesc> lights;
+    std::vector<ReflectionProbeDesc> reflectionProbes;
     std::vector<LoadedModel> models;
 };
 

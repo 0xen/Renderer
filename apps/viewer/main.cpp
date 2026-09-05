@@ -10,6 +10,7 @@
 #include "rend/gpu/frame_renderer.h"
 #include "rend/gpu/instance.h"
 #include "rend/gpu/pipeline.h"
+#include "rend/gpu/probe_capture.h"
 #include "rend/gpu/shader.h"
 #include "rend/gpu/swapchain.h"
 #include "rend/gpu/memory_pool.h"
@@ -90,6 +91,20 @@ constexpr std::uint32_t kVertexStride = 8 * sizeof(float);
 constexpr std::uint32_t kShadowMapSize = 2048;
 constexpr std::uint32_t kShadowCascades = 4;
 constexpr float kPi = 3.14159265358979323846f;
+
+// Reflection probe capture: face resolution and format of the load-time
+// cubemap, plus the six extra camera/light buffer regions the capture pass
+// indexes with its push-constant slot (appended after the per-frame ones,
+// so scene.hlsl needs no changes to render probe faces).
+constexpr std::uint32_t kProbeFaceSize = 256;
+constexpr std::uint32_t kProbeFormat = 43; // VK_FORMAT_R8G8B8A8_SRGB
+constexpr std::uint32_t kProbeFaces = 6;
+constexpr std::uint32_t kCameraRegions = gpu::FrameRenderer::kFramesInFlight + kProbeFaces;
+
+// LightData.reflections values; must match shading.hlsli.
+constexpr std::uint32_t kReflectionProbe = 0;
+constexpr std::uint32_t kReflectionTraced = 1;
+constexpr std::uint32_t kReflectionNone = 2;
 
 math::Vec3 vadd(const math::Vec3& a, const math::Vec3& b) {
     return {a.x + b.x, a.y + b.y, a.z + b.z};
@@ -225,6 +240,44 @@ void sampleChannel(const assetio::AnimationChannelData& channel, float time, flo
 }
 math::Vec3 vmul(const math::Vec3& v, float s) { return {v.x * s, v.y * s, v.z * s}; }
 
+// View matrix for one cube face from an explicit screen basis (right, up,
+// forward). Not lookAt: the Vulkan cube-face texel layout demands a LEFT-
+// handed basis per face (one axis mirrored vs. a normal camera), which no
+// up vector can produce — harmless to rasterize since culling is off, and
+// exactly what makes sampled directions land on the captured texels.
+math::Mat4 faceView(const math::Vec3& eye, const math::Vec3& right, const math::Vec3& up,
+                    const math::Vec3& forward) {
+    math::Mat4 m{};
+    m[0] = right.x;
+    m[4] = right.y;
+    m[8] = right.z;
+    m[12] = -math::dot(right, eye);
+    m[1] = up.x;
+    m[5] = up.y;
+    m[9] = up.z;
+    m[13] = -math::dot(up, eye);
+    m[2] = -forward.x;
+    m[6] = -forward.y;
+    m[10] = -forward.z;
+    m[14] = math::dot(forward, eye);
+    m[15] = 1.0f;
+    return m;
+}
+
+// Screen basis per cube face, derived from the Vulkan spec's cube-face
+// texel mapping: right = the +u axis, up = the -v axis, forward = the face.
+struct ProbeFaceBasis {
+    math::Vec3 right, up, forward;
+};
+constexpr ProbeFaceBasis kProbeFaceBases[kProbeFaces] = {
+    {{0, 0, -1}, {0, 1, 0}, {1, 0, 0}},  // +X
+    {{0, 0, 1}, {0, 1, 0}, {-1, 0, 0}},  // -X
+    {{1, 0, 0}, {0, 0, -1}, {0, 1, 0}},  // +Y
+    {{1, 0, 0}, {0, 0, 1}, {0, -1, 0}},  // -Y
+    {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}},   // +Z
+    {{-1, 0, 0}, {0, 1, 0}, {0, 0, -1}}, // -Z
+};
+
 // One region per frame slot in the light buffer (bindless binding 7).
 // Must match LightData in scene.hlsl / shadow.hlsl.
 struct LightData {
@@ -239,7 +292,7 @@ struct LightData {
     std::uint32_t cascadeCount = 0;
     std::uint32_t debugTint = 0;
     std::uint32_t rtShadows = 0;
-    std::uint32_t pad2 = 0;
+    std::uint32_t reflections = kReflectionProbe; // kReflection* above
     std::uint32_t pad3 = 0;
     std::uint32_t pad4 = 0;
 };
@@ -426,6 +479,8 @@ int main(int argc, char** argv) {
     bool staticMode = false;
     bool rtFromStart = false; // start with ray-traced shadows on (if supported)
     bool rtPrimaryFromStart = false; // start with traced primary rays (if supported)
+    // Optional cap on the reflection technique (default: best offered).
+    bool forceProbeReflections = false;
     std::uint64_t benchFrames = 0; // non-zero: exit after N frames with a report
     // Caps the draw-submit ladder for testing the fallbacks; the actual mode
     // is still limited by what the device supports.
@@ -443,6 +498,14 @@ int main(int argc, char** argv) {
             rtFromStart = true;
         } else if (arg == "--rtprimary") {
             rtPrimaryFromStart = true;
+        } else if (arg == "--reflections" && i + 1 < argc) {
+            const std::string_view technique = argv[++i];
+            if (technique == "probe") {
+                forceProbeReflections = true;
+            } else if (technique != "traced") {
+                log::error("Unknown --reflections '{}' (probe|traced)", technique);
+                return 1;
+            }
         } else if (arg == "--bench" && i + 1 < argc) {
             const std::string_view count = argv[++i];
             std::from_chars(count.data(), count.data() + count.size(), benchFrames);
@@ -641,6 +704,12 @@ int main(int argc, char** argv) {
         std::find(shadowOffers.begin(), shadowOffers.end(), gpu::ShadowTechnique::RayTraced) !=
         shadowOffers.end();
     bool rtReady = false; // BVH built and wired into the bindless table
+    // Reflection offer, same pattern as shadows: the probe tier is the
+    // floor that runs everywhere, ray traced rides the same RT features.
+    const std::vector<gpu::ReflectionTechnique> reflectionOffers =
+        device->supportedReflectionTechniques();
+    std::unique_ptr<gpu::Image> probeImage; // load-time capture cubemap
+    bool probeReady = false; // captured and wired into the bindless table
     if (scene) {
         const auto start = std::chrono::steady_clock::now();
         // With ray tracing, the geometry pool doubles as the BLAS build
@@ -918,10 +987,12 @@ int main(int argc, char** argv) {
         // Camera matrices, one region per frame slot: rewritten by the CPU
         // every frame (after waitFrameSlot), read by the vertex shader via
         // the slot index push constant. This is what keeps static command
-        // buffers valid while the camera moves.
+        // buffers valid while the camera moves. Six extra regions follow
+        // the per-frame ones: the probe capture pass pushes slot =
+        // kFramesInFlight + face, so the same shaders render cube faces.
         auto cameraResult = gpu::Buffer::create(
             *device, {
-                         .size = sizeof(CameraData) * gpu::FrameRenderer::kFramesInFlight,
+                         .size = sizeof(CameraData) * kCameraRegions,
                          .usage = gpu::kUsageStorage,
                          .location = gpu::MemoryLocation::HostVisible,
                      });
@@ -931,10 +1002,10 @@ int main(int argc, char** argv) {
         }
         cameraBuffer = std::move(cameraResult).value();
 
-        // Light data, same per-slot scheme as the camera.
+        // Light data, same per-slot scheme (and capture regions) as the camera.
         auto lightResult = gpu::Buffer::create(
             *device, {
-                         .size = sizeof(LightData) * gpu::FrameRenderer::kFramesInFlight,
+                         .size = sizeof(LightData) * kCameraRegions,
                          .usage = gpu::kUsageStorage,
                          .location = gpu::MemoryLocation::HostVisible,
                      });
@@ -1253,6 +1324,123 @@ int main(int argc, char** argv) {
                                .count();
         log::info("Textures ready in {} ms: {} images ({:.1f} MiB decoded), mipmapped, bindless",
                   texMs, textures.size(), static_cast<double>(texelBytes) / (1024.0 * 1024.0));
+
+        // Reflection probe capture: render the scene's draw stream into a
+        // small cubemap once at load — the raster tier reflective objects
+        // sample. Static by nature: animated meshes bake at the bind pose,
+        // lighting never re-captures, no parallax correction (v1 gaps by
+        // design; ray traced reflections are the exact tier above).
+        {
+            const auto probeStart = std::chrono::steady_clock::now();
+            // Probe position: first <ReflectionProbe> in the scene XML,
+            // else the scene AABB's center.
+            math::Vec3 probePos = vmul(vadd(sceneMin, sceneMax), 0.5f);
+            if (!scene->reflectionProbes.empty()) {
+                const auto& p = scene->reflectionProbes.front().position;
+                probePos = {p[0], p[1], p[2]};
+            }
+
+            // Six capture camera regions after the per-frame ones: 90-degree
+            // faces in the spec's cube texel basis (see kProbeFaceBases).
+            const math::Mat4 proj = math::perspective(kPi * 0.5f, 1.0f, 0.05f, 300.0f);
+            for (std::uint32_t face = 0; face < kProbeFaces; ++face) {
+                const ProbeFaceBasis& basis = kProbeFaceBases[face];
+                CameraData faceCamera;
+                faceCamera.viewProj =
+                    math::mul(proj, faceView(probePos, basis.right, basis.up, basis.forward));
+                faceCamera.position = {probePos.x, probePos.y, probePos.z, 0.001f};
+                faceCamera.rightAxis = {basis.right.x, basis.right.y, basis.right.z, 0.0f};
+                faceCamera.upAxis = {basis.up.x, basis.up.y, basis.up.z, 0.0f};
+                faceCamera.forwardAxis = {basis.forward.x, basis.forward.y, basis.forward.z,
+                                          0.0f};
+                std::memcpy(static_cast<std::byte*>(cameraBuffer->mapped()) +
+                                (gpu::FrameRenderer::kFramesInFlight + face) *
+                                    sizeof(CameraData),
+                            &faceCamera, sizeof(CameraData));
+                // Matching light regions: sun color/direction but no shadow
+                // sampling (cascadeCount 0, no maps exist yet) and no
+                // reflections — the capture sees reflective objects as
+                // plain surfaces instead of sampling the probe being made.
+                LightData faceLight;
+                const SunControls captureSun = SunControls::fromLight(
+                    scene->lights.empty() ? assetio::LightDesc{} : scene->lights.front());
+                const math::Vec3 dir = captureSun.direction();
+                faceLight.direction = {dir.x, dir.y, dir.z};
+                faceLight.intensity = captureSun.intensity;
+                faceLight.color = captureSun.color;
+                faceLight.cascadeCount = 0;
+                faceLight.rtShadows = 0;
+                faceLight.reflections = kReflectionNone;
+                std::memcpy(static_cast<std::byte*>(lightBuffer->mapped()) +
+                                (gpu::FrameRenderer::kFramesInFlight + face) *
+                                    sizeof(LightData),
+                            &faceLight, sizeof(LightData));
+            }
+
+            // Dedicated pipeline over the probe color format: the standard
+            // scene shaders, always the non-RT fragment variant (capture
+            // neither traces nor samples shadow maps).
+            const auto probeShaderDir = executableDirectory() / "data" / "shaders";
+            auto probeVertResult =
+                gpu::Shader::createFromFile(*device, probeShaderDir / "scene.vert.spv");
+            auto probeFragResult =
+                gpu::Shader::createFromFile(*device, probeShaderDir / "scene.frag.spv");
+            if (probeVertResult && probeFragResult) {
+                auto probeVert = std::move(probeVertResult).value();
+                auto probeFrag = std::move(probeFragResult).value();
+                auto probePipeResult = gpu::Pipeline::createGraphics(
+                    *device,
+                    {
+                        .vertexShader = probeVert.get(),
+                        .fragmentShader = probeFrag.get(),
+                        .colorFormat = kProbeFormat,
+                        .vertexStride = kVertexStride,
+                        .vertexAttributes = {{0, gpu::kFormatR32G32B32Sfloat, 0},
+                                             {1, gpu::kFormatR32G32B32Sfloat, 12},
+                                             {2, gpu::kFormatR32G32Sfloat, 24}},
+                        .depthFormat = gpu::kFormatD32Sfloat,
+                        .pushConstantBytes = 2 * sizeof(std::uint32_t),
+                        .descriptorLayout = descriptorTable->layout(),
+                    });
+                if (probePipeResult) {
+                    auto probePipeline = std::move(probePipeResult).value();
+                    auto probeResult = gpu::ProbeCapture::render(
+                        *device, {
+                                     .geometry = geometryPool->buffer().handle(),
+                                     .draws = draws.data(),
+                                     .drawCount = static_cast<std::uint32_t>(draws.size()),
+                                     .descriptors = descriptorTable->set(),
+                                     .pipeline = probePipeline.get(),
+                                     .format = kProbeFormat,
+                                     .faceSize = kProbeFaceSize,
+                                     .cameraSlotBase = gpu::FrameRenderer::kFramesInFlight,
+                                 });
+                    if (probeResult) {
+                        probeImage = std::move(probeResult).value();
+                        descriptorTable->writeProbe(probeImage->view());
+                        probeReady = true;
+                        const auto probeMs =
+                            std::chrono::duration_cast<std::chrono::milliseconds>(
+                                std::chrono::steady_clock::now() - probeStart)
+                                .count();
+                        log::info("Reflection probe captured in {} ms: {}^2 x6 faces at "
+                                  "({:.2f} {:.2f} {:.2f}), {} mips",
+                                  probeMs, kProbeFaceSize, probePos.x, probePos.y, probePos.z,
+                                  probeImage->mipLevels());
+                    } else {
+                        log::warn("Reflection probe capture failed: {}",
+                                  probeResult.error().message);
+                    }
+                } else {
+                    log::warn("Probe pipeline unavailable: {}", probePipeResult.error().message);
+                }
+            } else {
+                log::warn("Probe shaders unavailable: {}",
+                          (!probeVertResult ? probeVertResult : probeFragResult)
+                              .error()
+                              .message);
+            }
+        }
     }
 
     platform::TargetDesc desc{
@@ -1613,11 +1801,16 @@ int main(int argc, char** argv) {
 
     FlyCamera camera;
     SunControls sun;
+    // Reflection technique for reflective-tagged objects in the raster
+    // path; defaults to the best offer (traced where available, so nothing
+    // visually regresses vs. the per-object RT milestone).
+    bool reflectionsTraced = false;
     if (scene) {
         camera = FlyCamera::fromScene(scene->camera);
         sun = SunControls::fromLight(scene->lights.empty() ? assetio::LightDesc{}
                                                            : scene->lights.front());
         sun.rtShadows = rtFromStart && rtReady;
+        reflectionsTraced = rtReady && !forceProbeReflections;
         log::info("Sun: azimuth {:.0f}, elevation {:.0f}, intensity {:.2f}, shadows {}",
                   sun.azimuthDeg, sun.elevationDeg, sun.intensity,
                   batch.shadowPipeline ? "on" : "off");
@@ -1846,6 +2039,9 @@ int main(int argc, char** argv) {
             lightData.cascadeCount = batch.cascadeCount;
             lightData.debugTint = sun.debugTint ? 1u : 0u;
             lightData.rtShadows = (rtReady && sun.rtShadows) ? 1u : 0u;
+            lightData.reflections = (rtReady && reflectionsTraced) ? kReflectionTraced
+                                    : probeReady                  ? kReflectionProbe
+                                                                  : kReflectionNone;
             std::memcpy(static_cast<std::byte*>(lightBuffer->mapped()) +
                             renderer->frameSlot() * sizeof(LightData),
                         &lightData, sizeof(LightData));
@@ -1883,6 +2079,30 @@ int main(int argc, char** argv) {
                         }
                         if (ImGui::Selectable(gpu::shadowTechniqueName(offer), offer == active)) {
                             sun.rtShadows = offer == gpu::ShadowTechnique::RayTraced;
+                        }
+                    }
+                    ImGui::EndCombo();
+                }
+                // Reflection technique for reflective-tagged objects, from
+                // the device's offer list. Hidden while primary rays are
+                // traced — that path reflects everything for real, the
+                // per-object choice is superseded (same as Shadows above).
+                const gpu::ReflectionTechnique activeReflection =
+                    (rtReady && reflectionsTraced) ? gpu::ReflectionTechnique::RayTraced
+                                                   : gpu::ReflectionTechnique::ReflectionProbe;
+                if (!batch.rtPrimary && (probeReady || rtReady) &&
+                    ImGui::BeginCombo("Reflections",
+                                      gpu::reflectionTechniqueName(activeReflection))) {
+                    for (gpu::ReflectionTechnique offer : reflectionOffers) {
+                        if (offer == gpu::ReflectionTechnique::ReflectionProbe && !probeReady) {
+                            continue;
+                        }
+                        if (offer == gpu::ReflectionTechnique::RayTraced && !rtReady) {
+                            continue;
+                        }
+                        if (ImGui::Selectable(gpu::reflectionTechniqueName(offer),
+                                              offer == activeReflection)) {
+                            reflectionsTraced = offer == gpu::ReflectionTechnique::RayTraced;
                         }
                     }
                     ImGui::EndCombo();

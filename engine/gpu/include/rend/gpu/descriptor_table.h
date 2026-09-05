@@ -41,6 +41,8 @@ class Device;
 //   15 — joint matrices SSBO (compute; per frame slot)
 //   16 — morph target deltas SSBO (compute; pos+normal per vertex/target)
 //   17 — morph weights SSBO (compute; per frame slot)
+//   18 — reflection probe cubemap (fragment; the raster reflection tier
+//        samples it by direction, mip = roughness)
 class DescriptorTable {
 public:
     static Result<std::unique_ptr<DescriptorTable>> create(const Device& device,
@@ -59,6 +61,8 @@ public:
     void writeStorageBuffer(std::uint32_t binding, VkBuffer buffer, std::uint64_t range);
     // Binding 8: one cascade's depth image the scene pass samples.
     void writeShadowMap(std::uint32_t cascade, VkImageView view);
+    // Binding 18: the reflection probe's cube view.
+    void writeProbe(VkImageView view);
     // Binding 10 (RayQuery devices only): the scene TLAS.
     void writeAccelerationStructure(VkAccelerationStructureKHR tlas);
 

@@ -21,7 +21,7 @@ struct LightData {
     uint cascadeCount;
     uint debugTint;
     uint rtShadows;
-    uint pad2;
+    uint reflections;
     uint pad3;
     uint pad4;
 };

@@ -11,6 +11,7 @@ add_library(rend_gpu OBJECT
     src/swapchain.cpp
     src/shader.cpp
     src/pipeline.cpp
+    src/probe_capture.cpp
     src/frame_renderer.cpp
     src/texture_uploader.cpp
     src/transfer.cpp

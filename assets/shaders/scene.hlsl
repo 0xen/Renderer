@@ -170,20 +170,30 @@ float4 PSMain(VSOutput input) : SV_Target0 {
     const float3 sun = shadeSurface(albedo.rgb, metallic, roughness, n, v, l, light.color,
                                     light.intensity, shadow);
     float3 color = albedo.rgb * ambientLight(n) + sun;
+    // Reflective-flagged fragments mix in a reflected color from the
+    // technique the light buffer selects: the probe cubemap everywhere, or
+    // (RT variant only) one traced reflection ray whose cost scales with
+    // the flagged objects' screen coverage. kReflectionNone shades plain —
+    // that's the probe capture pass seeing reflective objects as ordinary
+    // surfaces instead of sampling the probe being rendered.
+    if ((object.flags & kFlagReflective) != 0 && light.reflections != kReflectionNone) {
+        float3 reflected = 0.0f;
+        bool haveReflection = false;
 #if RT_SHADOWS
-    // Per-object RT: reflective-flagged fragments fire one reflection ray
-    // through the TLAS and Fresnel-mix the traced result into their base
-    // shading. Cost scales with the flagged objects' screen coverage.
-    if ((object.flags & kFlagReflective) != 0) {
-        const float3 camPos = cameras[pc.cameraSlot].position.xyz;
-        const float3 reflected = traceReflection(
-            input.worldPos + n * 1.0e-3f, reflect(-v, n),
-            length(input.worldPos - camPos), cameras[pc.cameraSlot].position.w, light);
-        const float3 f0 = lerp(0.04f, albedo.rgb, metallic);
-        const float3 f = f0 + (1.0f - f0) * pow(1.0f - saturate(dot(n, v)), 5.0f);
-        color = lerp(color, reflected, f * (1.0f - roughness));
-    }
+        if (light.reflections == kReflectionTraced) {
+            const float3 camPos = cameras[pc.cameraSlot].position.xyz;
+            reflected = traceReflection(
+                input.worldPos + n * 1.0e-3f, reflect(-v, n),
+                length(input.worldPos - camPos), cameras[pc.cameraSlot].position.w, light);
+            haveReflection = true;
+        }
 #endif
+        if (!haveReflection) {
+            reflected = sampleReflectionProbe(reflect(-v, n), roughness);
+        }
+        const float3 f0 = lerp(0.04f, albedo.rgb, metallic);
+        color = mixReflection(color, reflected, f0, roughness, dot(n, v));
+    }
     if (light.debugTint != 0) {
         const float3 tints[4] = {float3(1.0f, 0.6f, 0.6f), float3(0.6f, 1.0f, 0.6f),
                                  float3(0.6f, 0.6f, 1.0f), float3(1.0f, 1.0f, 0.6f)};

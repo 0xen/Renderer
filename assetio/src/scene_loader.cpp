@@ -98,6 +98,16 @@ Result<SceneDesc> parseScene(const std::filesystem::path& xmlFile) {
         scene.lights.push_back(desc);
     }
 
+    for (const pugi::xml_node probe : root.children("ReflectionProbe")) {
+        ReflectionProbeDesc desc;
+        if (auto r = parseFloats(probe.attribute("position"), desc.position,
+                                 "ReflectionProbe position");
+            !r) {
+            return r.error();
+        }
+        scene.reflectionProbes.push_back(desc);
+    }
+
     const std::filesystem::path baseDir = xmlFile.parent_path();
     for (const pugi::xml_node model : root.children("Model")) {
         ModelNodeDesc desc;
@@ -142,6 +152,7 @@ Result<LoadedScene> loadScene(const std::filesystem::path& xmlFile,
     loaded.name = std::move(desc.name);
     loaded.camera = desc.camera;
     loaded.lights = std::move(desc.lights);
+    loaded.reflectionProbes = std::move(desc.reflectionProbes);
     for (ModelNodeDesc& model : desc.models) {
         auto imported = importers.import(model.meshPath);
         if (!imported) {

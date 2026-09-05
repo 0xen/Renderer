@@ -47,16 +47,26 @@ struct LightData {
     uint cascadeCount;
     uint debugTint; // non-zero: tint output by cascade for inspection
     uint rtShadows; // non-zero: trace shadow rays instead of sampling maps
-    uint pad2;
+    uint reflections; // kReflection* below: reflective objects' source
     uint pad3;
     uint pad4;
 };
+
+// LightData.reflections values: where reflective-tagged fragments get
+// their reflected color from.
+static const uint kReflectionProbe = 0u;  // sample the probe cubemap
+static const uint kReflectionTraced = 1u; // fire an inline reflection ray
+static const uint kReflectionNone = 2u;   // shade plain (probe capture pass)
 
 [[vk::binding(0, 0)]] StructuredBuffer<ObjectData> objects;
 [[vk::binding(1, 0)]] Texture2D textures[];
 [[vk::binding(2, 0)]] SamplerState linearSampler;
 [[vk::binding(6, 0)]] StructuredBuffer<CameraData> cameras;
 [[vk::binding(7, 0)]] StructuredBuffer<LightData> lights;
+// Reflection probe cubemap (load-time capture, full mip chain). Only
+// sampled when reflections == kReflectionProbe, so the binding may stay
+// unwritten on scenes that never captured one (partially bound).
+[[vk::binding(18, 0)]] TextureCube probeMap;
 
 // One directional light, glTF metallic-roughness: Lambert diffuse + GGX
 // specular (Smith-Schlick visibility, Schlick Fresnel). Scaled by pi so a
@@ -88,4 +98,22 @@ float3 shadeSurface(float3 albedo, float metallic, float roughness, float3 n, fl
 // Hemispherical ambient shared by both paths.
 float3 ambientLight(float3 n) {
     return float3(0.30f, 0.32f, 0.36f) * (n.y * 0.2f + 0.5f);
+}
+
+// Probe tier: the reflected direction looks up the capture cubemap, with
+// roughness selecting a blurrier mip — a cheap stand-in for a real GGX
+// prefilter. Infinite probe: no parallax correction, static content.
+float3 sampleReflectionProbe(float3 dir, float roughness) {
+    float w, h, mips;
+    probeMap.GetDimensions(0, w, h, mips);
+    return probeMap.SampleLevel(linearSampler, dir, roughness * (mips - 1.0f)).rgb;
+}
+
+// Fresnel-weighted mix of a surface's base shading with its reflected
+// color, attenuated by roughness (a rough "mirror" barely reflects). One
+// helper for both sources so the probe and traced tiers can never drift.
+float3 mixReflection(float3 baseColor, float3 reflected, float3 f0, float roughness,
+                     float ndotv) {
+    const float3 f = f0 + (1.0f - f0) * pow(1.0f - saturate(ndotv), 5.0f);
+    return lerp(baseColor, reflected, f * (1.0f - roughness));
 }
