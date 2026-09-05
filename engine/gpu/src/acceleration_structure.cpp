@@ -6,6 +6,7 @@
 
 #include <volk.h>
 
+#include <algorithm>
 #include <cstring>
 #include <format>
 #include <vector>
@@ -85,18 +86,51 @@ void recordBuild(VkCommandBuffer cmd, const void* userData) {
 struct Built {
     VkAccelerationStructureKHR handle = VK_NULL_HANDLE;
     std::unique_ptr<Buffer> storage;
+    std::unique_ptr<Buffer> updateScratch;
 };
 
+// Converts caller geometry ranges into the Vulkan build structures —
+// shared by the load-time build and per-frame refits (which pass the same
+// ranges with different vertex addresses).
+void fillTriangleGeometries(const Device& device,
+                            std::span<const AccelerationStructure::TriangleGeometry> geometries,
+                            std::vector<VkAccelerationStructureGeometryKHR>& geos,
+                            std::vector<VkAccelerationStructureBuildRangeInfoKHR>& ranges) {
+    geos.resize(geometries.size());
+    ranges.resize(geometries.size());
+    for (std::size_t i = 0; i < geometries.size(); ++i) {
+        const AccelerationStructure::TriangleGeometry& g = geometries[i];
+        const VkDeviceAddress base = bufferAddress(device, g.buffer->handle());
+        auto& geo = geos[i];
+        geo = {};
+        geo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
+        geo.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
+        geo.flags = g.opaque ? VK_GEOMETRY_OPAQUE_BIT_KHR : 0;
+        auto& tris = geo.geometry.triangles;
+        tris.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR;
+        tris.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
+        tris.vertexData.deviceAddress = base + g.vertexOffset;
+        tris.vertexStride = g.vertexStride;
+        tris.maxVertex = g.vertexCount > 0 ? g.vertexCount - 1 : 0;
+        tris.indexType = VK_INDEX_TYPE_UINT32;
+        tris.indexData.deviceAddress = base + g.indexOffset;
+        ranges[i] = {};
+        ranges[i].primitiveCount = g.indexCount / 3;
+    }
+}
+
 // Shared tail: size the build, allocate storage + scratch, create the AS
-// handle, run the build.
+// handle, run the build. allowUpdate also sizes and keeps the UPDATE
+// scratch so the structure can be refitted later.
 Result<Built> buildCommon(
     const Device& device, VkAccelerationStructureTypeKHR type,
     VkAccelerationStructureBuildGeometryInfoKHR& build,
     const std::vector<VkAccelerationStructureBuildRangeInfoKHR>& ranges,
-    const std::vector<std::uint32_t>& primitiveCounts) {
+    const std::vector<std::uint32_t>& primitiveCounts, bool allowUpdate) {
     build.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
     build.type = type;
-    build.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
+    build.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR |
+                  (allowUpdate ? VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR : 0);
     build.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
 
     VkAccelerationStructureBuildSizesInfoKHR sizes{};
@@ -124,6 +158,19 @@ Result<Built> buildCommon(
     if (!scratchResult) {
         return Error{std::format("AS scratch: {}", scratchResult.error().message)};
     }
+    std::unique_ptr<Buffer> updateScratch;
+    if (allowUpdate) {
+        auto updateResult =
+            Buffer::create(device, {
+                                       .size = std::max<std::uint64_t>(sizes.updateScratchSize, 4),
+                                       .usage = kUsageStorage | kUsageShaderDeviceAddress,
+                                       .location = MemoryLocation::DeviceLocal,
+                                   });
+        if (!updateResult) {
+            return Error{std::format("AS update scratch: {}", updateResult.error().message)};
+        }
+        updateScratch = std::move(updateResult).value();
+    }
 
     VkAccelerationStructureCreateInfoKHR createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
@@ -146,35 +193,21 @@ Result<Built> buildCommon(
         vkDestroyAccelerationStructureKHR(device.handle(), handle, nullptr);
         return r.error();
     }
-    return Built{handle, std::move(storageResult).value()};
+    return Built{handle, std::move(storageResult).value(), std::move(updateScratch)};
 }
 
 } // namespace
 
 Result<std::unique_ptr<AccelerationStructure>> AccelerationStructure::buildBottomLevel(
-    const Device& device, std::span<const TriangleGeometry> geometries) {
+    const Device& device, std::span<const TriangleGeometry> geometries, bool allowUpdate) {
     if (geometries.empty()) {
         return Error{"BLAS build needs at least one geometry"};
     }
-    std::vector<VkAccelerationStructureGeometryKHR> geos(geometries.size());
-    std::vector<VkAccelerationStructureBuildRangeInfoKHR> ranges(geometries.size());
+    std::vector<VkAccelerationStructureGeometryKHR> geos;
+    std::vector<VkAccelerationStructureBuildRangeInfoKHR> ranges;
+    fillTriangleGeometries(device, geometries, geos, ranges);
     std::vector<std::uint32_t> primitiveCounts(geometries.size());
-    for (std::size_t i = 0; i < geometries.size(); ++i) {
-        const TriangleGeometry& g = geometries[i];
-        const VkDeviceAddress base = bufferAddress(device, g.buffer->handle());
-        auto& geo = geos[i];
-        geo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
-        geo.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
-        geo.flags = g.opaque ? VK_GEOMETRY_OPAQUE_BIT_KHR : 0;
-        auto& tris = geo.geometry.triangles;
-        tris.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR;
-        tris.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
-        tris.vertexData.deviceAddress = base + g.vertexOffset;
-        tris.vertexStride = g.vertexStride;
-        tris.maxVertex = g.vertexCount > 0 ? g.vertexCount - 1 : 0;
-        tris.indexType = VK_INDEX_TYPE_UINT32;
-        tris.indexData.deviceAddress = base + g.indexOffset;
-        ranges[i].primitiveCount = g.indexCount / 3;
+    for (std::size_t i = 0; i < ranges.size(); ++i) {
         primitiveCounts[i] = ranges[i].primitiveCount;
     }
 
@@ -182,20 +215,21 @@ Result<std::unique_ptr<AccelerationStructure>> AccelerationStructure::buildBotto
     build.geometryCount = static_cast<std::uint32_t>(geos.size());
     build.pGeometries = geos.data();
     auto result = buildCommon(device, VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR, build,
-                              ranges, primitiveCounts);
+                              ranges, primitiveCounts, allowUpdate);
     if (!result) {
         return result.error();
     }
     auto as = std::unique_ptr<AccelerationStructure>(new AccelerationStructure());
     as->device_ = &device;
     as->as_ = result.value().handle;
-    as->storage_ = std::move(result).value().storage;
-    log::info("BLAS built: {} geometries", geos.size());
+    as->storage_ = std::move(result.value().storage);
+    as->updateScratch_ = std::move(result.value().updateScratch);
+    log::info("BLAS built: {} geometries{}", geos.size(), allowUpdate ? " (updatable)" : "");
     return as;
 }
 
 Result<std::unique_ptr<AccelerationStructure>> AccelerationStructure::buildTopLevel(
-    const Device& device, std::span<const Instance> instances) {
+    const Device& device, std::span<const Instance> instances, bool allowUpdate) {
     if (instances.empty()) {
         return Error{"TLAS build needs at least one instance"};
     }
@@ -247,16 +281,70 @@ Result<std::unique_ptr<AccelerationStructure>> AccelerationStructure::buildTopLe
     build.geometryCount = 1;
     build.pGeometries = &geo;
     auto result = buildCommon(device, VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR, build, ranges,
-                              primitiveCounts);
+                              primitiveCounts, allowUpdate);
     if (!result) {
         return result.error();
     }
     auto as = std::unique_ptr<AccelerationStructure>(new AccelerationStructure());
     as->device_ = &device;
     as->as_ = result.value().handle;
-    as->storage_ = std::move(result).value().storage;
-    log::info("TLAS built: {} instances", data.size());
+    as->storage_ = std::move(result.value().storage);
+    as->updateScratch_ = std::move(result.value().updateScratch);
+    // Refits reread the instances, so an updatable TLAS keeps the buffer.
+    if (allowUpdate) {
+        as->instances_ = std::move(instanceBuffer);
+        as->instanceCount_ = static_cast<std::uint32_t>(data.size());
+    }
+    log::info("TLAS built: {} instances{}", data.size(), allowUpdate ? " (updatable)" : "");
     return as;
+}
+
+void AccelerationStructure::recordRefit(VkCommandBuffer cmd,
+                                        std::span<const TriangleGeometry> geometries) const {
+    std::vector<VkAccelerationStructureGeometryKHR> geos;
+    std::vector<VkAccelerationStructureBuildRangeInfoKHR> ranges;
+    fillTriangleGeometries(*device_, geometries, geos, ranges);
+
+    VkAccelerationStructureBuildGeometryInfoKHR build{};
+    build.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
+    build.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
+    build.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR |
+                  VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR;
+    build.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR;
+    build.srcAccelerationStructure = as_;
+    build.dstAccelerationStructure = as_;
+    build.geometryCount = static_cast<std::uint32_t>(geos.size());
+    build.pGeometries = geos.data();
+    build.scratchData.deviceAddress = bufferAddress(*device_, updateScratch_->handle());
+
+    const VkAccelerationStructureBuildRangeInfoKHR* rangePtr = ranges.data();
+    vkCmdBuildAccelerationStructuresKHR(cmd, 1, &build, &rangePtr);
+}
+
+void AccelerationStructure::recordRefit(VkCommandBuffer cmd) const {
+    VkAccelerationStructureGeometryKHR geo{};
+    geo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
+    geo.geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR;
+    geo.geometry.instances.sType =
+        VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR;
+    geo.geometry.instances.data.deviceAddress = bufferAddress(*device_, instances_->handle());
+
+    VkAccelerationStructureBuildGeometryInfoKHR build{};
+    build.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
+    build.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
+    build.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR |
+                  VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR;
+    build.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR;
+    build.srcAccelerationStructure = as_;
+    build.dstAccelerationStructure = as_;
+    build.geometryCount = 1;
+    build.pGeometries = &geo;
+    build.scratchData.deviceAddress = bufferAddress(*device_, updateScratch_->handle());
+
+    VkAccelerationStructureBuildRangeInfoKHR range{};
+    range.primitiveCount = instanceCount_;
+    const VkAccelerationStructureBuildRangeInfoKHR* rangePtr = &range;
+    vkCmdBuildAccelerationStructuresKHR(cmd, 1, &build, &rangePtr);
 }
 
 AccelerationStructure::~AccelerationStructure() {

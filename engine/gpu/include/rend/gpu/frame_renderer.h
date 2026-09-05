@@ -1,6 +1,7 @@
 #pragma once
 
 #include "rend/core/result.h"
+#include "rend/gpu/acceleration_structure.h"
 
 #include <array>
 #include <cstdint>
@@ -111,6 +112,15 @@ struct DrawBatch {
     };
     const Pipeline* skinPipeline = nullptr;
     std::vector<SkinDispatch> skinDispatches;
+    // Acceleration-structure refit (optional, needs skin dispatches): after
+    // the skin pass poses this slot's vertices, the whole-scene BLAS is
+    // updated in place from refitGeometries[slot] — the build-time geometry
+    // list with animated entries' vertex data pointing at that slot's posed
+    // region — and the TLAS follows so traced passes see the pose. Both
+    // structures must have been built with allowUpdate.
+    const AccelerationStructure* refitBlas = nullptr;
+    const AccelerationStructure* refitTlas = nullptr;
+    std::vector<std::vector<AccelerationStructure::TriangleGeometry>> refitGeometries;
 };
 
 // Per-frame-recorded baseline frame loop: acquire, record, submit, present,

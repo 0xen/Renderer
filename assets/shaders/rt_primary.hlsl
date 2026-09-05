@@ -65,8 +65,10 @@ struct LightData {
 // pos3f/normal3f/uv2f) and uint32 indices, addressed via geometryInfo.
 [[vk::binding(11, 0)]] ByteAddressBuffer geometryBytes;
 // Per BLAS-geometry index (== object index): x = firstIndex (uint32 units
-// from pool start), y = vertexOffset (vertex-stride units from pool start).
-[[vk::binding(12, 0)]] StructuredBuffer<uint2> geometryInfo;
+// from pool start), y = vertexOffset (vertex-stride units from pool start),
+// z = per-slot vertex stride for animated meshes (their y points at the
+// posed per-slot regions the BLAS is refitted from; 0 = static), w unused.
+[[vk::binding(12, 0)]] StructuredBuffer<uint4> geometryInfo;
 
 static const uint kFlagAlphaMasked = 1u;
 static const uint kFlagTransparent = 2u;
@@ -99,8 +101,10 @@ float2 vertexUv(uint vertex) {
     return asfloat(geometryBytes.Load2(vertex * kVertexStrideBytes + 24));
 }
 
-uint3 triangleIndices(uint2 info, uint primitive) {
-    return geometryBytes.Load3((info.x + primitive * 3) * 4) + info.y;
+uint3 triangleIndices(uint4 info, uint primitive) {
+    // Animated meshes fetch from the current slot's posed copy — the same
+    // vertices the refitted BLAS traced against this frame.
+    return geometryBytes.Load3((info.x + primitive * 3) * 4) + info.y + pc.cameraSlot * info.z;
 }
 
 float2 hitUv(uint objectIndex, uint primitive, float2 bary) {

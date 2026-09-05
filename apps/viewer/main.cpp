@@ -72,9 +72,15 @@ static_assert(sizeof(CameraData) == 128);
 
 // Per BLAS-geometry (== object) index: {firstIndex, vertexOffset} in
 // uint32/vertex-stride units — the traced pass pulls hit triangles itself.
+// Animated meshes point vertexOffset at their posed per-slot region base
+// and carry the per-slot vertex stride; the shader adds slot * slotStride
+// so traced attributes come from the same pose the BLAS was refitted to.
+// Must match the uint4 layout in rt_primary.hlsl (binding 12).
 struct GeometryInfo {
     std::uint32_t firstIndex = 0;
     std::uint32_t vertexOffset = 0;
+    std::uint32_t slotStride = 0; // vertices per slot copy; 0 = static
+    std::uint32_t pad = 0;
 };
 
 // Interleaved vertex layout of the scene pass: position, normal, uv.
@@ -616,6 +622,9 @@ int main(int argc, char** argv) {
     std::unique_ptr<gpu::Buffer> lightBuffer;  // one LightData per frame slot, CPU-written
     std::vector<std::unique_ptr<gpu::Image>> shadowMaps; // one per cascade
     std::unique_ptr<gpu::AccelerationStructure> blas, tlas; // RT shadow BVH
+    // Per-slot BLAS refit inputs: the build geometry list with animated
+    // entries pointing at that slot's posed vertex region (empty = static).
+    std::vector<std::vector<gpu::AccelerationStructure::TriangleGeometry>> refitGeometries;
     math::Vec3 sceneMin{1e30f, 1e30f, 1e30f};
     math::Vec3 sceneMax{-1e30f, -1e30f, -1e30f};
     std::vector<gpu::DrawIndexedIndirect> draws; // outlives the loop: Direct mode records from it
@@ -756,6 +765,21 @@ int main(int argc, char** argv) {
                     if (!dstSlice) {
                         log::error("Posed-vertex allocation failed: {}", dstSlice.error().message);
                         return 1;
+                    }
+                    // Seed every slot copy with the bind pose so consumers
+                    // (traced attribute fetch, a missing skin pipeline)
+                    // never read uninitialized pool memory.
+                    for (std::uint32_t slot = 0; slot < gpu::FrameRenderer::kFramesInFlight;
+                         ++slot) {
+                        if (auto staged = transfer->stage(
+                                geometryPool->buffer(),
+                                dstSlice.value().offset +
+                                    std::uint64_t{slot} * vertexCount * kVertexStride,
+                                vertexData.data(), std::uint64_t{vertexCount} * kVertexStride);
+                            !staged) {
+                            log::error("Posed-vertex seeding failed: {}", staged.error().message);
+                            return 1;
+                        }
                     }
                     AnimatedMeshEntry entry;
                     entry.objectIndex = static_cast<std::uint32_t>(geometry.size() - 1);
@@ -962,6 +986,10 @@ int main(int argc, char** argv) {
                         static_cast<std::uint32_t>(location.vertices.offset / kVertexStride),
                 });
             }
+            for (const AnimatedMeshEntry& entry : animatedMeshes) {
+                geometryInfo[entry.objectIndex].vertexOffset = entry.dstVertexBase;
+                geometryInfo[entry.objectIndex].slotStride = entry.vertexCount;
+            }
             auto infoResult = gpu::Buffer::create(
                 *device, {
                              .size = geometryInfo.size() * sizeof(GeometryInfo),
@@ -1086,15 +1114,33 @@ int main(int argc, char** argv) {
                                (kObjectAlphaMasked | kObjectTransparent)) == 0,
                 });
             }
-            auto blasResult = gpu::AccelerationStructure::buildBottomLevel(*device, triangles);
+            // Animated meshes need per-frame refits: build updatable and
+            // precompute each slot's geometry list — identical to the build
+            // except animated entries read that slot's posed region.
+            const bool animatedBvh = !animatedMeshes.empty();
+            auto blasResult =
+                gpu::AccelerationStructure::buildBottomLevel(*device, triangles, animatedBvh);
             if (blasResult) {
                 blas = std::move(blasResult).value();
                 const gpu::AccelerationStructure::Instance blasInstance{.blas = blas.get()};
-                auto tlasResult =
-                    gpu::AccelerationStructure::buildTopLevel(*device, {&blasInstance, 1});
+                auto tlasResult = gpu::AccelerationStructure::buildTopLevel(
+                    *device, {&blasInstance, 1}, animatedBvh);
                 if (tlasResult) {
                     tlas = std::move(tlasResult).value();
                     rtReady = true;
+                    if (animatedBvh) {
+                        for (std::uint32_t slot = 0; slot < gpu::FrameRenderer::kFramesInFlight;
+                             ++slot) {
+                            auto slotTriangles = triangles;
+                            for (const AnimatedMeshEntry& entry : animatedMeshes) {
+                                slotTriangles[entry.objectIndex].vertexOffset =
+                                    (std::uint64_t{entry.dstVertexBase} +
+                                     std::uint64_t{slot} * entry.vertexCount) *
+                                    kVertexStride;
+                            }
+                            refitGeometries.push_back(std::move(slotTriangles));
+                        }
+                    }
                     const auto rtMs = std::chrono::duration_cast<std::chrono::milliseconds>(
                                           std::chrono::steady_clock::now() - rtStart)
                                           .count();
@@ -1507,6 +1553,14 @@ int main(int argc, char** argv) {
                                      static_cast<std::uint32_t>(morphWeightsFrame.size())};
                     dispatch.vertexCount = entry.vertexCount;
                     batch.skinDispatches.push_back(dispatch);
+                }
+                // With a BVH present, refit it from the freshly posed
+                // vertices every frame so traced shadows/primary follow
+                // the animation instead of the bind pose.
+                if (rtReady && !refitGeometries.empty()) {
+                    batch.refitBlas = blas.get();
+                    batch.refitTlas = tlas.get();
+                    batch.refitGeometries = refitGeometries;
                 }
             }
         }
