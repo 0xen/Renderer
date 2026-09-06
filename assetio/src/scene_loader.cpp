@@ -65,6 +65,15 @@ Result<SceneDesc> parseScene(const std::filesystem::path& xmlFile) {
 
     SceneDesc scene;
     scene.name = root.attribute("name").as_string(xmlFile.stem().string().c_str());
+    // loading="wait" (default) holds the scene behind a loading screen;
+    // "streaming" shows it immediately with assets popping in as they land.
+    const std::string loading = root.attribute("loading").as_string("wait");
+    if (loading == "streaming") {
+        scene.loading = SceneLoadingMode::Streaming;
+    } else if (loading != "wait") {
+        return Error{std::format("'{}': unknown loading mode '{}' (wait|streaming)",
+                                 xmlFile.string(), loading)};
+    }
 
     if (const pugi::xml_node camera = root.child("Camera")) {
         if (auto r = parseFloats(camera.attribute("position"), scene.camera.position,
@@ -159,6 +168,7 @@ Result<LoadedScene> loadScene(const std::filesystem::path& xmlFile,
 
     LoadedScene loaded;
     loaded.name = std::move(desc.name);
+    loaded.loading = desc.loading;
     loaded.camera = desc.camera;
     loaded.lights = std::move(desc.lights);
     loaded.reflectionProbes = std::move(desc.reflectionProbes);

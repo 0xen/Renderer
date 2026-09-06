@@ -36,12 +36,23 @@ public:
     // so future interactive widgets work. Call for every pumped event.
     void handleEvent(const rend::platform::Event& event);
 
+    // Scene asset-loading progress for the loading bar. hideScene = wait
+    // mode: a fullscreen cover with a centered bar replaces the scene
+    // until loading completes; otherwise a small inline bar overlays the
+    // (already visible, streaming) scene.
+    struct LoadingStatus {
+        bool hideScene = false;
+        std::uint32_t done = 0;
+        std::uint32_t total = 0;
+    };
+
     // Starts the ImGui frame and lays out the debug panel (FPS counter,
     // frame-rate history graph, and — when vsync is non-null — a VSync
-    // checkbox bound to it). Call once per frame before
-    // FrameRenderer::drawFrame; the caller reacts to a toggled *vsync.
+    // checkbox bound to it). loading non-null draws the loading bar (see
+    // LoadingStatus). Call once per frame before FrameRenderer::drawFrame;
+    // the caller reacts to a toggled *vsync.
     void buildFrame(std::uint32_t width, std::uint32_t height, float deltaSeconds,
-                    bool* vsync = nullptr);
+                    bool* vsync = nullptr, const LoadingStatus* loading = nullptr);
 
     // The FrameRenderer overlay recorder: finalizes the ImGui frame and
     // records its draw data. Runs inside an active rendering pass.

@@ -157,8 +157,17 @@ struct ModelNodeDesc {
     bool reflective = false;
 };
 
+// Scene-wide asset-loading intent (<Scene loading=...>): how the app
+// should present the load, never how it schedules it (loading stays
+// nonblocking to the renderer either way).
+enum class SceneLoadingMode {
+    Wait,      // hold the scene behind a loading screen until assets land
+    Streaming, // show the scene immediately; assets pop in as they arrive
+};
+
 struct SceneDesc {
     std::string name;
+    SceneLoadingMode loading = SceneLoadingMode::Wait;
     CameraDesc camera;
     std::vector<LightDesc> lights;
     // Optional; a probe-capable renderer with none listed picks its own
@@ -181,6 +190,7 @@ struct LoadedModel {
 
 struct LoadedScene {
     std::string name;
+    SceneLoadingMode loading = SceneLoadingMode::Wait;
     CameraDesc camera;
     std::vector<LightDesc> lights;
     std::vector<ReflectionProbeDesc> reflectionProbes;

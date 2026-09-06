@@ -100,6 +100,13 @@ renderer message queue (`load_model` / `set_transform` / `unload_model`, `poll_e
 Python at all — the host DLL is never even loaded, so it and the CPython runtime may
 be absent. assetio only parses the paths; it never executes code.
 
+`Scene` takes an optional `loading` attribute describing how the app should
+*present* asset loading, never how it schedules it (loading is nonblocking to the
+renderer either way): `wait` (the default) holds the scene behind a loading screen
+with a progress bar until every asset has landed; `streaming` shows the scene
+immediately, assets popping in as they arrive (textures sample a neutral white
+until theirs lands), with a small inline progress bar.
+
 `Light` describes what the light *is* (direction points from the light toward the
 scene), never the rendering technique — shadow maps vs ray tracing is the renderer's
 offer, per the intent/offer model in ARCHITECTURE.md. `type` is `directional` only for

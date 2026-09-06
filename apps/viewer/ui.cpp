@@ -12,7 +12,9 @@
 #include <imgui.h>
 #include <imgui_impl_vulkan.h>
 
+#include <algorithm>
 #include <cfloat>
+#include <cstdio>
 
 namespace viewer {
 
@@ -147,7 +149,7 @@ void Ui::handleEvent(const rend::platform::Event& event) {
 }
 
 void Ui::buildFrame(std::uint32_t width, std::uint32_t height, float deltaSeconds,
-                    bool* vsync) {
+                    bool* vsync, const LoadingStatus* loading) {
     ImGuiIO& io = ImGui::GetIO();
     io.DisplaySize = ImVec2(static_cast<float>(width), static_cast<float>(height));
     io.DeltaTime = deltaSeconds > 0.0f ? deltaSeconds : 1.0f / 60.0f;
@@ -202,6 +204,44 @@ void Ui::buildFrame(std::uint32_t width, std::uint32_t height, float deltaSecond
                 mem.bytes[static_cast<std::uint32_t>(Kind::Image)] / kMiB,
                 mem.counts[static_cast<std::uint32_t>(Kind::Image)]);
     ImGui::End();
+
+    // Scene asset loading bar. Wait mode covers the whole viewport (the
+    // scene stays hidden behind it until every asset landed); streaming
+    // mode floats a small bar top-center over the already-visible scene.
+    if (loading != nullptr && loading->total > 0) {
+        const float fraction =
+            static_cast<float>(loading->done) / static_cast<float>(loading->total);
+        char label[64];
+        std::snprintf(label, sizeof(label), "Loading textures %u / %u", loading->done,
+                      loading->total);
+        if (loading->hideScene) {
+            ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f));
+            ImGui::SetNextWindowSize(io.DisplaySize);
+            ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.03f, 0.01f, 0.01f, 1.0f));
+            ImGui::Begin("##loadingCover", nullptr,
+                         ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
+                             ImGuiWindowFlags_NoSavedSettings |
+                             ImGuiWindowFlags_NoBringToFrontOnFocus);
+            const float barWidth = std::min(420.0f, io.DisplaySize.x * 0.6f);
+            ImGui::SetCursorPos(ImVec2((io.DisplaySize.x - barWidth) * 0.5f,
+                                       io.DisplaySize.y * 0.5f - 24.0f));
+            ImGui::TextUnformatted(label);
+            ImGui::SetCursorPos(
+                ImVec2((io.DisplaySize.x - barWidth) * 0.5f, io.DisplaySize.y * 0.5f));
+            ImGui::ProgressBar(fraction, ImVec2(barWidth, 18.0f));
+            ImGui::End();
+            ImGui::PopStyleColor();
+        } else {
+            const float barWidth = 280.0f;
+            ImGui::SetNextWindowPos(ImVec2((io.DisplaySize.x - barWidth) * 0.5f, 8.0f));
+            ImGui::Begin("##loadingBar", nullptr,
+                         ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+                             ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
+            ImGui::TextUnformatted(label);
+            ImGui::ProgressBar(fraction, ImVec2(barWidth, 12.0f));
+            ImGui::End();
+        }
+    }
 
     frameBuilt_ = true;
 }

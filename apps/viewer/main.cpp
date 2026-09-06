@@ -36,6 +36,7 @@
 #include <cmath>
 #include <condition_variable>
 #include <deque>
+#include <functional>
 #include <format>
 #include <cstddef>
 #include <cstring>
@@ -789,6 +790,44 @@ int main(int argc, char** argv) {
     std::unique_ptr<gpu::Buffer> objectBuffer;
     std::unique_ptr<gpu::DescriptorTable> descriptorTable;
     std::vector<std::unique_ptr<gpu::Image>> textures;
+    // Scene textures registered for the bindless table; slot-indexed,
+    // entry 0 is the 1x1 white fallback. Main-scope: the streaming decode
+    // workers and the frame loop's upload pump both read it.
+    struct TextureRequest {
+        std::filesystem::path path;
+        bool srgb = true; // normal/MR maps decode linear (UNORM)
+    };
+    std::vector<TextureRequest> texturePaths{{}};
+    // Nonblocking scene-texture streaming (<Scene loading=...>): decode
+    // runs on worker threads while the frame loop renders; the loop
+    // uploads a few finished textures per frame and batches the bindless
+    // slot rewrites under a waitIdle sync point — every slot points at
+    // white until its real texture lands, and a slot being rewritten was
+    // sampled by in-flight frames, so the rewrite must not race pending
+    // work (UPDATE_AFTER_BIND only covers descriptors no pending command
+    // buffer consumes).
+    struct SceneTextureStream {
+        std::mutex mutex;
+        std::deque<std::pair<std::size_t, Result<assetio::TextureData>>> ready;
+        std::vector<std::thread> workers;
+        std::atomic<std::size_t> next{1};
+        std::atomic<bool> quit{false};
+        std::vector<std::uint32_t> pendingSlots; // uploaded, awaiting slot rewrite
+        std::size_t total = 0;                   // beyond the white fallback
+        std::size_t uploaded = 0;
+        std::uint64_t texelBytes = 0;
+        std::chrono::steady_clock::time_point start;
+        std::chrono::steady_clock::time_point lastFlush;
+        bool active = false;
+    };
+    SceneTextureStream texStream;
+    // loading="wait": hold the scene behind the loading screen until the
+    // stream completes (the renderer keeps pumping frames either way).
+    bool waitForTextures = false;
+    // Reflection probe capture, deferred until the texture stream
+    // completes so the capture samples real textures; assigned during
+    // scene setup, invoked once by the frame loop's streaming pump.
+    std::function<void()> capturePendingProbe;
     std::vector<GeometryLocation> geometry;
     // Kept alive past load for the runtime model-load path (message queue):
     // the transfer context and texture uploader do the GPU work, the
@@ -860,12 +899,9 @@ int main(int argc, char** argv) {
 
         // Slot 0 of the bindless texture array is a 1x1 white fallback so
         // untextured materials sample neutrally; index 0 doubles as "no
-        // normal / no metallic-roughness map".
-        struct TextureRequest {
-            std::filesystem::path path;
-            bool srgb = true; // normal/MR maps decode linear (UNORM)
-        };
-        std::vector<TextureRequest> texturePaths{{}};
+        // normal / no metallic-roughness map". (texturePaths lives at main
+        // scope — the streaming decode workers read it from the frame
+        // loop's lifetime.)
         auto registerTexture = [&](const std::filesystem::path& path, bool srgb) {
             if (path.empty()) {
                 return 0u;
@@ -1575,73 +1611,63 @@ int main(int argc, char** argv) {
         }
         uploader = std::move(uploaderResult).value();
 
-        std::uint64_t texelBytes = 0;
-        // Decode on worker threads — stbi is CPU-bound and stateless, and
-        // single-threaded decode dominated scene load (~2.1 s of Sponza's
-        // load was 69 sequential decodes). Threads pull indices from an
-        // atomic counter; the graphics-queue uploads stay on this thread.
-        std::vector<Result<assetio::TextureData>> decodedTextures(
-            texturePaths.size(), Error{"not decoded"});
+        // Nonblocking texture streaming: the white fallback uploads now and
+        // EVERY registered slot starts pointing at it, so any material
+        // samples neutrally until its real texture lands. Decode workers
+        // run while the frame loop renders; the loop's pump uploads and
+        // re-points slots (see SceneTextureStream at main scope).
         {
-            REND_PROFILE_ZONE("TextureDecodeAll");
-            std::atomic<std::size_t> nextTexture{1}; // 0 is the white fallback
-            const std::size_t workerCount =
-                std::min<std::size_t>(std::max(1u, std::thread::hardware_concurrency()),
-                                      texturePaths.size() > 1 ? texturePaths.size() - 1 : 1);
-            std::vector<std::thread> decoders;
-            decoders.reserve(workerCount);
+            const std::uint8_t white[4] = {255, 255, 255, 255};
+            auto whiteResult = uploader->upload(1, 1, white);
+            if (!whiteResult) {
+                log::error("White fallback upload failed: {}", whiteResult.error().message);
+                return 1;
+            }
+            textures.resize(texturePaths.size());
+            textures[0] = std::move(whiteResult).value();
+            for (std::size_t i = 0; i < texturePaths.size(); ++i) {
+                descriptorTable->writeTexture(static_cast<std::uint32_t>(i),
+                                              textures[0]->view());
+            }
+        }
+        texStream.total = texturePaths.size() - 1;
+        texStream.active = texStream.total > 0;
+        texStream.start = texStart;
+        texStream.lastFlush = std::chrono::steady_clock::now();
+        waitForTextures =
+            texStream.active && scene->loading == assetio::SceneLoadingMode::Wait;
+        if (texStream.active) {
+            const std::size_t workerCount = std::min<std::size_t>(
+                std::max(1u, std::thread::hardware_concurrency()), texStream.total);
+            texStream.workers.reserve(workerCount);
             for (std::size_t w = 0; w < workerCount; ++w) {
-                decoders.emplace_back([&] {
-                    for (std::size_t i = nextTexture.fetch_add(1); i < texturePaths.size();
-                         i = nextTexture.fetch_add(1)) {
+                texStream.workers.emplace_back([&] {
+                    for (std::size_t i = texStream.next.fetch_add(1);
+                         i < texturePaths.size() &&
+                         !texStream.quit.load(std::memory_order_relaxed);
+                         i = texStream.next.fetch_add(1)) {
                         REND_PROFILE_ZONE("TextureDecode");
-                        decodedTextures[i] = assetio::loadTexture(texturePaths[i].path);
+                        auto result = assetio::loadTexture(texturePaths[i].path);
+                        std::lock_guard lock(texStream.mutex);
+                        texStream.ready.emplace_back(i, std::move(result));
                     }
                 });
             }
-            for (std::thread& decoder : decoders) {
-                decoder.join();
-            }
+            log::info("Texture streaming started: {} textures on {} workers ({} mode)",
+                      texStream.total, workerCount,
+                      waitForTextures ? "wait" : "streaming");
+        } else {
+            log::info("Textures ready in 0 ms: 1 images (white fallback only)");
         }
-        for (std::size_t i = 0; i < texturePaths.size(); ++i) {
-            Result<std::unique_ptr<gpu::Image>> uploaded = [&]() {
-                if (i == 0) {
-                    const std::uint8_t white[4] = {255, 255, 255, 255};
-                    return uploader->upload(1, 1, white);
-                }
-                auto& decoded = decodedTextures[i];
-                if (!decoded) {
-                    return Result<std::unique_ptr<gpu::Image>>{decoded.error()};
-                }
-                const auto& t = decoded.value();
-                texelBytes += t.bytes.size();
-                auto image = uploadTextureData(*uploader, t, texturePaths[i].srgb);
-                // Drop the CPU copy as soon as it is on the GPU: peak decoded
-                // memory otherwise holds every image at once (~270 MiB Sponza).
-                decoded = Error{"uploaded"};
-                return image;
-            }();
-            if (!uploaded) {
-                log::error("Texture {} failed: {}", texturePaths[i].path.filename().string(),
-                           uploaded.error().message);
-                return 1;
-            }
-            descriptorTable->writeTexture(static_cast<std::uint32_t>(i),
-                                          uploaded.value()->view());
-            textures.push_back(std::move(uploaded).value());
-        }
-        const auto texMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-                               std::chrono::steady_clock::now() - texStart)
-                               .count();
-        log::info("Textures ready in {} ms: {} images ({:.1f} MiB decoded), mipmapped, bindless",
-                  texMs, textures.size(), static_cast<double>(texelBytes) / (1024.0 * 1024.0));
 
         // Reflection probe capture: render the scene's draw stream into a
-        // small cubemap once at load — the raster tier reflective objects
-        // sample. Static by nature: animated meshes bake at the bind pose,
-        // lighting never re-captures, no parallax correction (v1 gaps by
-        // design; ray traced reflections are the exact tier above).
-        {
+        // small cubemap once — the raster tier reflective objects sample.
+        // Static by nature: animated meshes bake at the bind pose, lighting
+        // never re-captures, no parallax correction (v1 gaps by design;
+        // ray traced reflections are the exact tier above). DEFERRED until
+        // the texture stream completes so the capture samples the real
+        // textures — the frame loop's pump invokes this once.
+        capturePendingProbe = [&] {
             const auto probeStart = std::chrono::steady_clock::now();
             // Probe position: first <ReflectionProbe> in the scene XML,
             // else the scene AABB's center.
@@ -1728,6 +1754,9 @@ int main(int argc, char** argv) {
                                  });
                     if (probeResult) {
                         probeImage = std::move(probeResult).value();
+                        // Binding 18 is not update-after-bind: the CALLER
+                        // idles the device around this invocation and
+                        // invalidates static recordings after it.
                         descriptorTable->writeProbe(probeImage->view());
                         probeReady = true;
                         const auto probeMs =
@@ -1751,7 +1780,7 @@ int main(int argc, char** argv) {
                               .error()
                               .message);
             }
-        }
+        };
     }
 
     platform::TargetDesc desc{
@@ -3115,6 +3144,82 @@ int main(int argc, char** argv) {
     auto lastFrameTime = std::chrono::steady_clock::now();
     while (running) {
         REND_PROFILE_ZONE("Frame");
+        // Scene-texture streaming pump: a couple of uploads per frame off
+        // the decode queue (graphics-queue one-shots, this thread), then
+        // the accumulated bindless slot rewrites in batches under a
+        // waitIdle sync point — the rewritten slots were sampled (as
+        // white) by in-flight frames, so nothing may be pending during
+        // the update. Rendering never blocks on the decode workers.
+        if (texStream.active) {
+            REND_PROFILE_ZONE("TextureStreamPump");
+            constexpr std::size_t kUploadsPerFrame = 2;
+            for (std::size_t n = 0; n < kUploadsPerFrame; ++n) {
+                std::pair<std::size_t, Result<assetio::TextureData>> item{0, Error{""}};
+                {
+                    std::lock_guard lock(texStream.mutex);
+                    if (texStream.ready.empty()) {
+                        break;
+                    }
+                    item = std::move(texStream.ready.front());
+                    texStream.ready.pop_front();
+                }
+                const std::size_t slot = item.first;
+                ++texStream.uploaded;
+                if (!item.second) {
+                    log::warn("Texture {} failed ({}), slot stays white",
+                              texturePaths[slot].path.filename().string(),
+                              item.second.error().message);
+                    continue;
+                }
+                texStream.texelBytes += item.second.value().bytes.size();
+                auto image =
+                    uploadTextureData(*uploader, item.second.value(), texturePaths[slot].srgb);
+                if (!image) {
+                    log::warn("Texture {} upload failed ({}), slot stays white",
+                              texturePaths[slot].path.filename().string(),
+                              image.error().message);
+                    continue;
+                }
+                textures[slot] = std::move(image).value();
+                texStream.pendingSlots.push_back(static_cast<std::uint32_t>(slot));
+            }
+            const bool complete = texStream.uploaded >= texStream.total;
+            const auto now = std::chrono::steady_clock::now();
+            if (!texStream.pendingSlots.empty() &&
+                (complete || texStream.pendingSlots.size() >= 16 ||
+                 now - texStream.lastFlush > std::chrono::milliseconds(400))) {
+                renderer->waitIdle();
+                for (std::uint32_t slot : texStream.pendingSlots) {
+                    descriptorTable->writeTexture(slot, textures[slot]->view());
+                }
+                texStream.pendingSlots.clear();
+                texStream.lastFlush = now;
+            }
+            if (complete) {
+                texStream.active = false;
+                for (std::thread& worker : texStream.workers) {
+                    worker.join();
+                }
+                texStream.workers.clear();
+                const auto texMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                       std::chrono::steady_clock::now() - texStream.start)
+                                       .count();
+                log::info("Textures ready in {} ms: {} images ({:.1f} MiB decoded), streamed, "
+                          "bindless",
+                          texMs, textures.size(),
+                          static_cast<double>(texStream.texelBytes) / (1024.0 * 1024.0));
+                waitForTextures = false;
+            }
+        } else if (capturePendingProbe) {
+            // One-shot deferred probe capture, now that every texture the
+            // capture samples is resident. Binding 18 is not update-after-
+            // bind: idle around the write, re-record statics after.
+            renderer->waitIdle();
+            capturePendingProbe();
+            capturePendingProbe = nullptr;
+            renderer->invalidateStaticRecordings();
+        }
+
         const auto events = [&] {
             REND_PROFILE_ZONE("PumpEvents");
             return backend->pumpEvents();
@@ -3411,7 +3516,14 @@ int main(int argc, char** argv) {
         if (ui && viewWidth > 0 && viewHeight > 0) {
             REND_PROFILE_ZONE("BuildUi");
             const bool vsyncBefore = vsync;
-            ui->buildFrame(viewWidth, viewHeight, deltaSeconds, &vsync);
+            viewer::Ui::LoadingStatus loadingStatus{
+                .hideScene = waitForTextures,
+                .done = static_cast<std::uint32_t>(texStream.uploaded),
+                .total = static_cast<std::uint32_t>(texStream.total),
+            };
+            const bool loadingVisible = texStream.active || waitForTextures;
+            ui->buildFrame(viewWidth, viewHeight, deltaSeconds, &vsync,
+                           loadingVisible ? &loadingStatus : nullptr);
             if (vsync != vsyncBefore) {
                 // The preference lands on the next swapchain build; forcing
                 // a same-size resize triggers that recreate (and the static
@@ -3420,7 +3532,7 @@ int main(int argc, char** argv) {
                 renderer->resize(viewWidth, viewHeight);
                 log::info("VSync {}", vsync ? "on" : "off");
             }
-            if (drawScene) {
+            if (drawScene && !waitForTextures) {
                 // Sun & shadow tuning; changes land in the light buffer on
                 // the next frame's write.
                 // Below the debug panel (FPS + graph + VSync) in the corner.
@@ -3509,8 +3621,13 @@ int main(int argc, char** argv) {
             }
         }
 
-        if (auto r = renderer->drawFrame(drawScene ? *scenePipeline : *pipeline,
-                                         drawScene ? &batch : nullptr);
+        // Wait-mode loading holds the scene entirely off the frame (the
+        // fallback clear + the fullscreen ImGui cover render instead);
+        // streaming mode draws it from the first frame, white textures
+        // popping to real ones as they land.
+        const bool sceneVisible = drawScene && !waitForTextures;
+        if (auto r = renderer->drawFrame(sceneVisible ? *scenePipeline : *pipeline,
+                                         sceneVisible ? &batch : nullptr);
             !r) {
             log::error("Frame failed: {}", r.error().message);
             running = false;
@@ -3542,6 +3659,13 @@ int main(int argc, char** argv) {
     }
     loaderWake.notify_one();
     loaderThread.join();
+    // Streaming decode workers (quit mid-load): each finishes its current
+    // file, sees the flag, and exits; undelivered decodes just drop.
+    texStream.quit = true;
+    for (std::thread& worker : texStream.workers) {
+        worker.join();
+    }
+    texStream.workers.clear();
     renderer->waitIdle();
     ui.reset(); // ImGui's Vulkan objects go while the device is idle and alive
     // The swapchain goes first: destroying it retires presents that are still
