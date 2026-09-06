@@ -32,6 +32,24 @@ public:
     Result<std::unique_ptr<Image>> upload(std::uint32_t width, std::uint32_t height,
                                           const void* rgba8, bool srgb = true);
 
+    // Pre-compressed upload: the payload already holds every mip level
+    // (largest first, offsets into `bytes`), so levels are copied as-is —
+    // no blit chain, works for block-compressed formats. `format` is a
+    // VkFormat value (kFormatBc7* below); the caller maps assetio's
+    // backend-agnostic encoding to it.
+    struct CompressedMip {
+        std::uint32_t width = 0;
+        std::uint32_t height = 0;
+        std::uint64_t byteOffset = 0;
+        std::uint64_t byteLength = 0;
+    };
+    static constexpr std::uint32_t kFormatBc7Unorm = 145; // VK_FORMAT_BC7_UNORM_BLOCK
+    static constexpr std::uint32_t kFormatBc7Srgb = 146;  // VK_FORMAT_BC7_SRGB_BLOCK
+    Result<std::unique_ptr<Image>> uploadCompressed(std::uint32_t format,
+                                                    const CompressedMip* mips,
+                                                    std::uint32_t mipCount, const void* bytes,
+                                                    std::uint64_t byteSize);
+
 private:
     TextureUploader() = default;
     Result<void> ensureStagingCapacity(std::uint64_t required);

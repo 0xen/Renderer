@@ -96,6 +96,29 @@ struct ObjectBounds {
 constexpr math::Mat4 kIdentityMat4 = {1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
                                       0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f};
 
+// Maps assetio's backend-agnostic texture payload onto the uploader:
+// decoded RGBA8 takes the mip-generating path (color space = the caller's
+// role for the texture), pre-compressed payloads copy their stored mips
+// with the FILE's declared color space (authoritative for DDS).
+Result<std::unique_ptr<gpu::Image>> uploadTextureData(gpu::TextureUploader& uploader,
+                                                      const assetio::TextureData& data,
+                                                      bool srgbRole) {
+    if (data.encoding == assetio::TextureEncoding::Bc7) {
+        std::vector<gpu::TextureUploader::CompressedMip> mips(data.mips.size());
+        for (std::size_t i = 0; i < data.mips.size(); ++i) {
+            mips[i] = {.width = data.mips[i].width,
+                       .height = data.mips[i].height,
+                       .byteOffset = data.mips[i].byteOffset,
+                       .byteLength = data.mips[i].byteLength};
+        }
+        return uploader.uploadCompressed(data.srgb ? gpu::TextureUploader::kFormatBc7Srgb
+                                                   : gpu::TextureUploader::kFormatBc7Unorm,
+                                         mips.data(), static_cast<std::uint32_t>(mips.size()),
+                                         data.bytes.data(), data.bytes.size());
+    }
+    return uploader.upload(data.width, data.height, data.bytes.data(), srgbRole);
+}
+
 // One row per object in the bindless table's SSBO, found by the indirect
 // entry's firstInstance. Must match ObjectData in scene.hlsl.
 constexpr std::uint32_t kObjectAlphaMasked = 1u;
@@ -811,8 +834,10 @@ int main(int argc, char** argv) {
         // Storage usage always: the skinning pass poses vertices in place;
         // on RT devices the traced primary pass also reads hit triangles
         // straight out of the pool (descriptor binding 11).
+        // 512 MiB: sized for multi-million-triangle stress scenes (Bistro's
+        // flattened geometry alone is ~172 MiB interleaved + indices).
         auto poolResult = gpu::MemoryPool::create(
-            *device, 128ull * 1024 * 1024,
+            *device, 512ull * 1024 * 1024,
             gpu::kUsageStorage |
                 (rtSupported ? (gpu::kUsageShaderDeviceAddress | gpu::kUsageAccelBuildInput)
                              : 0));
@@ -1564,9 +1589,8 @@ int main(int argc, char** argv) {
                     return Result<std::unique_ptr<gpu::Image>>{decoded.error()};
                 }
                 const auto& t = decoded.value();
-                texelBytes += t.rgba.size();
-                auto image = uploader->upload(t.width, t.height, t.rgba.data(),
-                                              texturePaths[i].srgb);
+                texelBytes += t.bytes.size();
+                auto image = uploadTextureData(*uploader, t, texturePaths[i].srgb);
                 // Drop the CPU copy as soon as it is on the GPU: peak decoded
                 // memory otherwise holds every image at once (~270 MiB Sponza).
                 decoded = Error{"uploaded"};
@@ -2629,8 +2653,7 @@ int main(int argc, char** argv) {
         // no in-flight frame references is legal mid-run.
         for (PreparedTexture& texture : load.textures) {
             auto image = uploader
-                             ? uploader->upload(texture.data.width, texture.data.height,
-                                                texture.data.rgba.data(), texture.srgb)
+                             ? uploadTextureData(*uploader, texture.data, texture.srgb)
                              : Result<std::unique_ptr<gpu::Image>>{Error{"no uploader"}};
             if (!image) {
                 log::warn("Runtime texture '{}' failed: {}", texture.path,

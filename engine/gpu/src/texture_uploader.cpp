@@ -10,6 +10,7 @@
 #include <bit>
 #include <cstring>
 #include <format>
+#include <vector>
 
 namespace rend::gpu {
 
@@ -193,6 +194,84 @@ Result<std::unique_ptr<Image>> TextureUploader::upload(std::uint32_t width, std:
                                       VK_ACCESS_2_SHADER_SAMPLED_READ_BIT));
     }
     applyBarrier(cmd_, mipBarrier(image->handle(), mipLevels - 1, 1,
+                                  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                  VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                  VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+                                  VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+                                  VK_ACCESS_2_SHADER_SAMPLED_READ_BIT));
+
+    if (VkResult r = vkEndCommandBuffer(cmd_); r != VK_SUCCESS) {
+        return Error{std::format("vkEndCommandBuffer failed ({})", static_cast<int>(r))};
+    }
+
+    VkSubmitInfo submit{};
+    submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submit.commandBufferCount = 1;
+    submit.pCommandBuffers = &cmd_;
+    if (VkResult r = vkQueueSubmit(device_->graphicsQueue().queue, 1, &submit, fence_);
+        r != VK_SUCCESS) {
+        return Error{std::format("vkQueueSubmit failed ({})", static_cast<int>(r))};
+    }
+    if (VkResult r = vkWaitForFences(device_->handle(), 1, &fence_, VK_TRUE, kFenceTimeoutNs);
+        r != VK_SUCCESS) {
+        return Error{std::format("Texture upload fence wait failed ({})", static_cast<int>(r))};
+    }
+    vkResetFences(device_->handle(), 1, &fence_);
+    vkResetCommandBuffer(cmd_, 0);
+    return image;
+}
+
+Result<std::unique_ptr<Image>> TextureUploader::uploadCompressed(std::uint32_t format,
+                                                                 const CompressedMip* mips,
+                                                                 std::uint32_t mipCount,
+                                                                 const void* bytes,
+                                                                 std::uint64_t byteSize) {
+    REND_PROFILE_ZONE("TextureUpload");
+    if (mipCount == 0 || !bytes || byteSize == 0) {
+        return Error{"Compressed upload needs non-empty mips"};
+    }
+
+    auto imageResult = Image::create(*device_, {
+                                                   .width = mips[0].width,
+                                                   .height = mips[0].height,
+                                                   .format = format,
+                                                   .usage = VK_IMAGE_USAGE_SAMPLED_BIT |
+                                                            VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+                                                   .mipLevels = mipCount,
+                                               });
+    if (!imageResult) {
+        return imageResult.error();
+    }
+    auto image = std::move(imageResult).value();
+
+    if (auto r = ensureStagingCapacity(byteSize); !r) {
+        return r.error();
+    }
+    std::memcpy(staging_->mapped(), bytes, byteSize);
+
+    VkCommandBufferBeginInfo begin{};
+    begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    if (VkResult r = vkBeginCommandBuffer(cmd_, &begin); r != VK_SUCCESS) {
+        return Error{std::format("vkBeginCommandBuffer failed ({})", static_cast<int>(r))};
+    }
+
+    applyBarrier(cmd_, mipBarrier(image->handle(), 0, mipCount, VK_IMAGE_LAYOUT_UNDEFINED,
+                                  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                  VK_PIPELINE_STAGE_2_NONE, 0, VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+                                  VK_ACCESS_2_TRANSFER_WRITE_BIT));
+
+    std::vector<VkBufferImageCopy> regions(mipCount);
+    for (std::uint32_t mip = 0; mip < mipCount; ++mip) {
+        regions[mip] = VkBufferImageCopy{};
+        regions[mip].bufferOffset = mips[mip].byteOffset;
+        regions[mip].imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, mip, 0, 1};
+        regions[mip].imageExtent = {mips[mip].width, mips[mip].height, 1};
+    }
+    vkCmdCopyBufferToImage(cmd_, staging_->handle(), image->handle(),
+                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, mipCount, regions.data());
+
+    applyBarrier(cmd_, mipBarrier(image->handle(), 0, mipCount,
                                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                                   VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                                   VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,

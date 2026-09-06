@@ -59,6 +59,18 @@ MaterialData convertMaterial(const cgltf_material& m, const std::filesystem::pat
         out.roughnessFactor = pbr.roughness_factor;
         out.baseColorTexture = resolveTexture(pbr.base_color_texture, baseDir);
         out.metallicRoughnessTexture = resolveTexture(pbr.metallic_roughness_texture, baseDir);
+    } else if (m.has_pbr_specular_glossiness) {
+        // KHR_materials_pbrSpecularGlossiness mapped onto metallic-
+        // roughness: diffuse becomes base color, roughness = 1 - gloss,
+        // dielectric. The spec-gloss texture's channels don't line up
+        // with an MR texture (specular RGB + gloss A), so only the
+        // factors convert — per-material constant roughness.
+        const auto& sg = m.pbr_specular_glossiness;
+        out.baseColorFactor = {sg.diffuse_factor[0], sg.diffuse_factor[1], sg.diffuse_factor[2],
+                               sg.diffuse_factor[3]};
+        out.metallicFactor = 0.0f;
+        out.roughnessFactor = 1.0f - sg.glossiness_factor;
+        out.baseColorTexture = resolveTexture(sg.diffuse_texture, baseDir);
     }
     out.normalTexture = resolveTexture(m.normal_texture, baseDir);
     out.alphaMasked = m.alpha_mode == cgltf_alpha_mode_mask;
