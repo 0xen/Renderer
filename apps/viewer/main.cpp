@@ -81,11 +81,14 @@ struct InstanceRow {
     std::uint32_t transformIndex = 0;
 };
 
-// World-space AABB per draw entry for the cull shader's frustum test
-// (binding 22, per-slot regions). Runtime models carry the union over
-// their instances; bmin[3] = 1 marks entries the test must never drop
-// (animated meshes — their pose can exceed the bind-pose bounds). Must
-// match ObjectBounds in cull.hlsl.
+// AABB per draw entry for the cull shader's frustum test (binding 22,
+// per-slot regions). bmax[3] picks the mode: 0 = world-space box, tested
+// once (scene geometry, world-baked); 1 = the mesh's LOCAL box — the
+// shader pushes it through each instance's transform and tests PER
+// INSTANCE (runtime models), so the CPU never maintains union bounds.
+// bmin[3] = 1 marks entries the test must never drop (animated meshes —
+// their pose can exceed the bind-pose bounds). Must match ObjectBounds
+// in cull.hlsl.
 struct ObjectBounds {
     std::array<float, 4> bmin{1e30f, 1e30f, 1e30f, 0.0f};
     std::array<float, 4> bmax{-1e30f, -1e30f, -1e30f, 0.0f};
@@ -1097,13 +1100,15 @@ int main(int argc, char** argv) {
         // Draw-count buffer for IndirectCount mode: one uint32 per frame
         // slot, written by the cull pass (zeroed via fill, incremented by
         // the shader) and read by vkCmdDrawIndexedIndirectCount.
-        // Two counts per frame slot: [0] the shadow passes' visibility-only
-        // stream, [1] the scene pass's frustum-culled stream. Host-visible
-        // so the CPU can report them (read after the slot's fence, i.e.
-        // kFramesInFlight frames late — stats, never a sync point).
+        // Three counters per frame slot: [0] the shadow passes'
+        // visibility-only stream, [1] the scene pass's frustum-culled
+        // stream, [2] the scratch-row allocator for per-instance culling.
+        // Host-visible so the CPU can report them (read after the slot's
+        // fence, i.e. kFramesInFlight frames late — stats, never a sync
+        // point).
         auto countResult = gpu::Buffer::create(
             *device, {
-                         .size = 2 * sizeof(std::uint32_t) * gpu::FrameRenderer::kFramesInFlight,
+                         .size = 3 * sizeof(std::uint32_t) * gpu::FrameRenderer::kFramesInFlight,
                          .usage = gpu::kUsageIndirect | gpu::kUsageStorage |
                                   gpu::kUsageTransferDst,
                          .location = gpu::MemoryLocation::HostVisible,
@@ -1163,10 +1168,14 @@ int main(int argc, char** argv) {
         objectTransforms.assign(geometry.size(), kIdentityMat4);
 
         // Instance rows: identity prefix for the scene's draws, runtime
-        // blocks above. One global region — see the constant's comment.
+        // blocks above (the canonical region — see the constant's
+        // comment), followed by one GPU-written scratch region per frame
+        // slot where the cull pass compacts the surviving rows of
+        // partially visible instanced draws.
         auto instanceRowResult = gpu::Buffer::create(
             *device, {
-                         .size = std::uint64_t{kInstanceRowCapacity} * sizeof(InstanceRow),
+                         .size = std::uint64_t{kInstanceRowCapacity} * sizeof(InstanceRow) *
+                                 (1 + gpu::FrameRenderer::kFramesInFlight),
                          .usage = gpu::kUsageStorage,
                          .location = gpu::MemoryLocation::HostVisible,
                      });
@@ -1465,6 +1474,11 @@ int main(int argc, char** argv) {
                                             instanceRowBuffer->size());
         descriptorTable->writeStorageBuffer(21, culledBuffer->handle(), culledBuffer->size());
         descriptorTable->writeStorageBuffer(22, boundsBuffer->handle(), boundsBuffer->size());
+        // The rows buffer again, writable for the cull pass's scratch
+        // regions (same VkBuffer, second binding — no aliasing hazard,
+        // canonical and scratch ranges are disjoint).
+        descriptorTable->writeStorageBuffer(23, instanceRowBuffer->handle(),
+                                            instanceRowBuffer->size());
         descriptorTable->writeStorageBuffer(3, indirectBuffer->handle(), indirectBuffer->size());
         descriptorTable->writeStorageBuffer(4, compactedBuffer->handle(),
                                             compactedBuffer->size());
@@ -1958,7 +1972,7 @@ int main(int argc, char** argv) {
             batch.indirect = indirectBuffer->handle();
         }
         batch.count = countBuffer->handle();
-        batch.countRegionStride = 2 * sizeof(std::uint32_t);
+        batch.countRegionStride = 3 * sizeof(std::uint32_t);
         batch.cpuDraws = draws.data();
         batch.descriptors = descriptorTable->set();
         if (shadowPipeline && !shadowMaps.empty() &&
@@ -2033,11 +2047,12 @@ int main(int argc, char** argv) {
     log::info("Viewer live at {}x{} — {} recording, vsync {} — Esc quits, Space toggles mode",
               extent.width, extent.height, staticMode ? "static" : "per-frame", vsync ? "on" : "off");
 
-    // Cull-pass counts read back from the frame slot's last completed
+    // Cull-pass counters read back from the frame slot's last completed
     // frame (IndirectCount mode): [0] the shadow passes' visibility-only
-    // stream, [1] the scene pass's frustum-culled stream. Stats only —
+    // stream, [1] the scene pass's frustum-culled stream, [2] scratch
+    // rows written for partially visible instanced draws. Stats only —
     // read after the slot's fence, kFramesInFlight frames late.
-    std::uint32_t lastDrawCounts[2] = {0, 0};
+    std::uint32_t lastDrawCounts[3] = {0, 0, 0};
 
     // Stats window: wall time + renderer CPU counters, reported per mode.
     constexpr std::uint64_t kReportInterval = 600;
@@ -2055,9 +2070,10 @@ int main(int argc, char** argv) {
                   windowFrames / seconds,
                   stats.frames > 0 ? static_cast<double>(stats.recordMicros) / stats.frames : 0.0,
                   stats.prerecords > 0 ? std::format(" | {} prerecords", stats.prerecords) : "",
-                  batch.cullPipeline ? std::format(" | draws {}/{} in view", lastDrawCounts[1],
-                                                   lastDrawCounts[0])
-                                     : "");
+                  batch.cullPipeline
+                      ? std::format(" | draws {}/{} in view, {} partial rows",
+                                    lastDrawCounts[1], lastDrawCounts[0], lastDrawCounts[2])
+                      : "");
     };
 
     FlyCamera camera;
@@ -2240,36 +2256,10 @@ int main(int argc, char** argv) {
                         std::max(sceneMax.z, w.z)};
         }
     };
-    // Merge a local AABB pushed through a placement matrix into `bounds`.
-    auto mergeTransformedAabb = [&](ObjectBounds& bounds, const math::Vec3& localMin,
-                                    const math::Vec3& localMax, const math::Mat4& m) {
-        for (int corner = 0; corner < 8; ++corner) {
-            const float x = (corner & 1) ? localMax.x : localMin.x;
-            const float y = (corner & 2) ? localMax.y : localMin.y;
-            const float z = (corner & 4) ? localMax.z : localMin.z;
-            const float w[3] = {m[0] * x + m[4] * y + m[8] * z + m[12],
-                                m[1] * x + m[5] * y + m[9] * z + m[13],
-                                m[2] * x + m[6] * y + m[10] * z + m[14]};
-            for (int axis = 0; axis < 3; ++axis) {
-                bounds.bmin[axis] = std::min(bounds.bmin[axis], w[axis]);
-                bounds.bmax[axis] = std::max(bounds.bmax[axis], w[axis]);
-            }
-        }
-    };
-    // Refresh a resource's per-mesh world AABBs (the cull shader's frustum
-    // input) as the union over its instances — v1 culls per draw entry,
-    // so all instances of a mesh cull as one unit.
-    auto updateResourceBounds = [&](const GeometryResource& resource) {
-        for (std::size_t m = 0; m < resource.meshObjectIndices.size(); ++m) {
-            ObjectBounds bounds;
-            for (const ResourceInstance& instance : resource.instances) {
-                mergeTransformedAabb(bounds, resource.meshBounds[m].first,
-                                     resource.meshBounds[m].second,
-                                     objectTransforms[instance.transformIndex]);
-            }
-            objectBounds[resource.meshObjectIndices[m]] = bounds;
-        }
-    };
+    // Runtime resources carry their LOCAL per-mesh AABBs in the bounds
+    // table (mode bmax[3] = 1): the cull shader pushes them through each
+    // instance's transform itself, so nothing here tracks instance
+    // motion — SetTransform only ever touches the transform row.
 
     // Rewrites one slot's whole template region from the canonical draw
     // list, reapplying that slot's animated posed-vertex overrides.
@@ -2340,7 +2330,6 @@ int main(int argc, char** argv) {
         }
         resource.instances.push_back({.handle = cmd.handle, .transformIndex = *transformIndex});
         liveHandles.push_back(cmd.handle);
-        updateResourceBounds(resource);
         templatesDirty.fill(true);
         writeTemplates(slot);
         templatesDirty[slot] = false;
@@ -2374,9 +2363,6 @@ int main(int argc, char** argv) {
         for (std::uint32_t m = 0; m < meshCount; ++m) {
             draws[resource.meshObjectIndices[m]].instanceCount =
                 static_cast<std::uint32_t>(resource.instances.size());
-        }
-        if (!resource.instances.empty()) {
-            updateResourceBounds(resource); // emptied rows are never drawn
         }
         templatesDirty.fill(true);
         if (batch.mode == gpu::DrawSubmitMode::Direct) {
@@ -2758,6 +2744,12 @@ int main(int argc, char** argv) {
             };
             resource.meshObjectIndices.push_back(objectIndex);
             resource.meshBounds.emplace_back(mesh.localMin, mesh.localMax);
+            // Local bounds, per-instance mode: the cull shader transforms
+            // and tests them against every instance's matrix each frame.
+            objectBounds[objectIndex] = {
+                .bmin = {mesh.localMin.x, mesh.localMin.y, mesh.localMin.z, 0.0f},
+                .bmax = {mesh.localMax.x, mesh.localMax.y, mesh.localMax.z, 1.0f},
+            };
         }
         // New SSBO rows (possibly scattered across recycled indices) ride
         // the same flush as the geometry.
@@ -2925,8 +2917,9 @@ int main(int argc, char** argv) {
                 for (auto& [path, resource] : resourcesByPath) {
                     for (ResourceInstance& instance : resource.instances) {
                         if (instance.handle == cmd.transform.handle) {
+                            // The cull shader tests local bounds through
+                            // this transform — nothing else to update.
                             objectTransforms[instance.transformIndex] = placement;
-                            updateResourceBounds(resource);
                             found = true;
                             break;
                         }
@@ -3417,6 +3410,7 @@ int main(int argc, char** argv) {
                     }
                     ImGui::Text("Draws: %u in view / %u live / %u table", lastDrawCounts[1],
                                 lastDrawCounts[0], batch.drawCount);
+                    ImGui::Text("Partial instance rows: %u", lastDrawCounts[2]);
                 }
                 if (ImGui::TreeNode("Advanced")) {
                     ImGui::SliderFloat("Azimuth", &sun.azimuthDeg, -180.0f, 180.0f, "%.0f deg");

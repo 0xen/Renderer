@@ -1,13 +1,19 @@
 // Compaction + frustum-cull pass for the GPU-driven scene
 // (docs/ARCHITECTURE.md): one thread per registered object reads its draw
 // template and appends it to TWO compacted indirect lists:
-//   - binding 4 (+ counts[slot*2]): every live entry — the shadow passes
+//   - binding 4 (+ counts[slot*3]): every live entry — the shadow passes
 //     draw this one, because a caster outside the CAMERA frustum must
 //     still cast into the view;
-//   - binding 21 (+ counts[slot*2+1]): live entries whose world AABB
-//     intersects the camera frustum — the main scene pass draws this one.
-// The scene pass then draws via vkCmdDrawIndexedIndirectCount, so the
-// visible count never touches the CPU.
+//   - binding 21 (+ counts[slot*3+1]): entries that survive the frustum —
+//     the main scene pass draws this one.
+// Culling is PER INSTANCE for instanced entries (bounds mode 1): each
+// instance's local AABB is pushed through its transform and tested; the
+// survivors' instance rows are compacted into the slot's scratch region
+// of the rows buffer (allocated from counts[slot*3+2]) and the emitted
+// draw's firstInstance/instanceCount point there. Fully visible entries
+// keep their canonical rows (no copies); fully hidden ones are dropped.
+// The scene pass then draws via vkCmdDrawIndexedIndirectCount, so no
+// visibility decision ever touches the CPU.
 
 // Must match rend::gpu::DrawIndexedIndirect (VkDrawIndexedIndirectCommand).
 struct DrawCommand {
@@ -27,13 +33,23 @@ struct CameraData {
     float4 forwardAxis;
 };
 
-// Must match ObjectBounds in the viewer: world-space AABB per draw entry
-// (runtime models: union over their instances). bmin.w = 1 marks entries
-// the frustum test must never drop (animated meshes — their pose can
-// exceed the bind-pose bounds).
+// Must match ObjectBounds in the viewer. Two modes, picked by bmax.w:
+//   0 — bmin/bmax are a WORLD-space AABB, tested once (scene geometry —
+//       vertices are world-baked);
+//   1 — bmin/bmax are the mesh's LOCAL AABB; each instance's transform
+//       (binding 19, this slot's region) takes it to world space and it
+//       is tested per instance (runtime models).
+// bmin.w = 1 marks entries the test must never drop (animated meshes —
+// their pose can exceed the bind-pose bounds).
 struct ObjectBounds {
     float4 bmin;
     float4 bmax;
+};
+
+// Must match InstanceRow in shading.hlsli / the viewer.
+struct InstanceRow {
+    uint objectIndex;
+    uint transformIndex;
 };
 
 struct CullPush {
@@ -46,13 +62,23 @@ struct CullPush {
 [[vk::push_constant]] CullPush push;
 
 static const uint kCullFrustum = 1u;
+// Must match kTransformCapacity / kInstanceRowCapacity in the viewer.
+static const uint kTransformCapacity = 4096;
+static const uint kInstanceRowCapacity = 4096;
 
 [[vk::binding(3, 0)]] StructuredBuffer<DrawCommand> templates;
 [[vk::binding(4, 0)]] RWStructuredBuffer<DrawCommand> compacted;
-[[vk::binding(5, 0)]] RWStructuredBuffer<uint> counts; // 2 per slot, zeroed before dispatch
+// 3 per slot, zeroed before dispatch: [0] shadow-stream count, [1]
+// scene-stream count, [2] scratch-row allocator for partial entries.
+[[vk::binding(5, 0)]] RWStructuredBuffer<uint> counts;
 [[vk::binding(6, 0)]] StructuredBuffer<CameraData> cameras;
+[[vk::binding(19, 0)]] StructuredBuffer<column_major float4x4> objectTransforms;
 [[vk::binding(21, 0)]] RWStructuredBuffer<DrawCommand> culled;
 [[vk::binding(22, 0)]] StructuredBuffer<ObjectBounds> bounds;
+// The instance-row buffer (same VkBuffer as the vertex stage's binding
+// 20): rows [0, kInstanceRowCapacity) are canonical; per-slot scratch
+// regions above hold the compacted survivors of partially visible draws.
+[[vk::binding(23, 0)]] RWStructuredBuffer<InstanceRow> instanceRows;
 
 // AABB vs the camera frustum, planes pulled from the slot's viewProj
 // (Gribb-Hartmann; clip = M * v, Vulkan z in [0, w]). Each plane points
@@ -80,6 +106,21 @@ bool inFrustum(float3 bmin, float3 bmax, float4x4 m) {
     return true;
 }
 
+// One instance's visibility: the entry's local AABB through the
+// instance's world matrix (center/extent form — exact for the box), then
+// the frustum test.
+bool instanceVisible(ObjectBounds b, uint rowIndex, float4x4 viewProj) {
+    const InstanceRow row = instanceRows[rowIndex];
+    const float4x4 world =
+        objectTransforms[push.slot * kTransformCapacity + row.transformIndex];
+    const float3 center = (b.bmin.xyz + b.bmax.xyz) * 0.5f;
+    const float3 extent = (b.bmax.xyz - b.bmin.xyz) * 0.5f;
+    const float3 wc = mul(world, float4(center, 1.0f)).xyz;
+    const float3 we = float3(dot(abs(world[0].xyz), extent), dot(abs(world[1].xyz), extent),
+                             dot(abs(world[2].xyz), extent));
+    return inFrustum(wc - we, wc + we, viewProj);
+}
+
 [numthreads(64, 1, 1)]
 void CSMain(uint3 id : SV_DispatchThreadID) {
     if (id.x >= push.drawCount) {
@@ -91,16 +132,45 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
         return; // hidden
     }
     uint dst;
-    InterlockedAdd(counts[push.slot * 2], 1, dst);
+    InterlockedAdd(counts[push.slot * 3], 1, dst);
     compacted[base + dst] = cmd;
 
-    if ((push.flags & kCullFrustum) != 0) {
-        const ObjectBounds b = bounds[base + id.x];
-        if (b.bmin.w == 0.0f &&
-            !inFrustum(b.bmin.xyz, b.bmax.xyz, cameras[push.slot].viewProj)) {
-            return; // outside the view — shadows above still drew it
+    const ObjectBounds b = bounds[base + id.x];
+    if ((push.flags & kCullFrustum) != 0 && b.bmin.w == 0.0f) {
+        const float4x4 viewProj = cameras[push.slot].viewProj;
+        if (b.bmax.w == 0.0f) {
+            // World-space bounds: one test covers the whole entry.
+            if (!inFrustum(b.bmin.xyz, b.bmax.xyz, viewProj)) {
+                return; // outside the view — shadows above still drew it
+            }
+        } else {
+            // Local bounds: test each instance. Count survivors first;
+            // fully visible entries keep their canonical rows, partial
+            // ones compact the survivors into this slot's scratch rows.
+            uint visible = 0;
+            for (uint k = 0; k < cmd.instanceCount; ++k) {
+                visible += instanceVisible(b, cmd.firstInstance + k, viewProj) ? 1u : 0u;
+            }
+            if (visible == 0) {
+                return;
+            }
+            if (visible < cmd.instanceCount) {
+                uint rowBase;
+                InterlockedAdd(counts[push.slot * 3 + 2], visible, rowBase);
+                const uint scratch = (1 + push.slot) * kInstanceRowCapacity + rowBase;
+                uint written = 0;
+                for (uint k = 0; k < cmd.instanceCount; ++k) {
+                    if (instanceVisible(b, cmd.firstInstance + k, viewProj)) {
+                        instanceRows[scratch + written] =
+                            instanceRows[cmd.firstInstance + k];
+                        ++written;
+                    }
+                }
+                cmd.firstInstance = scratch;
+                cmd.instanceCount = visible;
+            }
         }
     }
-    InterlockedAdd(counts[push.slot * 2 + 1], 1, dst);
+    InterlockedAdd(counts[push.slot * 3 + 1], 1, dst);
     culled[base + dst] = cmd;
 }

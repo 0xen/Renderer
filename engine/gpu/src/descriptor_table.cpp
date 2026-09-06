@@ -98,13 +98,15 @@ Result<std::unique_ptr<DescriptorTable>> DescriptorTable::create(const Device& d
                             .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT});
         bindingFlags.push_back(VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT);
     }
-    // Per-object world transforms (binding 19, vertex): per-camera-slot
-    // regions the CPU rewrites each frame; runtime-spawned models are
-    // placed/moved through them, everything else rides identity.
+    // Per-object world transforms (binding 19, vertex + compute): per-
+    // camera-slot regions the CPU rewrites each frame; runtime-spawned
+    // models are placed/moved through them, everything else rides
+    // identity. The cull pass reads them for per-instance frustum tests.
     bindings.push_back({.binding = 19,
                         .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
                         .descriptorCount = 1,
-                        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT});
+                        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT |
+                                      VK_SHADER_STAGE_COMPUTE_BIT});
     bindingFlags.push_back(VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT);
     // Instance rows (binding 20, vertex): one {objectIndex, transformIndex}
     // pair per drawn instance; SV_InstanceID resolves through it, so one
@@ -117,9 +119,11 @@ Result<std::unique_ptr<DescriptorTable>> DescriptorTable::create(const Device& d
     bindingFlags.push_back(VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT);
     // Frustum culling (compute): binding 21 = the frustum-culled compacted
     // draw list the main scene pass draws (the shadow passes keep drawing
-    // binding 4's visibility-only list), 22 = per-slot world AABBs per
-    // draw entry.
-    for (std::uint32_t binding = 21; binding <= 22; ++binding) {
+    // binding 4's visibility-only list), 22 = per-slot AABBs per draw
+    // entry, 23 = the instance-row buffer again (same VkBuffer as binding
+    // 20), writable so partially visible draws compact their surviving
+    // instances' rows into per-slot scratch regions.
+    for (std::uint32_t binding = 21; binding <= 23; ++binding) {
         bindings.push_back({.binding = binding,
                             .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
                             .descriptorCount = 1,
@@ -153,7 +157,7 @@ Result<std::unique_ptr<DescriptorTable>> DescriptorTable::create(const Device& d
     }
 
     std::vector<VkDescriptorPoolSize> poolSizes{
-        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 17},
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 18},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, maxTextures + 5},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_SAMPLER, 2}};
     if (rayQuery) {

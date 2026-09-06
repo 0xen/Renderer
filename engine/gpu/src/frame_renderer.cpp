@@ -291,11 +291,11 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
     }
 
     if (batch && !rtDraw && batch->cullPipeline && batch->mode == DrawSubmitMode::IndirectCount) {
-        // GPU compaction: zero the slot's draw counts (shadow + scene
-        // streams), run one thread per template, then make the writes
-        // visible to the indirect fetch.
+        // GPU compaction: zero the slot's counters (shadow stream, scene
+        // stream, scratch-row allocator), run one thread per template,
+        // then make the writes visible to the indirect fetch.
         vkCmdFillBuffer(cmd, batch->count, slot * batch->countRegionStride,
-                        2 * sizeof(std::uint32_t), 0);
+                        3 * sizeof(std::uint32_t), 0);
 
         VkMemoryBarrier2 fillToCompute{};
         fillToCompute.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
@@ -331,8 +331,13 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
         computeToDraw.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
         computeToDraw.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
         computeToDraw.srcAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
-        computeToDraw.dstStageMask = VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT;
-        computeToDraw.dstAccessMask = VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT;
+        // The vertex stage also reads what the cull pass wrote: partially
+        // visible draws' surviving instance rows land in the rows buffer's
+        // per-slot scratch regions.
+        computeToDraw.dstStageMask =
+            VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT;
+        computeToDraw.dstAccessMask =
+            VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
         cullDependency.pMemoryBarriers = &computeToDraw;
         vkCmdPipelineBarrier2(cmd, &cullDependency);
     }

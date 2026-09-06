@@ -76,7 +76,9 @@ static const uint kTransformCapacity = 4096;
 // Instance rows: SV_InstanceID (which includes the draw's firstInstance)
 // indexes here; the row names the object/material row and the transform
 // row, so one indirect entry with instanceCount N draws N placements of
-// the same geometry. Scene draws ride an identity prefix (row i = {i, i}).
+// the same geometry. Scene draws ride an identity prefix (row i = {i, i});
+// rows past kInstanceRowCapacity are the cull pass's per-slot scratch
+// regions — partially visible instanced draws point firstInstance there.
 // Scalar members only — see the SkinVertex std430 layout gotcha.
 struct InstanceRow {
     uint objectIndex;

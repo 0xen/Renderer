@@ -48,8 +48,12 @@ class Device;
 //        drawn instance — SV_InstanceID resolves through it)
 //   21 — frustum-culled compacted draws SSBO (compute; the scene pass's
 //        stream — shadow passes keep drawing binding 4's list)
-//   22 — per-object world AABBs SSBO (compute; per-slot regions,
-//        min.w = 1 marks always-visible entries)
+//   22 — per-object AABBs SSBO (compute; per-slot regions, min.w = 1
+//        marks always-visible entries, max.w = 1 marks local bounds
+//        tested per instance)
+//   23 — instance rows again, writable (compute; same buffer as 20 — the
+//        cull pass compacts partially visible draws' surviving rows into
+//        per-slot scratch regions above the canonical rows)
 class DescriptorTable {
 public:
     static Result<std::unique_ptr<DescriptorTable>> create(const Device& device,
