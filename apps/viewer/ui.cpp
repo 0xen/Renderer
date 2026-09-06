@@ -3,6 +3,7 @@
 #include "rend/core/log.h"
 #include "rend/gpu/device.h"
 #include "rend/gpu/instance.h"
+#include "rend/gpu/memory_tracker.h"
 #include "rend/gpu/swapchain.h"
 #include "rend/platform/events.h"
 
@@ -174,6 +175,32 @@ void Ui::buildFrame(std::uint32_t width, std::uint32_t height, float deltaSecond
     if (vsync != nullptr) {
         ImGui::Checkbox("VSync", vsync);
     }
+
+    // GPU memory ledger, same treatment as FPS: a live total, a history
+    // graph, and the per-kind split. Every gpu::Buffer/Image reports its
+    // device allocation on construction and destruction, so this is the
+    // whole device-memory truth (minus the swapchain, which the driver
+    // owns).
+    const auto mem = rend::gpu::MemoryTracker::snapshot();
+    constexpr double kMiB = 1024.0 * 1024.0;
+    const double totalMiB = static_cast<double>(mem.totalBytes()) / kMiB;
+    memoryHistory_[memoryHistoryOffset_] = static_cast<float>(totalMiB);
+    memoryHistoryOffset_ = (memoryHistoryOffset_ + 1) % memoryHistory_.size();
+    ImGui::Separator();
+    ImGui::Text("GPU memory: %.1f MiB (%u allocations)", totalMiB, mem.totalCount());
+    ImGui::PlotLines("##memHistory", memoryHistory_.data(),
+                     static_cast<int>(memoryHistory_.size()),
+                     static_cast<int>(memoryHistoryOffset_), nullptr, 0.0f, FLT_MAX,
+                     ImVec2(180.0f, 42.0f));
+    using Kind = rend::gpu::MemoryTracker::Kind;
+    ImGui::Text("Buffers: %.1f MiB (%u) device, %.1f MiB (%u) host",
+                mem.bytes[static_cast<std::uint32_t>(Kind::DeviceBuffer)] / kMiB,
+                mem.counts[static_cast<std::uint32_t>(Kind::DeviceBuffer)],
+                mem.bytes[static_cast<std::uint32_t>(Kind::HostBuffer)] / kMiB,
+                mem.counts[static_cast<std::uint32_t>(Kind::HostBuffer)]);
+    ImGui::Text("Images: %.1f MiB (%u)",
+                mem.bytes[static_cast<std::uint32_t>(Kind::Image)] / kMiB,
+                mem.counts[static_cast<std::uint32_t>(Kind::Image)]);
     ImGui::End();
 
     frameBuilt_ = true;

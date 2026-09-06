@@ -1,6 +1,7 @@
 #include "rend/gpu/image.h"
 
 #include "rend/gpu/device.h"
+#include "rend/gpu/memory_tracker.h"
 
 #include <volk.h>
 
@@ -124,6 +125,8 @@ Result<std::unique_ptr<Image>> Image::create(const Device& device, const ImageDe
     out->height_ = desc.height;
     out->mipLevels_ = desc.mipLevels;
     out->layerCount_ = layers;
+    out->allocatedBytes_ = requirements.size;
+    MemoryTracker::onAlloc(MemoryTracker::Kind::Image, requirements.size);
     return out;
 }
 
@@ -144,6 +147,7 @@ Image::~Image() {
     }
     if (memory_ != VK_NULL_HANDLE) {
         vkFreeMemory(device_->handle(), memory_, nullptr);
+        MemoryTracker::onFree(MemoryTracker::Kind::Image, allocatedBytes_);
     }
 }
 

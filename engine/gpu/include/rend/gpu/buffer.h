@@ -1,6 +1,7 @@
 #pragma once
 
 #include "rend/core/result.h"
+#include "rend/gpu/memory_tracker.h"
 
 #include <cstdint>
 #include <memory>
@@ -59,6 +60,10 @@ private:
     VkDeviceMemory memory_ = nullptr;
     std::uint64_t size_ = 0;
     void* mapped_ = nullptr;
+    // What the allocation actually cost (alignment-padded) — what the
+    // MemoryTracker was told, so the destructor releases the same figure.
+    std::uint64_t allocatedBytes_ = 0;
+    MemoryTracker::Kind trackKind_ = MemoryTracker::Kind::DeviceBuffer;
 };
 
 } // namespace rend::gpu

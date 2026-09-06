@@ -68,6 +68,9 @@ private:
     std::uint32_t height_ = 0;
     std::uint32_t mipLevels_ = 1;
     std::uint32_t layerCount_ = 1;
+    // Alignment-padded allocation cost reported to the MemoryTracker; the
+    // destructor releases the same figure.
+    std::uint64_t allocatedBytes_ = 0;
 };
 
 } // namespace rend::gpu

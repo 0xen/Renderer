@@ -3368,7 +3368,9 @@ int main(int argc, char** argv) {
                 // Sun & shadow tuning; changes land in the light buffer on
                 // the next frame's write.
                 // Below the debug panel (FPS + graph + VSync) in the corner.
-                ImGui::SetNextWindowPos(ImVec2(8.0f, 160.0f), ImGuiCond_FirstUseEver);
+                // Below the debug panel, which grew a GPU-memory section
+                // (screenshot 055 caught the old 160 overlapping it).
+                ImGui::SetNextWindowPos(ImVec2(8.0f, 300.0f), ImGuiCond_FirstUseEver);
                 ImGui::Begin("Settings", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
                 // One shadow choice, built from the device's offer list.
                 // Ray traced additionally needs the BVH the viewer built.

@@ -8,6 +8,7 @@ add_library(rend_gpu OBJECT
     src/instance.cpp
     src/device.cpp
     src/memory_pool.cpp
+    src/memory_tracker.cpp
     src/swapchain.cpp
     src/shader.cpp
     src/pipeline.cpp

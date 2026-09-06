@@ -1,6 +1,7 @@
 #include "rend/gpu/buffer.h"
 
 #include "rend/gpu/device.h"
+#include "rend/gpu/memory_tracker.h"
 
 #include <volk.h>
 
@@ -105,6 +106,11 @@ Result<std::unique_ptr<Buffer>> Buffer::create(const Device& device, const Buffe
     buffer->memory_ = memory;
     buffer->size_ = desc.size;
     buffer->mapped_ = mapped;
+    buffer->allocatedBytes_ = requirements.size;
+    buffer->trackKind_ = desc.location == MemoryLocation::DeviceLocal
+                             ? MemoryTracker::Kind::DeviceBuffer
+                             : MemoryTracker::Kind::HostBuffer;
+    MemoryTracker::onAlloc(buffer->trackKind_, requirements.size);
     return buffer;
 }
 
@@ -120,6 +126,7 @@ Buffer::~Buffer() {
     }
     if (memory_ != VK_NULL_HANDLE) {
         vkFreeMemory(device_->handle(), memory_, nullptr);
+        MemoryTracker::onFree(trackKind_, allocatedBytes_);
     }
 }
 

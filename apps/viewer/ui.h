@@ -54,6 +54,9 @@ private:
     // Instantaneous FPS ring buffer feeding the debug panel's graph.
     std::array<float, 180> fpsHistory_{};
     std::size_t fpsHistoryOffset_ = 0;
+    // Total tracked GPU memory (MiB) per frame — the memory graph's ring.
+    std::array<float, 180> memoryHistory_{};
+    std::size_t memoryHistoryOffset_ = 0;
     bool frameBuilt_ = false;
 };
 
