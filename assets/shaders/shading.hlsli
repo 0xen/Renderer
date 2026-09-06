@@ -73,6 +73,16 @@ static const uint kReflectionNone = 2u;   // shade plain (probe capture pass)
 // models are placed and moved through these (renderer message queue).
 static const uint kTransformCapacity = 4096;
 [[vk::binding(19, 0)]] StructuredBuffer<column_major float4x4> objectTransforms;
+// Instance rows: SV_InstanceID (which includes the draw's firstInstance)
+// indexes here; the row names the object/material row and the transform
+// row, so one indirect entry with instanceCount N draws N placements of
+// the same geometry. Scene draws ride an identity prefix (row i = {i, i}).
+// Scalar members only — see the SkinVertex std430 layout gotcha.
+struct InstanceRow {
+    uint objectIndex;
+    uint transformIndex;
+};
+[[vk::binding(20, 0)]] StructuredBuffer<InstanceRow> instanceRows;
 
 // One directional light, glTF metallic-roughness: Lambert diffuse + GGX
 // specular (Smith-Schlick visibility, Schlick Fresnel). Scaled by pi so a

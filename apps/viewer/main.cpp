@@ -68,6 +68,18 @@ constexpr std::uint32_t kRuntimeObjectCapacity = 256;
 // Per-slot regions of the per-object transform buffer (binding 19). Must
 // match kTransformCapacity in shading.hlsli / shadow.hlsl.
 constexpr std::uint32_t kTransformCapacity = 4096;
+
+// Instance-row table (binding 20): SV_InstanceID resolves through these to
+// the object/material row and the transform row, so one indirect entry
+// with instanceCount N draws N placements of shared geometry. One global
+// region (not per-slot) — rows are only rewritten in ways in-flight frames
+// tolerate (appends past their instanceCount; swap-remove leaves a benign
+// one-frame duplicate). Must match InstanceRow in shading.hlsli.
+constexpr std::uint32_t kInstanceRowCapacity = 4096;
+struct InstanceRow {
+    std::uint32_t objectIndex = 0;
+    std::uint32_t transformIndex = 0;
+};
 constexpr math::Mat4 kIdentityMat4 = {1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
                                       0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f};
 
@@ -747,6 +759,11 @@ int main(int argc, char** argv) {
     // which is world-baked; runtime models are placed/moved through them).
     std::unique_ptr<gpu::Buffer> transformBuffer;
     std::vector<math::Mat4> objectTransforms;
+    // Instance rows (binding 20): canonical CPU copy + host-visible buffer.
+    // Scene draws occupy an identity prefix (row i = {i, i}); runtime
+    // resources allocate contiguous per-mesh blocks above it.
+    std::unique_ptr<gpu::Buffer> instanceRowBuffer;
+    std::vector<InstanceRow> instanceRows;
     const auto importers = assetio::ImporterRegistry::withBuiltins();
     // Capability offer from the gpu layer: which shadow techniques this
     // device can run. The UI is built from this list, never from
@@ -1084,7 +1101,35 @@ int main(int argc, char** argv) {
                 mats[i] = kIdentityMat4;
             }
         }
-        objectTransforms.assign(templateCapacity, kIdentityMat4);
+        // Scene draws ride the identity prefix; runtime instances allocate
+        // rows past it (freed indices recycle before the vector grows).
+        objectTransforms.assign(geometry.size(), kIdentityMat4);
+
+        // Instance rows: identity prefix for the scene's draws, runtime
+        // blocks above. One global region — see the constant's comment.
+        auto instanceRowResult = gpu::Buffer::create(
+            *device, {
+                         .size = std::uint64_t{kInstanceRowCapacity} * sizeof(InstanceRow),
+                         .usage = gpu::kUsageStorage,
+                         .location = gpu::MemoryLocation::HostVisible,
+                     });
+        if (!instanceRowResult) {
+            log::error("Instance row buffer creation failed: {}",
+                       instanceRowResult.error().message);
+            return 1;
+        }
+        instanceRowBuffer = std::move(instanceRowResult).value();
+        if (geometry.size() > kInstanceRowCapacity) {
+            log::error("Scene needs {} instance rows, capacity {}", geometry.size(),
+                       kInstanceRowCapacity);
+            return 1;
+        }
+        instanceRows.assign(kInstanceRowCapacity, InstanceRow{});
+        for (std::uint32_t i = 0; i < geometry.size(); ++i) {
+            instanceRows[i] = {.objectIndex = i, .transformIndex = i};
+        }
+        std::memcpy(instanceRowBuffer->mapped(), instanceRows.data(),
+                    instanceRows.size() * sizeof(InstanceRow));
 
         // Light data, same per-slot scheme (and capture regions) as the camera.
         auto lightResult = gpu::Buffer::create(
@@ -1338,6 +1383,8 @@ int main(int argc, char** argv) {
         descriptorTable->writeObjectBuffer(objectBuffer->handle(), objectBuffer->size());
         descriptorTable->writeStorageBuffer(19, transformBuffer->handle(),
                                             transformBuffer->size());
+        descriptorTable->writeStorageBuffer(20, instanceRowBuffer->handle(),
+                                            instanceRowBuffer->size());
         descriptorTable->writeStorageBuffer(3, indirectBuffer->handle(), indirectBuffer->size());
         descriptorTable->writeStorageBuffer(4, compactedBuffer->handle(),
                                             compactedBuffer->size());
@@ -1946,29 +1993,160 @@ int main(int argc, char** argv) {
     // Events broadcast to per-consumer receivers; the Python host holds
     // one. The viewer itself currently consumes none (a receiver nothing
     // polls would only accumulate, so don't create one idly).
-    struct RuntimeModel {
+    // Resources vs instances (the dedup design in ARCHITECTURE.md): one
+    // GeometryResource per asset path owns the pool slices, object rows,
+    // and indirect entries; each LoadModel handle is an INSTANCE carrying
+    // only a transform row. Repeat loads of a resident path skip import,
+    // decode, and pool allocation entirely — they bump instanceCount and
+    // write one instance row per mesh. The resource's GPU state is freed
+    // when the last instance unloads (refcount to zero, deferred).
+    // Identity is the exact path string, same as the texture dedup.
+    struct ResourceInstance {
         renderer::ModelHandle handle = renderer::kInvalidModel;
-        std::vector<std::uint32_t> drawIndices; // rows in draws/objectData
-        bool loaded = false;
+        std::uint32_t transformIndex = 0;
     };
-    std::vector<RuntimeModel> runtimeModels;
+    struct QueuedInstance {
+        renderer::LoadModelCmd cmd{};
+        std::chrono::steady_clock::time_point requested;
+    };
+    struct GeometryResource {
+        bool resident = false;
+        std::vector<std::uint32_t> meshObjectIndices; // rows in draws/objectData
+        // Local-space AABB per mesh: scene-AABB growth per placed instance.
+        std::vector<std::pair<math::Vec3, math::Vec3>> meshBounds;
+        // Instance rows: one block of meshCount * instanceCapacity rows;
+        // mesh m's draw has firstInstance = instanceBase + m * capacity.
+        std::uint32_t instanceBase = 0;
+        std::uint32_t instanceCapacity = 0;
+        std::vector<ResourceInstance> instances;
+        std::vector<QueuedInstance> queued; // arrivals while still loading
+    };
+    std::unordered_map<std::string, GeometryResource> resourcesByPath;
+    // Live instance handles in spawn order (the test harness unloads the
+    // oldest and moves random picks).
+    std::vector<renderer::ModelHandle> liveHandles;
     // Slots whose template region must be resynced from the canonical
-    // `draws` (unloads flip instanceCounts; each slot syncs when it is the
-    // current one — its region is guaranteed not in flight then).
+    // `draws` (instance add/remove edits instanceCounts; each slot syncs
+    // when it is the current one — its region is not in flight then).
     std::array<bool, gpu::FrameRenderer::kFramesInFlight> templatesDirty{};
-    // Deferred destruction for unloads: pool slices and draw-table rows
-    // return to circulation kFramesInFlight drains after the unload, when
-    // the last submission that could still read them has retired. Loads
-    // recycle retired rows before appending, so steady-state churn holds
-    // pool bytes AND draw count flat instead of leaking both.
+    // Deferred destruction for unloads: pool slices, draw-table rows,
+    // transform rows, and instance-row blocks return to circulation
+    // kFramesInFlight drains after release, when the last submission that
+    // could still read them has retired. Loads recycle retired rows before
+    // appending, so steady-state churn holds every table flat.
     struct PendingReclaim {
         std::vector<gpu::BufferSlice> slices;
         std::vector<std::uint32_t> objectIndices;
+        std::vector<std::uint32_t> transformIndices;
+        std::uint32_t instanceRowBase = 0;
+        std::uint32_t instanceRowCount = 0; // 0 = no block to free
         std::uint64_t retireAtDrain = 0;
     };
     std::deque<PendingReclaim> pendingReclaims;
     std::vector<std::uint32_t> freeObjectIndices;
+    std::vector<std::uint32_t> freeTransformIndices;
     std::uint64_t drainFrame = 0;
+
+    // Transform rows: recycle freed indices, grow past the scene prefix
+    // otherwise. The canonical vector's size is the high-water mark the
+    // per-frame slot memcpy covers.
+    auto allocateTransformIndex = [&]() -> std::optional<std::uint32_t> {
+        if (!freeTransformIndices.empty()) {
+            const std::uint32_t index = freeTransformIndices.back();
+            freeTransformIndices.pop_back();
+            return index;
+        }
+        if (objectTransforms.size() >= kTransformCapacity) {
+            return std::nullopt;
+        }
+        objectTransforms.push_back(kIdentityMat4);
+        return static_cast<std::uint32_t>(objectTransforms.size() - 1);
+    };
+
+    // Instance-row blocks: first-fit over a sorted, coalesced free list,
+    // growing past the scene prefix when no hole fits.
+    struct RowRange {
+        std::uint32_t base = 0;
+        std::uint32_t count = 0;
+    };
+    std::vector<RowRange> freeInstanceRanges;
+    std::uint32_t instanceRowHighWater = static_cast<std::uint32_t>(geometry.size());
+    auto allocateInstanceRows = [&](std::uint32_t count) -> std::optional<std::uint32_t> {
+        for (auto it = freeInstanceRanges.begin(); it != freeInstanceRanges.end(); ++it) {
+            if (it->count >= count) {
+                const std::uint32_t base = it->base;
+                it->base += count;
+                it->count -= count;
+                if (it->count == 0) {
+                    freeInstanceRanges.erase(it);
+                }
+                return base;
+            }
+        }
+        if (instanceRowHighWater + count <= kInstanceRowCapacity) {
+            const std::uint32_t base = instanceRowHighWater;
+            instanceRowHighWater += count;
+            return base;
+        }
+        return std::nullopt;
+    };
+    auto freeInstanceRows = [&](std::uint32_t base, std::uint32_t count) {
+        if (count == 0) {
+            return;
+        }
+        auto it = std::lower_bound(
+            freeInstanceRanges.begin(), freeInstanceRanges.end(), base,
+            [](const RowRange& range, std::uint32_t b) { return range.base < b; });
+        it = freeInstanceRanges.insert(it, {base, count});
+        if (auto next = std::next(it);
+            next != freeInstanceRanges.end() && it->base + it->count == next->base) {
+            it->count += next->count;
+            freeInstanceRanges.erase(next);
+        }
+        if (it != freeInstanceRanges.begin()) {
+            auto prev = std::prev(it);
+            if (prev->base + prev->count == it->base) {
+                prev->count += it->count;
+                freeInstanceRanges.erase(it);
+            }
+        }
+        if (!freeInstanceRanges.empty()) {
+            const RowRange& last = freeInstanceRanges.back();
+            if (last.base + last.count == instanceRowHighWater) {
+                instanceRowHighWater = last.base;
+                freeInstanceRanges.pop_back();
+            }
+        }
+    };
+    auto writeInstanceRow = [&](std::uint32_t index, InstanceRow row) {
+        instanceRows[index] = row;
+        std::memcpy(static_cast<std::byte*>(instanceRowBuffer->mapped()) +
+                        index * sizeof(InstanceRow),
+                    &row, sizeof(InstanceRow));
+    };
+    auto placementMatrix = [&](const float position[3], float yawDegrees, float scale) {
+        const float yaw = yawDegrees * kPi / 180.0f;
+        return composeTrs({position[0], position[1], position[2]},
+                          {0.0f, std::sin(yaw * 0.5f), 0.0f, std::cos(yaw * 0.5f)},
+                          {scale, scale, scale});
+    };
+    // Grow the scene AABB (shadow cascade fitting) by a mesh's local
+    // bounds pushed through a placement matrix.
+    auto growSceneAabb = [&](const math::Vec3& localMin, const math::Vec3& localMax,
+                             const math::Mat4& m) {
+        for (int corner = 0; corner < 8; ++corner) {
+            const float x = (corner & 1) ? localMax.x : localMin.x;
+            const float y = (corner & 2) ? localMax.y : localMin.y;
+            const float z = (corner & 4) ? localMax.z : localMin.z;
+            const math::Vec3 w{m[0] * x + m[4] * y + m[8] * z + m[12],
+                               m[1] * x + m[5] * y + m[9] * z + m[13],
+                               m[2] * x + m[6] * y + m[10] * z + m[14]};
+            sceneMin = {std::min(sceneMin.x, w.x), std::min(sceneMin.y, w.y),
+                        std::min(sceneMin.z, w.z)};
+            sceneMax = {std::max(sceneMax.x, w.x), std::max(sceneMax.y, w.y),
+                        std::max(sceneMax.z, w.z)};
+        }
+    };
 
     // Rewrites one slot's whole template region from the canonical draw
     // list, reapplying that slot's animated posed-vertex overrides.
@@ -1981,6 +2159,113 @@ int main(int argc, char** argv) {
         std::memcpy(static_cast<std::byte*>(indirectBuffer->mapped()) +
                         slot * batch.indirectRegionStride,
                     slotDraws.data(), slotDraws.size() * sizeof(gpu::DrawIndexedIndirect));
+    };
+
+    // Adds one instance of a RESIDENT resource: a transform row, one
+    // instance row per mesh, and instanceCount bumps. This is the whole
+    // cost of a repeat LoadModel — no import, no decode, no pool touch.
+    auto addInstance = [&](GeometryResource& resource, const renderer::LoadModelCmd& cmd,
+                           std::uint32_t slot) -> Result<void> {
+        const auto meshCount = static_cast<std::uint32_t>(resource.meshObjectIndices.size());
+        const auto count = static_cast<std::uint32_t>(resource.instances.size());
+        if (count == resource.instanceCapacity) {
+            // Grow by relocating the per-mesh row blocks. In-flight slots'
+            // templates keep the old firstInstance; the old block's rows
+            // stay untouched until their deferred reclaim retires.
+            const std::uint32_t newCapacity = std::max(4u, resource.instanceCapacity * 2u);
+            const auto newBase = allocateInstanceRows(meshCount * newCapacity);
+            if (!newBase) {
+                return Error{std::format("instance rows exhausted ({} of {} in use)",
+                                         instanceRowHighWater, kInstanceRowCapacity)};
+            }
+            for (std::uint32_t m = 0; m < meshCount; ++m) {
+                for (std::uint32_t k = 0; k < count; ++k) {
+                    writeInstanceRow(*newBase + m * newCapacity + k,
+                                     {.objectIndex = resource.meshObjectIndices[m],
+                                      .transformIndex = resource.instances[k].transformIndex});
+                }
+                draws[resource.meshObjectIndices[m]].firstInstance =
+                    *newBase + m * newCapacity;
+            }
+            templatesDirty.fill(true); // canonical firstInstance changed
+            if (resource.instanceCapacity > 0) {
+                PendingReclaim reclaim;
+                reclaim.instanceRowBase = resource.instanceBase;
+                reclaim.instanceRowCount = meshCount * resource.instanceCapacity;
+                reclaim.retireAtDrain = drainFrame + gpu::FrameRenderer::kFramesInFlight;
+                pendingReclaims.push_back(std::move(reclaim));
+            }
+            resource.instanceBase = *newBase;
+            resource.instanceCapacity = newCapacity;
+        }
+        const auto transformIndex = allocateTransformIndex();
+        if (!transformIndex) {
+            return Error{
+                std::format("transform capacity exhausted ({} rows)", kTransformCapacity)};
+        }
+        const math::Mat4 placement = placementMatrix(cmd.position, cmd.yawDegrees, cmd.scale);
+        objectTransforms[*transformIndex] = placement;
+        for (std::uint32_t m = 0; m < meshCount; ++m) {
+            // The new row sits past every in-flight template's
+            // instanceCount, so writing it now is safe.
+            writeInstanceRow(resource.instanceBase + m * resource.instanceCapacity + count,
+                             {.objectIndex = resource.meshObjectIndices[m],
+                              .transformIndex = *transformIndex});
+            draws[resource.meshObjectIndices[m]].instanceCount = count + 1;
+            growSceneAabb(resource.meshBounds[m].first, resource.meshBounds[m].second,
+                          placement);
+        }
+        resource.instances.push_back({.handle = cmd.handle, .transformIndex = *transformIndex});
+        liveHandles.push_back(cmd.handle);
+        templatesDirty.fill(true);
+        writeTemplates(slot);
+        templatesDirty[slot] = false;
+        if (batch.mode == gpu::DrawSubmitMode::Direct) {
+            renderer->invalidateStaticRecordings(); // Direct mode bakes cpuDraws
+        }
+        return {};
+    };
+
+    // Removes instance k of a resource; when it was the last one, the
+    // resource's whole GPU state rides the same deferred reclaim. The
+    // caller erases the emptied resource from the map.
+    auto removeInstanceAt = [&](GeometryResource& resource, std::size_t k) {
+        const auto meshCount = static_cast<std::uint32_t>(resource.meshObjectIndices.size());
+        const std::size_t last = resource.instances.size() - 1;
+        PendingReclaim reclaim;
+        reclaim.transformIndices.push_back(resource.instances[k].transformIndex);
+        if (k != last) {
+            // Swap-remove. An in-flight slot still drawing last+1 rows sees
+            // the moved instance twice for a frame (same transform, benign)
+            // and loses the removed one a frame early.
+            for (std::uint32_t m = 0; m < meshCount; ++m) {
+                writeInstanceRow(resource.instanceBase + m * resource.instanceCapacity +
+                                     static_cast<std::uint32_t>(k),
+                                 {.objectIndex = resource.meshObjectIndices[m],
+                                  .transformIndex = resource.instances[last].transformIndex});
+            }
+            resource.instances[k] = resource.instances[last];
+        }
+        resource.instances.pop_back();
+        for (std::uint32_t m = 0; m < meshCount; ++m) {
+            draws[resource.meshObjectIndices[m]].instanceCount =
+                static_cast<std::uint32_t>(resource.instances.size());
+        }
+        templatesDirty.fill(true);
+        if (batch.mode == gpu::DrawSubmitMode::Direct) {
+            renderer->invalidateStaticRecordings();
+        }
+        if (resource.instances.empty()) {
+            for (std::uint32_t index : resource.meshObjectIndices) {
+                reclaim.slices.push_back(geometry[index].vertices);
+                reclaim.slices.push_back(geometry[index].indices);
+            }
+            reclaim.objectIndices = std::move(resource.meshObjectIndices);
+            reclaim.instanceRowBase = resource.instanceBase;
+            reclaim.instanceRowCount = meshCount * resource.instanceCapacity;
+        }
+        reclaim.retireAtDrain = drainFrame + gpu::FrameRenderer::kFramesInFlight;
+        pendingReclaims.push_back(std::move(reclaim));
     };
 
     // ---- Async loader (milestone 2) ----
@@ -2152,26 +2437,78 @@ int main(int argc, char** argv) {
         }
     });
 
-    // Main-thread integration of one prepared load: the only remaining
-    // frame-loop cost of a runtime load.
-    auto integrateLoad = [&](PreparedLoad& load, std::uint32_t slot) -> Result<void> {
+    // ModelReady for one instance handle: event + the log line whose pool
+    // and draw-table figures the churn tests watch.
+    auto pushModelReady = [&](renderer::ModelHandle handle,
+                              std::chrono::steady_clock::time_point requested,
+                              const Result<void>& applied, const char* path,
+                              std::size_t instanceCount) {
+        renderer::Event event;
+        event.type = renderer::Event::Type::ModelReady;
+        event.ready.handle = handle;
+        event.ready.ok = applied.ok();
+        event.ready.millis =
+            std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() -
+                                                     requested)
+                .count();
+        if (applied) {
+            log::info("Runtime model '{}' ready in {:.1f} ms (handle {}) | pool {:.1f} MiB "
+                      "in {} allocations, {} draw entries, {} instance(s) of this asset",
+                      path, event.ready.millis, handle,
+                      static_cast<double>(geometryPool->usedBytes()) / (1024.0 * 1024.0),
+                      geometryPool->allocationCount(), draws.size(), instanceCount);
+        } else {
+            std::snprintf(event.ready.error, sizeof(event.ready.error), "%s",
+                          applied.error().message.c_str());
+            log::warn("Runtime model '{}' failed: {}", path, applied.error().message);
+        }
+        messageQueue.pushEvent(event);
+    };
+
+    // Main-thread integration of one prepared load: builds the RESOURCE
+    // (textures, pool slices, object rows, indirect entries), then adds
+    // every instance queued behind it. The only remaining frame-loop cost
+    // of a cold runtime load.
+    auto integrateResource = [&](PreparedLoad& load, std::uint32_t slot) {
         REND_PROFILE_ZONE("RuntimeLoadModel");
+        const std::string path{load.cmd.path};
+        auto resourceIt = resourcesByPath.find(path);
+        auto failQueued = [&](const Result<void>& applied) {
+            if (resourceIt == resourcesByPath.end()) {
+                pushModelReady(load.cmd.handle, load.requested, applied, load.cmd.path, 0);
+                return;
+            }
+            for (const QueuedInstance& queued : resourceIt->second.queued) {
+                pushModelReady(queued.cmd.handle, queued.requested, applied, load.cmd.path, 0);
+            }
+            resourcesByPath.erase(resourceIt);
+        };
         auto releaseClaims = [&] {
             std::lock_guard lock(textureClaimMutex);
             for (const PreparedTexture& texture : load.textures) {
                 claimedTexturePaths.erase(texture.path);
             }
         };
+        if (resourceIt == resourcesByPath.end()) {
+            // Shouldn't happen (only integrate erases loading entries),
+            // but never dereference end(): drop the load, free the claims.
+            releaseClaims();
+            log::warn("Prepared load '{}' has no resource entry; dropped", load.cmd.path);
+            return;
+        }
         if (!load.error.empty()) {
-            return Error{load.error};
+            releaseClaims();
+            failQueued(Error{load.error});
+            return;
         }
         // Only rows the free list can't cover actually grow the table.
         const std::size_t appended =
             load.meshes.size() - std::min(freeObjectIndices.size(), load.meshes.size());
         if (geometry.size() + appended > templateCapacity) {
             releaseClaims(); // carried decodes never upload; let retries re-decode
-            return Error{std::format("runtime capacity exhausted ({} + {} > {})",
-                                     geometry.size(), appended, templateCapacity)};
+            failQueued(Error{std::format("runtime capacity exhausted ({} + {} > {})",
+                                         geometry.size(), appended, templateCapacity)});
+            return;
         }
         // Upload this load's carried textures first so its own meshes (and
         // any later load that saw the claim) can resolve them by path.
@@ -2194,25 +2531,44 @@ int main(int argc, char** argv) {
             textures.push_back(std::move(image).value());
             textureSlotByPath.emplace(texture.path, textureIndex);
         }
-        auto textureSlot = [&](const std::string& path) -> std::uint32_t {
-            if (path.empty()) {
+        auto textureSlot = [&](const std::string& texPath) -> std::uint32_t {
+            if (texPath.empty()) {
                 return 0u;
             }
-            const auto it = textureSlotByPath.find(path);
+            const auto it = textureSlotByPath.find(texPath);
             return it != textureSlotByPath.end() ? it->second : 0u;
         };
 
-        const float yaw = load.cmd.yawDegrees * kPi / 180.0f;
-        const math::Mat4 placement =
-            composeTrs({load.cmd.position[0], load.cmd.position[1], load.cmd.position[2]},
-                       {0.0f, std::sin(yaw * 0.5f), 0.0f, std::cos(yaw * 0.5f)},
-                       {load.cmd.scale, load.cmd.scale, load.cmd.scale});
-
         const std::uint32_t oldDrawCount = static_cast<std::uint32_t>(draws.size());
-        RuntimeModel record{.handle = load.cmd.handle, .loaded = true};
+        GeometryResource& resource = resourceIt->second;
+        std::vector<gpu::BufferSlice> allocated; // freed straight back on failure
+        auto fail = [&](Result<void> error) {
+            // Nothing references the new state yet: slices go straight
+            // back to the pool, rows straight to the free list (appended
+            // rows stay in the table as recyclable instanceCount-0 rows,
+            // template-initialized in every slot below).
+            for (const gpu::BufferSlice& slice : allocated) {
+                geometryPool->free(slice);
+            }
+            for (std::uint32_t index : resource.meshObjectIndices) {
+                draws[index] = {};
+                for (std::uint32_t s = 0; s < gpu::FrameRenderer::kFramesInFlight; ++s) {
+                    if (index >= oldDrawCount) {
+                        std::memcpy(static_cast<std::byte*>(indirectBuffer->mapped()) +
+                                        s * batch.indirectRegionStride +
+                                        index * sizeof(gpu::DrawIndexedIndirect),
+                                    &draws[index], sizeof(gpu::DrawIndexedIndirect));
+                    }
+                }
+                freeObjectIndices.push_back(index);
+            }
+            batch.drawCount = static_cast<std::uint32_t>(draws.size());
+            batch.cpuDraws = draws.data();
+            failQueued(error);
+        };
         for (PreparedMesh& mesh : load.meshes) {
-            // Placement rides the per-object transform buffer (SetTransform
-            // can move it later); vertices stay in model space.
+            // Placement rides the per-instance transform buffer; vertices
+            // stay in model space and are shared by every instance.
             mesh.object.textureIndex = textureSlot(mesh.baseColorPath);
             mesh.object.normalIndex = textureSlot(mesh.normalPath);
             mesh.object.mrIndex = textureSlot(mesh.mrPath);
@@ -2222,10 +2578,16 @@ int main(int argc, char** argv) {
             auto indexSlice =
                 geometryPool->allocate(mesh.indices.size() * sizeof(std::uint32_t), 4);
             if (!vertexSlice || !indexSlice) {
-                return Error{std::format(
+                if (vertexSlice) {
+                    allocated.push_back(vertexSlice.value());
+                }
+                fail(Error{std::format(
                     "pool allocation failed: {}",
-                    (!vertexSlice ? vertexSlice.error() : indexSlice.error()).message)};
+                    (!vertexSlice ? vertexSlice.error() : indexSlice.error()).message)});
+                return;
             }
+            allocated.push_back(vertexSlice.value());
+            allocated.push_back(indexSlice.value());
             auto stagedVerts =
                 transfer->stage(geometryPool->buffer(), vertexSlice.value().offset,
                                 mesh.vertexData.data(), vertexSlice.value().size);
@@ -2233,9 +2595,10 @@ int main(int argc, char** argv) {
                                                  indexSlice.value().offset, mesh.indices.data(),
                                                  indexSlice.value().size);
             if (!stagedVerts || !stagedIndices) {
-                return Error{std::format(
+                fail(Error{std::format(
                     "staging failed: {}",
-                    (!stagedVerts ? stagedVerts.error() : stagedIndices.error()).message)};
+                    (!stagedVerts ? stagedVerts.error() : stagedIndices.error()).message)});
+                return;
             }
             // Recycle a retired draw-table row when one is free; only
             // append when the free list is empty (bounds the table under
@@ -2258,60 +2621,55 @@ int main(int argc, char** argv) {
             objectData[objectIndex] = mesh.object;
             draws[objectIndex] = {
                 .indexCount = static_cast<std::uint32_t>(mesh.indices.size()),
-                .instanceCount = 1,
+                .instanceCount = 0, // instances bump this below
                 .firstIndex = static_cast<std::uint32_t>(indexSlice.value().offset /
                                                          sizeof(std::uint32_t)),
                 .vertexOffset =
                     static_cast<std::int32_t>(vertexSlice.value().offset / kVertexStride),
-                .firstInstance = objectIndex,
+                .firstInstance = 0, // patched by the first addInstance's block alloc
             };
-            record.drawIndices.push_back(objectIndex);
-            objectTransforms[objectIndex] = placement;
-
-            // Grow the scene AABB (shadow cascade fitting) by the mesh's
-            // local bounds pushed through the placement matrix.
-            for (int corner = 0; corner < 8; ++corner) {
-                const float x = (corner & 1) ? mesh.localMax.x : mesh.localMin.x;
-                const float y = (corner & 2) ? mesh.localMax.y : mesh.localMin.y;
-                const float z = (corner & 4) ? mesh.localMax.z : mesh.localMin.z;
-                const math::Mat4& m = placement;
-                const math::Vec3 w{m[0] * x + m[4] * y + m[8] * z + m[12],
-                                   m[1] * x + m[5] * y + m[9] * z + m[13],
-                                   m[2] * x + m[6] * y + m[10] * z + m[14]};
-                sceneMin = {std::min(sceneMin.x, w.x), std::min(sceneMin.y, w.y),
-                            std::min(sceneMin.z, w.z)};
-                sceneMax = {std::max(sceneMax.x, w.x), std::max(sceneMax.y, w.y),
-                            std::max(sceneMax.z, w.z)};
-            }
+            resource.meshObjectIndices.push_back(objectIndex);
+            resource.meshBounds.emplace_back(mesh.localMin, mesh.localMax);
         }
         // New SSBO rows (possibly scattered across recycled indices) ride
         // the same flush as the geometry.
-        for (std::uint32_t index : record.drawIndices) {
+        for (std::uint32_t index : resource.meshObjectIndices) {
             if (auto staged = transfer->stage(*objectBuffer, index * sizeof(ObjectData),
                                               &objectData[index], sizeof(ObjectData));
                 !staged) {
-                return staged.error();
+                fail(staged.error());
+                return;
             }
         }
         {
             REND_PROFILE_ZONE("RuntimeUploadFlush");
             if (auto flushed = transfer->flush(); !flushed) {
-                return flushed.error();
+                fail(flushed.error());
+                return;
             }
         }
+        resource.resident = true;
         batch.drawCount = static_cast<std::uint32_t>(draws.size());
         batch.cpuDraws = draws.data();
+        // Every instance queued behind the load lands now; each failure is
+        // its own event, a success elsewhere in the queue still stands.
+        std::vector<QueuedInstance> queued = std::move(resource.queued);
+        resource.queued.clear();
+        for (const QueuedInstance& entry : queued) {
+            auto applied = addInstance(resource, entry.cmd, slot);
+            pushModelReady(entry.cmd.handle, entry.requested, applied, load.cmd.path,
+                           resource.instances.size());
+        }
         // Template entries beyond the old drawCount are unread by any
-        // in-flight frame: extend every slot region immediately. Recycled
-        // entries sit BELOW it, where other slots' in-flight frames still
-        // read — those get the current slot's region now (safe after
-        // waitFrameSlot) and the dirty-resync at their own drains; until
-        // then they read the retired entry, which is instanceCount 0 (the
-        // model is simply absent there one extra frame).
-        bool recycledAny = false;
-        for (std::uint32_t index : record.drawIndices) {
+        // in-flight frame: extend every slot region immediately (with the
+        // final instanceCount/firstInstance the adds above produced).
+        // Recycled entries sit BELOW it, where other slots' in-flight
+        // frames still read — addInstance synced the current slot and
+        // marked the others dirty; until their resync they read the
+        // retired entry, which is instanceCount 0 (the model is simply
+        // absent there one extra frame).
+        for (std::uint32_t index : resource.meshObjectIndices) {
             if (index < oldDrawCount) {
-                recycledAny = true;
                 continue;
             }
             for (std::uint32_t s = 0; s < gpu::FrameRenderer::kFramesInFlight; ++s) {
@@ -2321,36 +2679,58 @@ int main(int argc, char** argv) {
                             &draws[index], sizeof(gpu::DrawIndexedIndirect));
             }
         }
-        if (recycledAny) {
-            templatesDirty.fill(true);
-            writeTemplates(slot);
-            templatesDirty[slot] = false;
-        }
-        runtimeModels.push_back(std::move(record));
-        // Static recordings bake the draw count; rebuild lazily (waits
-        // idle — the ~2 ms integration hitch, paid once per finished load).
-        renderer->invalidateStaticRecordings();
-        return {};
-    };
-
-    auto applyUnloadModel = [&](const renderer::UnloadModelCmd& cmd) {
-        for (auto it = runtimeModels.begin(); it != runtimeModels.end(); ++it) {
-            if (it->handle != cmd.handle || !it->loaded) {
-                continue;
-            }
+        if (resource.instances.empty()) {
+            // Every queued instance was unloaded or failed before the
+            // resource finished loading: retire its GPU state right away.
             PendingReclaim reclaim;
-            for (std::uint32_t index : it->drawIndices) {
-                draws[index].instanceCount = 0;
+            for (std::uint32_t index : resource.meshObjectIndices) {
                 reclaim.slices.push_back(geometry[index].vertices);
                 reclaim.slices.push_back(geometry[index].indices);
             }
-            reclaim.objectIndices = std::move(it->drawIndices);
+            reclaim.objectIndices = std::move(resource.meshObjectIndices);
+            reclaim.instanceRowBase = resource.instanceBase;
+            reclaim.instanceRowCount =
+                static_cast<std::uint32_t>(reclaim.objectIndices.size()) *
+                resource.instanceCapacity;
             reclaim.retireAtDrain = drainFrame + gpu::FrameRenderer::kFramesInFlight;
             pendingReclaims.push_back(std::move(reclaim));
-            runtimeModels.erase(it);
-            templatesDirty.fill(true);
-            renderer->invalidateStaticRecordings();
-            return;
+            resourcesByPath.erase(resourceIt);
+        }
+        // Static recordings bake the draw count; rebuild lazily (waits
+        // idle — the ~2 ms integration hitch, paid once per NEW resource;
+        // instance adds of resident resources never pay it).
+        renderer->invalidateStaticRecordings();
+    };
+
+    auto applyUnloadModel = [&](const renderer::UnloadModelCmd& cmd) {
+        for (auto it = resourcesByPath.begin(); it != resourcesByPath.end(); ++it) {
+            GeometryResource& resource = it->second;
+            if (!resource.resident) {
+                // Queued behind a still-loading resource: drop it and tell
+                // the producer, so a wait on the handle can't hang.
+                for (auto queuedIt = resource.queued.begin();
+                     queuedIt != resource.queued.end(); ++queuedIt) {
+                    if (queuedIt->cmd.handle == cmd.handle) {
+                        pushModelReady(cmd.handle, queuedIt->requested,
+                                       Error{"unloaded before the resource finished loading"},
+                                       it->first.c_str(), 0);
+                        resource.queued.erase(queuedIt);
+                        return;
+                    }
+                }
+                continue;
+            }
+            for (std::size_t k = 0; k < resource.instances.size(); ++k) {
+                if (resource.instances[k].handle != cmd.handle) {
+                    continue;
+                }
+                removeInstanceAt(resource, k);
+                std::erase(liveHandles, cmd.handle);
+                if (resource.instances.empty()) {
+                    resourcesByPath.erase(it);
+                }
+                return;
+            }
         }
         log::warn("UnloadModel: unknown handle {}", cmd.handle);
     };
@@ -2367,8 +2747,13 @@ int main(int argc, char** argv) {
             }
             freeObjectIndices.insert(freeObjectIndices.end(), reclaim.objectIndices.begin(),
                                      reclaim.objectIndices.end());
-            log::trace("Reclaimed {} pool slices; pool {:.1f} MiB in {} allocations",
-                       reclaim.slices.size(),
+            freeTransformIndices.insert(freeTransformIndices.end(),
+                                        reclaim.transformIndices.begin(),
+                                        reclaim.transformIndices.end());
+            freeInstanceRows(reclaim.instanceRowBase, reclaim.instanceRowCount);
+            log::trace("Reclaimed {} pool slices, {} instance rows; pool {:.1f} MiB in {} "
+                       "allocations",
+                       reclaim.slices.size(), reclaim.instanceRowCount,
                        static_cast<double>(geometryPool->usedBytes()) / (1024.0 * 1024.0),
                        geometryPool->allocationCount());
             pendingReclaims.pop_front();
@@ -2380,29 +2765,44 @@ int main(int argc, char** argv) {
         for (const renderer::Command& cmd : messageQueue.drain()) {
             switch (cmd.type) {
             case renderer::Command::Type::LoadModel: {
-                // Hand the file work to the loader thread; the model shows
-                // up (and ModelReady fires) at a later drain.
-                {
-                    std::lock_guard lock(loaderMutex);
-                    loadRequests.push_back({cmd.load, std::chrono::steady_clock::now()});
+                // Resource dedup: only the FIRST load of a path reaches the
+                // loader thread. A repeat while it prepares queues behind
+                // it; a repeat of a resident resource lands right now as a
+                // pure instance add.
+                const std::string path{cmd.load.path};
+                const auto now = std::chrono::steady_clock::now();
+                auto [it, inserted] = resourcesByPath.try_emplace(path);
+                GeometryResource& resource = it->second;
+                if (inserted) {
+                    resource.queued.push_back({cmd.load, now});
+                    {
+                        std::lock_guard lock(loaderMutex);
+                        loadRequests.push_back({cmd.load, now});
+                    }
+                    loaderWake.notify_one();
+                } else if (!resource.resident) {
+                    resource.queued.push_back({cmd.load, now});
+                } else {
+                    auto applied = addInstance(resource, cmd.load, slot);
+                    pushModelReady(cmd.load.handle, now, applied, cmd.load.path,
+                                   resource.instances.size());
                 }
-                loaderWake.notify_one();
                 break;
             }
             case renderer::Command::Type::SetTransform: {
-                const float yaw = cmd.transform.yawDegrees * kPi / 180.0f;
-                const math::Mat4 placement = composeTrs(
-                    {cmd.transform.position[0], cmd.transform.position[1],
-                     cmd.transform.position[2]},
-                    {0.0f, std::sin(yaw * 0.5f), 0.0f, std::cos(yaw * 0.5f)},
-                    {cmd.transform.scale, cmd.transform.scale, cmd.transform.scale});
+                const math::Mat4 placement =
+                    placementMatrix(cmd.transform.position, cmd.transform.yawDegrees,
+                                    cmd.transform.scale);
                 bool found = false;
-                for (const RuntimeModel& model : runtimeModels) {
-                    if (model.handle == cmd.transform.handle && model.loaded) {
-                        for (std::uint32_t index : model.drawIndices) {
-                            objectTransforms[index] = placement;
+                for (auto& [path, resource] : resourcesByPath) {
+                    for (ResourceInstance& instance : resource.instances) {
+                        if (instance.handle == cmd.transform.handle) {
+                            objectTransforms[instance.transformIndex] = placement;
+                            found = true;
+                            break;
                         }
-                        found = true;
+                    }
+                    if (found) {
                         break;
                     }
                 }
@@ -2425,29 +2825,10 @@ int main(int argc, char** argv) {
             ready.swap(preparedLoads);
         }
         for (PreparedLoad& load : ready) {
-            auto applied = integrateLoad(load, slot);
-            renderer::Event event;
-            event.type = renderer::Event::Type::ModelReady;
-            event.ready.handle = load.cmd.handle;
-            event.ready.ok = applied.ok();
-            event.ready.millis = std::chrono::duration<float, std::milli>(
-                                     std::chrono::steady_clock::now() - load.requested)
-                                     .count();
-            if (applied) {
-                // Pool + draw-table figures are the memory-churn test's
-                // metric: both must plateau under steady load/unload.
-                log::info("Runtime model '{}' ready in {:.1f} ms (handle {}) | pool {:.1f} "
-                          "MiB in {} allocations, {} draw entries",
-                          load.cmd.path, event.ready.millis, load.cmd.handle,
-                          static_cast<double>(geometryPool->usedBytes()) / (1024.0 * 1024.0),
-                          geometryPool->allocationCount(), draws.size());
-            } else {
-                std::snprintf(event.ready.error, sizeof(event.ready.error), "%s",
-                              applied.error().message.c_str());
-                log::warn("Runtime model '{}' failed: {}", load.cmd.path,
-                          applied.error().message);
-            }
-            messageQueue.pushEvent(event);
+            // Builds the resource, adds every queued instance, and fires
+            // one ModelReady per queued handle (the log line's pool +
+            // draw-table figures are the memory-churn test's metric).
+            integrateResource(load, slot);
         }
     };
 
@@ -2633,33 +3014,18 @@ int main(int argc, char** argv) {
                     // Keep the population bounded: unload the oldest once
                     // more than four are live, so long test runs churn
                     // load AND unload instead of accumulating forever.
-                    int live = 0;
-                    for (const RuntimeModel& model : runtimeModels) {
-                        live += model.loaded ? 1 : 0;
-                    }
-                    if (live >= 4) {
-                        for (const RuntimeModel& model : runtimeModels) {
-                            if (model.loaded) {
-                                renderer::Command cmd;
-                                cmd.type = renderer::Command::Type::UnloadModel;
-                                cmd.unload.handle = model.handle;
-                                messageSender.push(cmd);
-                                messageSender.flush();
-                                break;
-                            }
-                        }
+                    if (liveHandles.size() >= 4) {
+                        renderer::Command cmd;
+                        cmd.type = renderer::Command::Type::UnloadModel;
+                        cmd.unload.handle = liveHandles.front();
+                        messageSender.push(cmd);
+                        messageSender.flush();
                     }
                     // Exercise SetTransform too: shove one live model to a
                     // fresh spot near the camera with a new heading.
-                    std::vector<const RuntimeModel*> liveModels;
-                    for (const RuntimeModel& model : runtimeModels) {
-                        if (model.loaded) {
-                            liveModels.push_back(&model);
-                        }
-                    }
-                    if (!liveModels.empty()) {
+                    if (!liveHandles.empty()) {
                         const auto pick = std::uniform_int_distribution<std::size_t>(
-                            0, liveModels.size() - 1)(spawnRng);
+                            0, liveHandles.size() - 1)(spawnRng);
                         const math::Vec3 fwd = camera.forward();
                         const math::Vec3 side =
                             math::normalize(math::cross(fwd, {0.0f, 1.0f, 0.0f}));
@@ -2667,7 +3033,7 @@ int main(int argc, char** argv) {
                             std::uniform_real_distribution<float>(-2.0f, 2.0f)(spawnRng);
                         renderer::Command cmd;
                         cmd.type = renderer::Command::Type::SetTransform;
-                        cmd.transform.handle = liveModels[pick]->handle;
+                        cmd.transform.handle = liveHandles[pick];
                         cmd.transform.position[0] = camera.position.x + fwd.x * 4.0f + side.x * s;
                         cmd.transform.position[1] = camera.position.y - 0.5f;
                         cmd.transform.position[2] = camera.position.z + fwd.z * 4.0f + side.z * s;

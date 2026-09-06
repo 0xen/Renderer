@@ -43,6 +43,9 @@ class Device;
 //   17 — morph weights SSBO (compute; per frame slot)
 //   18 — reflection probe cubemap (fragment; the raster reflection tier
 //        samples it by direction, mip = roughness)
+//   19 — per-object world transforms (vertex; per-camera-slot regions)
+//   20 — instance rows SSBO (vertex; {objectIndex, transformIndex} per
+//        drawn instance — SV_InstanceID resolves through it)
 class DescriptorTable {
 public:
     static Result<std::unique_ptr<DescriptorTable>> create(const Device& device,

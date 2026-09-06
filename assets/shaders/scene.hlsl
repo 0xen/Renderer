@@ -2,8 +2,10 @@
 // a per-frame-slot buffer (so a moving camera never touches the static
 // command buffers — only the slot index is baked as a push constant),
 // materials through the bindless table. Each indirect entry's
-// firstInstance is the object index (dxc maps SV_InstanceID to SPIR-V
-// InstanceIndex, which includes firstInstance).
+// firstInstance is its base row in the instance-row table (dxc maps
+// SV_InstanceID to SPIR-V InstanceIndex, which includes firstInstance);
+// the row resolves to the object/material index and the transform index,
+// so instanced draws (instanceCount > 1) share geometry and materials.
 
 struct PushConstants {
     uint cameraSlot; // frame-in-flight index into the camera buffer
@@ -42,8 +44,9 @@ struct VSOutput {
 
 VSOutput VSMain(VSInput input) {
     VSOutput output;
+    const InstanceRow row = instanceRows[input.instanceId];
     const float4x4 world =
-        objectTransforms[pc.cameraSlot * kTransformCapacity + input.instanceId];
+        objectTransforms[pc.cameraSlot * kTransformCapacity + row.transformIndex];
     const float3 worldPos = mul(world, float4(input.position, 1.0f)).xyz;
     output.position = mul(cameras[pc.cameraSlot].viewProj, float4(worldPos, 1.0f));
     output.worldPos = worldPos;
@@ -52,7 +55,7 @@ VSOutput VSMain(VSInput input) {
     // for normals after renormalization.
     output.normal = normalize(mul((float3x3)world, input.normal));
     output.uv = input.uv;
-    output.objectIndex = input.instanceId;
+    output.objectIndex = row.objectIndex;
     return output;
 }
 
