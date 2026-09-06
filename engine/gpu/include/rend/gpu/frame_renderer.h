@@ -79,9 +79,10 @@ struct DrawBatch {
     // GPU compaction (IndirectCount mode only): a compute pipeline whose
     // shader reads the draw templates (descriptor binding 3), appends
     // visible entries to `indirect` (binding 4) and counts them into
-    // `count` (binding 5, three uint32 per slot: [0] visibility-only for
-    // the shadow passes, [1] frustum-culled for the scene pass, [2] the
-    // scratch-row allocator for per-instance culling). Recorded before
+    // `count` (binding 5, four uint32 per slot: [0] visibility-only for
+    // the shadow passes, [1] frustum-culled opaques for the scene pass,
+    // [2] the scratch-row allocator for per-instance culling, [3]
+    // frustum-culled transparents for the blend pass). Recorded before
     // the render pass: zero the slot's counters, dispatch one thread per
     // template, barrier to the indirect + vertex reads. Null = none.
     const Pipeline* cullPipeline = nullptr;
@@ -90,6 +91,14 @@ struct DrawBatch {
     // shadow passes draw (casters outside the camera frustum still cast).
     // Null = the main pass draws `indirect` too.
     VkBuffer sceneIndirect = nullptr;
+    // Transparency pass (IndirectCount mode only): the cull shader routes
+    // transparent-flagged entries into this stream (binding 24) instead of
+    // sceneIndirect; after the opaque scene draw, the blend pipeline draws
+    // it inside the same rendering pass (depth test on, depth write off).
+    // Either null = no transparency pass (transparents then simply never
+    // reach the transparent stream, or draw opaquely in lower tiers).
+    VkBuffer transparentIndirect = nullptr;
+    const Pipeline* transparentPipeline = nullptr;
     // Cull-shader flags pushed with the dispatch (bit 0 = frustum culling
     // against binding 22's per-object AABBs). Baked into static
     // recordings — invalidate them after flipping.

@@ -207,5 +207,12 @@ float4 PSMain(VSOutput input) : SV_Target0 {
                                  float3(0.6f, 0.6f, 1.0f), float3(1.0f, 1.0f, 0.6f)};
         color *= tints[cascade];
     }
-    return float4(color, 1.0f);
+    // Transparent objects draw in the blend pass, where alpha is the
+    // blend factor (glTF blend / transmission approximated as opacity =
+    // albedo.a * baseColorFactor.a). The opaque pipeline has blending
+    // disabled, so alpha 1 elsewhere costs nothing.
+    const float alpha = (object.flags & kFlagTransparent) != 0
+                            ? saturate(albedo.a * object.baseAlpha)
+                            : 1.0f;
+    return float4(color, alpha);
 }

@@ -45,6 +45,10 @@ struct GraphicsPipelineDesc {
     std::uint32_t pushConstantBytes = 0;
     // Set 0 layout (the bindless DescriptorTable); null = no sets.
     VkDescriptorSetLayout descriptorLayout = nullptr;
+    // Alpha blending (src-alpha / one-minus-src-alpha) with depth test but
+    // NO depth write — the transparency-pass state. Blended fragments must
+    // not occlude each other; opaques drawn first still occlude them.
+    bool alphaBlend = false;
 };
 
 struct ComputePipelineDesc {

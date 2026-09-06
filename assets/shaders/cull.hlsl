@@ -1,11 +1,14 @@
 // Compaction + frustum-cull pass for the GPU-driven scene
 // (docs/ARCHITECTURE.md): one thread per registered object reads its draw
-// template and appends it to TWO compacted indirect lists:
-//   - binding 4 (+ counts[slot*3]): every live entry — the shadow passes
+// template and appends it to THREE compacted indirect lists:
+//   - binding 4 (+ counts[slot*4]): every live entry — the shadow passes
 //     draw this one, because a caster outside the CAMERA frustum must
 //     still cast into the view;
-//   - binding 21 (+ counts[slot*3+1]): entries that survive the frustum —
-//     the main scene pass draws this one.
+//   - binding 21 (+ counts[slot*4+1]): OPAQUE entries that survive the
+//     frustum — the main scene pass draws this one first;
+//   - binding 24 (+ counts[slot*4+3]): TRANSPARENT entries that survive
+//     the frustum — the blend pass draws this one after the opaques
+//     (depth test on, depth write off).
 // Culling is PER INSTANCE for instanced entries (bounds mode 1): each
 // instance's local AABB is pushed through its transform and tested; the
 // survivors' instance rows are compacted into the slot's scratch region
@@ -39,8 +42,9 @@ struct CameraData {
 //   1 — bmin/bmax are the mesh's LOCAL AABB; each instance's transform
 //       (binding 19, this slot's region) takes it to world space and it
 //       is tested per instance (runtime models).
-// bmin.w = 1 marks entries the test must never drop (animated meshes —
-// their pose can exceed the bind-pose bounds).
+// bmin.w is a small-integer bitmask (exact in float): bit 0 marks entries
+// the test must never drop (animated meshes — their pose can exceed the
+// bind-pose bounds); bit 1 routes the entry to the transparent stream.
 struct ObjectBounds {
     float4 bmin;
     float4 bmax;
@@ -66,10 +70,14 @@ static const uint kCullFrustum = 1u;
 static const uint kTransformCapacity = 4096;
 static const uint kInstanceRowCapacity = 4096;
 
+static const uint kBoundsAlwaysVisible = 1u;
+static const uint kBoundsTransparent = 2u;
+
 [[vk::binding(3, 0)]] StructuredBuffer<DrawCommand> templates;
 [[vk::binding(4, 0)]] RWStructuredBuffer<DrawCommand> compacted;
-// 3 per slot, zeroed before dispatch: [0] shadow-stream count, [1]
-// scene-stream count, [2] scratch-row allocator for partial entries.
+// 4 per slot, zeroed before dispatch: [0] shadow-stream count, [1]
+// opaque scene-stream count, [2] scratch-row allocator for partial
+// entries, [3] transparent-stream count.
 [[vk::binding(5, 0)]] RWStructuredBuffer<uint> counts;
 [[vk::binding(6, 0)]] StructuredBuffer<CameraData> cameras;
 [[vk::binding(19, 0)]] StructuredBuffer<column_major float4x4> objectTransforms;
@@ -79,6 +87,7 @@ static const uint kInstanceRowCapacity = 4096;
 // 20): rows [0, kInstanceRowCapacity) are canonical; per-slot scratch
 // regions above hold the compacted survivors of partially visible draws.
 [[vk::binding(23, 0)]] RWStructuredBuffer<InstanceRow> instanceRows;
+[[vk::binding(24, 0)]] RWStructuredBuffer<DrawCommand> transparent;
 
 // AABB vs the camera frustum, planes pulled from the slot's viewProj
 // (Gribb-Hartmann; clip = M * v, Vulkan z in [0, w]). Each plane points
@@ -132,11 +141,12 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
         return; // hidden
     }
     uint dst;
-    InterlockedAdd(counts[push.slot * 3], 1, dst);
+    InterlockedAdd(counts[push.slot * 4], 1, dst);
     compacted[base + dst] = cmd;
 
     const ObjectBounds b = bounds[base + id.x];
-    if ((push.flags & kCullFrustum) != 0 && b.bmin.w == 0.0f) {
+    const uint boundFlags = (uint)b.bmin.w;
+    if ((push.flags & kCullFrustum) != 0 && (boundFlags & kBoundsAlwaysVisible) == 0) {
         const float4x4 viewProj = cameras[push.slot].viewProj;
         if (b.bmax.w == 0.0f) {
             // World-space bounds: one test covers the whole entry.
@@ -156,7 +166,7 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
             }
             if (visible < cmd.instanceCount) {
                 uint rowBase;
-                InterlockedAdd(counts[push.slot * 3 + 2], visible, rowBase);
+                InterlockedAdd(counts[push.slot * 4 + 2], visible, rowBase);
                 const uint scratch = (1 + push.slot) * kInstanceRowCapacity + rowBase;
                 uint written = 0;
                 for (uint k = 0; k < cmd.instanceCount; ++k) {
@@ -171,6 +181,11 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
             }
         }
     }
-    InterlockedAdd(counts[push.slot * 3 + 1], 1, dst);
-    culled[base + dst] = cmd;
+    if ((boundFlags & kBoundsTransparent) != 0) {
+        InterlockedAdd(counts[push.slot * 4 + 3], 1, dst);
+        transparent[base + dst] = cmd;
+    } else {
+        InterlockedAdd(counts[push.slot * 4 + 1], 1, dst);
+        culled[base + dst] = cmd;
+    }
 }

@@ -86,9 +86,12 @@ struct InstanceRow {
 // once (scene geometry, world-baked); 1 = the mesh's LOCAL box — the
 // shader pushes it through each instance's transform and tests PER
 // INSTANCE (runtime models), so the CPU never maintains union bounds.
-// bmin[3] = 1 marks entries the test must never drop (animated meshes —
-// their pose can exceed the bind-pose bounds). Must match ObjectBounds
-// in cull.hlsl.
+// bmin[3] is a small-integer bitmask (kBounds*, exact in float): bit 0
+// marks entries the cull test must never drop (animated meshes — their
+// pose can exceed the bind-pose bounds), bit 1 routes the entry to the
+// transparent draw stream. Must match ObjectBounds in cull.hlsl.
+constexpr float kBoundsAlwaysVisible = 1.0f;
+constexpr float kBoundsTransparent = 2.0f;
 struct ObjectBounds {
     std::array<float, 4> bmin{1e30f, 1e30f, 1e30f, 0.0f};
     std::array<float, 4> bmax{-1e30f, -1e30f, -1e30f, 0.0f};
@@ -811,6 +814,7 @@ int main(int argc, char** argv) {
     // draw stream the scene pass draws in IndirectCount mode.
     std::unique_ptr<gpu::Buffer> boundsBuffer;
     std::unique_ptr<gpu::Buffer> culledBuffer;
+    std::unique_ptr<gpu::Buffer> transparentBuffer;
     std::vector<ObjectBounds> objectBounds;
     const auto importers = assetio::ImporterRegistry::withBuiltins();
     // Capability offer from the gpu layer: which shadow techniques this
@@ -924,7 +928,11 @@ int main(int argc, char** argv) {
                 if (mesh.skinned || !mesh.morphTargets.empty()) {
                     // Animated: the pose may leave the bind-pose bounds —
                     // never frustum-cull these.
-                    meshBounds.bmin[3] = 1.0f;
+                    meshBounds.bmin[3] += kBoundsAlwaysVisible;
+                }
+                if ((object.flags & kObjectTransparent) != 0) {
+                    // Routed to the blend pass's stream by the cull shader.
+                    meshBounds.bmin[3] += kBoundsTransparent;
                 }
                 objectBounds.push_back(meshBounds);
                 sceneMin = {std::min(sceneMin.x, meshBounds.bmin[0]),
@@ -1122,18 +1130,33 @@ int main(int argc, char** argv) {
         }
         culledBuffer = std::move(culledResult).value();
 
-        // Draw-count buffer for IndirectCount mode: one uint32 per frame
-        // slot, written by the cull pass (zeroed via fill, incremented by
-        // the shader) and read by vkCmdDrawIndexedIndirectCount.
-        // Three counters per frame slot: [0] the shadow passes'
-        // visibility-only stream, [1] the scene pass's frustum-culled
-        // stream, [2] the scratch-row allocator for per-instance culling.
-        // Host-visible so the CPU can report them (read after the slot's
-        // fence, i.e. kFramesInFlight frames late — stats, never a sync
-        // point).
+        // Third cull-pass output: the frustum-culled TRANSPARENT list the
+        // blend pass draws after the opaques (binding 24).
+        auto transparentResult = gpu::Buffer::create(
+            *device, {
+                         .size = indirectRegion * gpu::FrameRenderer::kFramesInFlight,
+                         .usage = gpu::kUsageIndirect | gpu::kUsageStorage,
+                         .location = gpu::MemoryLocation::DeviceLocal,
+                     });
+        if (!transparentResult) {
+            log::error("Transparent buffer creation failed: {}",
+                       transparentResult.error().message);
+            return 1;
+        }
+        transparentBuffer = std::move(transparentResult).value();
+
+        // Draw-count buffer for IndirectCount mode: written by the cull
+        // pass (zeroed via fill, incremented by the shader) and read by
+        // vkCmdDrawIndexedIndirectCount. Four counters per frame slot:
+        // [0] the shadow passes' visibility-only stream, [1] the scene
+        // pass's frustum-culled opaque stream, [2] the scratch-row
+        // allocator for per-instance culling, [3] the blend pass's
+        // transparent stream. Host-visible so the CPU can report them
+        // (read after the slot's fence, i.e. kFramesInFlight frames late —
+        // stats, never a sync point).
         auto countResult = gpu::Buffer::create(
             *device, {
-                         .size = 3 * sizeof(std::uint32_t) * gpu::FrameRenderer::kFramesInFlight,
+                         .size = 4 * sizeof(std::uint32_t) * gpu::FrameRenderer::kFramesInFlight,
                          .usage = gpu::kUsageIndirect | gpu::kUsageStorage |
                                   gpu::kUsageTransferDst,
                          .location = gpu::MemoryLocation::HostVisible,
@@ -1498,6 +1521,8 @@ int main(int argc, char** argv) {
         descriptorTable->writeStorageBuffer(20, instanceRowBuffer->handle(),
                                             instanceRowBuffer->size());
         descriptorTable->writeStorageBuffer(21, culledBuffer->handle(), culledBuffer->size());
+        descriptorTable->writeStorageBuffer(24, transparentBuffer->handle(),
+                                            transparentBuffer->size());
         descriptorTable->writeStorageBuffer(22, boundsBuffer->handle(), boundsBuffer->size());
         // The rows buffer again, writable for the cull pass's scratch
         // regions (same VkBuffer, second binding — no aliasing hazard,
@@ -1792,6 +1817,7 @@ int main(int argc, char** argv) {
     // Scene pass pipeline: interleaved vertex input from the geometry pool,
     // depth-tested, camera via push constant.
     std::unique_ptr<gpu::Pipeline> scenePipeline;
+    std::unique_ptr<gpu::Pipeline> transparentPipeline;
     std::unique_ptr<gpu::Pipeline> cullPipeline;
     std::unique_ptr<gpu::Pipeline> shadowPipeline;
     std::unique_ptr<gpu::Pipeline> skinPipeline;
@@ -1844,6 +1870,30 @@ int main(int argc, char** argv) {
             return 1;
         }
         scenePipeline = std::move(sceneResult).value();
+
+        // Blend variant for the transparency pass: same shaders (the PS
+        // outputs opacity for transparent-flagged fragments), alpha
+        // blending on, depth write off.
+        auto transparentResult = gpu::Pipeline::createGraphics(
+            *device, {
+                         .vertexShader = sceneVert.get(),
+                         .fragmentShader = sceneFrag.get(),
+                         .colorFormat = swapchain->imageFormat(),
+                         .vertexStride = kVertexStride,
+                         .vertexAttributes = {{0, gpu::kFormatR32G32B32Sfloat, 0},
+                                              {1, gpu::kFormatR32G32B32Sfloat, 12},
+                                              {2, gpu::kFormatR32G32Sfloat, 24}},
+                         .depthFormat = gpu::kFormatD32Sfloat,
+                         .pushConstantBytes = 2 * sizeof(std::uint32_t), // {slot, cascade}
+                         .descriptorLayout = descriptorTable->layout(),
+                         .alphaBlend = true,
+                     });
+        if (!transparentResult) {
+            log::error("Transparent pipeline creation failed: {}",
+                       transparentResult.error().message);
+            return 1;
+        }
+        transparentPipeline = std::move(transparentResult).value();
 
         // The compaction pass (IndirectCount mode only). A failure here is
         // not fatal: the draw-mode ladder just skips to Indirect.
@@ -1990,13 +2040,15 @@ int main(int argc, char** argv) {
             // the frustum-culled one.
             batch.indirect = compactedBuffer->handle();
             batch.sceneIndirect = culledBuffer->handle();
+            batch.transparentIndirect = transparentBuffer->handle();
+            batch.transparentPipeline = transparentPipeline.get();
             batch.cullPipeline = cullPipeline.get();
             batch.cullFlags = frustumCull ? 1u : 0u;
         } else {
             batch.indirect = indirectBuffer->handle();
         }
         batch.count = countBuffer->handle();
-        batch.countRegionStride = 3 * sizeof(std::uint32_t);
+        batch.countRegionStride = 4 * sizeof(std::uint32_t);
         batch.cpuDraws = draws.data();
         batch.descriptors = descriptorTable->set();
         if (shadowPipeline && !shadowMaps.empty() &&
@@ -2076,7 +2128,7 @@ int main(int argc, char** argv) {
     // stream, [1] the scene pass's frustum-culled stream, [2] scratch
     // rows written for partially visible instanced draws. Stats only —
     // read after the slot's fence, kFramesInFlight frames late.
-    std::uint32_t lastDrawCounts[3] = {0, 0, 0};
+    std::uint32_t lastDrawCounts[4] = {0, 0, 0, 0};
 
     // Stats window: wall time + renderer CPU counters, reported per mode.
     constexpr std::uint64_t kReportInterval = 600;
@@ -2095,8 +2147,9 @@ int main(int argc, char** argv) {
                   stats.frames > 0 ? static_cast<double>(stats.recordMicros) / stats.frames : 0.0,
                   stats.prerecords > 0 ? std::format(" | {} prerecords", stats.prerecords) : "",
                   batch.cullPipeline
-                      ? std::format(" | draws {}/{} in view, {} partial rows",
-                                    lastDrawCounts[1], lastDrawCounts[0], lastDrawCounts[2])
+                      ? std::format(" | draws {}+{}t/{} in view, {} partial rows",
+                                    lastDrawCounts[1], lastDrawCounts[3], lastDrawCounts[0],
+                                    lastDrawCounts[2])
                       : "");
     };
 
@@ -2769,8 +2822,11 @@ int main(int argc, char** argv) {
             resource.meshBounds.emplace_back(mesh.localMin, mesh.localMax);
             // Local bounds, per-instance mode: the cull shader transforms
             // and tests them against every instance's matrix each frame.
+            // Transparent meshes route to the blend pass's stream.
+            const float boundFlags =
+                (mesh.object.flags & kObjectTransparent) != 0 ? kBoundsTransparent : 0.0f;
             objectBounds[objectIndex] = {
-                .bmin = {mesh.localMin.x, mesh.localMin.y, mesh.localMin.z, 0.0f},
+                .bmin = {mesh.localMin.x, mesh.localMin.y, mesh.localMin.z, boundFlags},
                 .bmax = {mesh.localMax.x, mesh.localMax.y, mesh.localMax.z, 1.0f},
             };
         }
@@ -3435,6 +3491,7 @@ int main(int argc, char** argv) {
                     }
                     ImGui::Text("Draws: %u in view / %u live / %u table", lastDrawCounts[1],
                                 lastDrawCounts[0], batch.drawCount);
+                    ImGui::Text("Transparent draws: %u", lastDrawCounts[3]);
                     ImGui::Text("Partial instance rows: %u", lastDrawCounts[2]);
                 }
                 if (ImGui::TreeNode("Advanced")) {

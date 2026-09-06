@@ -122,8 +122,9 @@ Result<std::unique_ptr<DescriptorTable>> DescriptorTable::create(const Device& d
     // binding 4's visibility-only list), 22 = per-slot AABBs per draw
     // entry, 23 = the instance-row buffer again (same VkBuffer as binding
     // 20), writable so partially visible draws compact their surviving
-    // instances' rows into per-slot scratch regions.
-    for (std::uint32_t binding = 21; binding <= 23; ++binding) {
+    // instances' rows into per-slot scratch regions, 24 = the transparent
+    // draw stream the blend pass draws.
+    for (std::uint32_t binding = 21; binding <= 24; ++binding) {
         bindings.push_back({.binding = binding,
                             .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
                             .descriptorCount = 1,
@@ -157,7 +158,7 @@ Result<std::unique_ptr<DescriptorTable>> DescriptorTable::create(const Device& d
     }
 
     std::vector<VkDescriptorPoolSize> poolSizes{
-        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 18},
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 19},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, maxTextures + 5},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_SAMPLER, 2}};
     if (rayQuery) {
