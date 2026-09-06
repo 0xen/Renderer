@@ -80,6 +80,16 @@ struct InstanceRow {
     std::uint32_t objectIndex = 0;
     std::uint32_t transformIndex = 0;
 };
+
+// World-space AABB per draw entry for the cull shader's frustum test
+// (binding 22, per-slot regions). Runtime models carry the union over
+// their instances; bmin[3] = 1 marks entries the test must never drop
+// (animated meshes — their pose can exceed the bind-pose bounds). Must
+// match ObjectBounds in cull.hlsl.
+struct ObjectBounds {
+    std::array<float, 4> bmin{1e30f, 1e30f, 1e30f, 0.0f};
+    std::array<float, 4> bmax{-1e30f, -1e30f, -1e30f, 0.0f};
+};
 constexpr math::Mat4 kIdentityMat4 = {1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
                                       0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f};
 
@@ -552,6 +562,9 @@ int main(int argc, char** argv) {
     bool rtPrimaryFromStart = false; // start with traced primary rays (if supported)
     // Optional cap on the reflection technique (default: best offered).
     bool forceProbeReflections = false;
+    // GPU frustum culling in the compaction pass (IndirectCount mode);
+    // --nocull turns it off for A/B comparisons.
+    bool frustumCull = true;
     std::uint64_t benchFrames = 0; // non-zero: exit after N frames with a report
     // Streaming test harness: auto-spawn this model at random intervals
     // through the message queue.
@@ -580,6 +593,8 @@ int main(int argc, char** argv) {
                 log::error("Unknown --reflections '{}' (probe|traced)", technique);
                 return 1;
             }
+        } else if (arg == "--nocull") {
+            frustumCull = false;
         } else if (arg == "--spawn-test" && i + 1 < argc) {
             spawnTestPath = argv[++i];
         } else if (arg == "--bench" && i + 1 < argc) {
@@ -764,6 +779,13 @@ int main(int argc, char** argv) {
     // resources allocate contiguous per-mesh blocks above it.
     std::unique_ptr<gpu::Buffer> instanceRowBuffer;
     std::vector<InstanceRow> instanceRows;
+    // Frustum culling: canonical per-draw-entry world AABBs, copied into
+    // the current slot's region of the bounds buffer every frame (same
+    // pattern as the transforms), and the device-local frustum-culled
+    // draw stream the scene pass draws in IndirectCount mode.
+    std::unique_ptr<gpu::Buffer> boundsBuffer;
+    std::unique_ptr<gpu::Buffer> culledBuffer;
+    std::vector<ObjectBounds> objectBounds;
     const auto importers = assetio::ImporterRegistry::withBuiltins();
     // Capability offer from the gpu layer: which shadow techniques this
     // device can run. The UI is built from this list, never from
@@ -859,14 +881,30 @@ int main(int argc, char** argv) {
                 }
                 objectData.push_back(object);
 
+                // Per-mesh world AABB (positions are world-baked for scene
+                // geometry): feeds the cull shader's frustum test and,
+                // merged, the scene AABB the cascade fitting uses.
+                ObjectBounds meshBounds;
                 for (std::size_t v = 0; v + 2 < mesh.positions.size(); v += 3) {
-                    sceneMin.x = std::min(sceneMin.x, mesh.positions[v]);
-                    sceneMin.y = std::min(sceneMin.y, mesh.positions[v + 1]);
-                    sceneMin.z = std::min(sceneMin.z, mesh.positions[v + 2]);
-                    sceneMax.x = std::max(sceneMax.x, mesh.positions[v]);
-                    sceneMax.y = std::max(sceneMax.y, mesh.positions[v + 1]);
-                    sceneMax.z = std::max(sceneMax.z, mesh.positions[v + 2]);
+                    meshBounds.bmin[0] = std::min(meshBounds.bmin[0], mesh.positions[v]);
+                    meshBounds.bmin[1] = std::min(meshBounds.bmin[1], mesh.positions[v + 1]);
+                    meshBounds.bmin[2] = std::min(meshBounds.bmin[2], mesh.positions[v + 2]);
+                    meshBounds.bmax[0] = std::max(meshBounds.bmax[0], mesh.positions[v]);
+                    meshBounds.bmax[1] = std::max(meshBounds.bmax[1], mesh.positions[v + 1]);
+                    meshBounds.bmax[2] = std::max(meshBounds.bmax[2], mesh.positions[v + 2]);
                 }
+                if (mesh.skinned || !mesh.morphTargets.empty()) {
+                    // Animated: the pose may leave the bind-pose bounds —
+                    // never frustum-cull these.
+                    meshBounds.bmin[3] = 1.0f;
+                }
+                objectBounds.push_back(meshBounds);
+                sceneMin = {std::min(sceneMin.x, meshBounds.bmin[0]),
+                            std::min(sceneMin.y, meshBounds.bmin[1]),
+                            std::min(sceneMin.z, meshBounds.bmin[2])};
+                sceneMax = {std::max(sceneMax.x, meshBounds.bmax[0]),
+                            std::max(sceneMax.y, meshBounds.bmax[1]),
+                            std::max(sceneMax.z, meshBounds.bmax[2])};
 
                 const std::vector<float> vertexData = interleave(mesh);
                 // Stride alignment keeps vertexOffset (= offset / stride) exact.
@@ -1041,15 +1079,34 @@ int main(int argc, char** argv) {
         }
         compactedBuffer = std::move(compactedResult).value();
 
+        // Second cull-pass output: the frustum-culled list the main scene
+        // pass draws (the compacted list above keeps every live entry for
+        // the shadow passes — casters outside the view must still cast).
+        auto culledResult = gpu::Buffer::create(
+            *device, {
+                         .size = indirectRegion * gpu::FrameRenderer::kFramesInFlight,
+                         .usage = gpu::kUsageIndirect | gpu::kUsageStorage,
+                         .location = gpu::MemoryLocation::DeviceLocal,
+                     });
+        if (!culledResult) {
+            log::error("Culled buffer creation failed: {}", culledResult.error().message);
+            return 1;
+        }
+        culledBuffer = std::move(culledResult).value();
+
         // Draw-count buffer for IndirectCount mode: one uint32 per frame
         // slot, written by the cull pass (zeroed via fill, incremented by
         // the shader) and read by vkCmdDrawIndexedIndirectCount.
+        // Two counts per frame slot: [0] the shadow passes' visibility-only
+        // stream, [1] the scene pass's frustum-culled stream. Host-visible
+        // so the CPU can report them (read after the slot's fence, i.e.
+        // kFramesInFlight frames late — stats, never a sync point).
         auto countResult = gpu::Buffer::create(
             *device, {
-                         .size = sizeof(std::uint32_t) * gpu::FrameRenderer::kFramesInFlight,
+                         .size = 2 * sizeof(std::uint32_t) * gpu::FrameRenderer::kFramesInFlight,
                          .usage = gpu::kUsageIndirect | gpu::kUsageStorage |
                                   gpu::kUsageTransferDst,
-                         .location = gpu::MemoryLocation::DeviceLocal,
+                         .location = gpu::MemoryLocation::HostVisible,
                      });
         if (!countResult) {
             log::error("Count buffer creation failed: {}", countResult.error().message);
@@ -1130,6 +1187,27 @@ int main(int argc, char** argv) {
         }
         std::memcpy(instanceRowBuffer->mapped(), instanceRows.data(),
                     instanceRows.size() * sizeof(InstanceRow));
+
+        // Per-object bounds for the cull shader's frustum test, one region
+        // per frame slot (the CPU rewrites the current slot's copy every
+        // frame — runtime instances move). Seed every region now.
+        auto boundsResult = gpu::Buffer::create(
+            *device, {
+                         .size = std::uint64_t{templateCapacity} * sizeof(ObjectBounds) *
+                                 gpu::FrameRenderer::kFramesInFlight,
+                         .usage = gpu::kUsageStorage,
+                         .location = gpu::MemoryLocation::HostVisible,
+                     });
+        if (!boundsResult) {
+            log::error("Bounds buffer creation failed: {}", boundsResult.error().message);
+            return 1;
+        }
+        boundsBuffer = std::move(boundsResult).value();
+        for (std::uint32_t s = 0; s < gpu::FrameRenderer::kFramesInFlight; ++s) {
+            std::memcpy(static_cast<std::byte*>(boundsBuffer->mapped()) +
+                            std::uint64_t{s} * templateCapacity * sizeof(ObjectBounds),
+                        objectBounds.data(), objectBounds.size() * sizeof(ObjectBounds));
+        }
 
         // Light data, same per-slot scheme (and capture regions) as the camera.
         auto lightResult = gpu::Buffer::create(
@@ -1385,6 +1463,8 @@ int main(int argc, char** argv) {
                                             transformBuffer->size());
         descriptorTable->writeStorageBuffer(20, instanceRowBuffer->handle(),
                                             instanceRowBuffer->size());
+        descriptorTable->writeStorageBuffer(21, culledBuffer->handle(), culledBuffer->size());
+        descriptorTable->writeStorageBuffer(22, boundsBuffer->handle(), boundsBuffer->size());
         descriptorTable->writeStorageBuffer(3, indirectBuffer->handle(), indirectBuffer->size());
         descriptorTable->writeStorageBuffer(4, compactedBuffer->handle(),
                                             compactedBuffer->size());
@@ -1736,7 +1816,7 @@ int main(int argc, char** argv) {
                 *device, {
                              .shader = cullShader.get(),
                              .descriptorLayout = descriptorTable->layout(),
-                             .pushConstantBytes = 3 * sizeof(std::uint32_t),
+                             .pushConstantBytes = 4 * sizeof(std::uint32_t),
                          });
             if (cullResult) {
                 cullPipeline = std::move(cullResult).value();
@@ -1867,14 +1947,18 @@ int main(int argc, char** argv) {
         batch.drawCount = static_cast<std::uint32_t>(geometry.size());
         batch.indirectRegionStride = templateCapacity * sizeof(gpu::DrawIndexedIndirect);
         if (batch.mode == gpu::DrawSubmitMode::IndirectCount) {
-            // The GPU draws what the cull pass compacted, not the templates.
+            // The GPU draws what the cull pass compacted, not the
+            // templates: shadows the visibility-only list, the scene pass
+            // the frustum-culled one.
             batch.indirect = compactedBuffer->handle();
+            batch.sceneIndirect = culledBuffer->handle();
             batch.cullPipeline = cullPipeline.get();
+            batch.cullFlags = frustumCull ? 1u : 0u;
         } else {
             batch.indirect = indirectBuffer->handle();
         }
         batch.count = countBuffer->handle();
-        batch.countRegionStride = sizeof(std::uint32_t);
+        batch.countRegionStride = 2 * sizeof(std::uint32_t);
         batch.cpuDraws = draws.data();
         batch.descriptors = descriptorTable->set();
         if (shadowPipeline && !shadowMaps.empty() &&
@@ -1949,6 +2033,12 @@ int main(int argc, char** argv) {
     log::info("Viewer live at {}x{} — {} recording, vsync {} — Esc quits, Space toggles mode",
               extent.width, extent.height, staticMode ? "static" : "per-frame", vsync ? "on" : "off");
 
+    // Cull-pass counts read back from the frame slot's last completed
+    // frame (IndirectCount mode): [0] the shadow passes' visibility-only
+    // stream, [1] the scene pass's frustum-culled stream. Stats only —
+    // read after the slot's fence, kFramesInFlight frames late.
+    std::uint32_t lastDrawCounts[2] = {0, 0};
+
     // Stats window: wall time + renderer CPU counters, reported per mode.
     constexpr std::uint64_t kReportInterval = 600;
     auto reportStart = std::chrono::steady_clock::now();
@@ -1960,11 +2050,14 @@ int main(int argc, char** argv) {
         if (windowFrames == 0 || seconds <= 0.0) {
             return;
         }
-        log::info("[{}] {} frames in {:.2f} s = {:.0f} fps | record {:.1f} us/frame{}",
+        log::info("[{}] {} frames in {:.2f} s = {:.0f} fps | record {:.1f} us/frame{}{}",
                   renderer->staticRecording() ? "static" : "rerecord", windowFrames, seconds,
                   windowFrames / seconds,
                   stats.frames > 0 ? static_cast<double>(stats.recordMicros) / stats.frames : 0.0,
-                  stats.prerecords > 0 ? std::format(" | {} prerecords", stats.prerecords) : "");
+                  stats.prerecords > 0 ? std::format(" | {} prerecords", stats.prerecords) : "",
+                  batch.cullPipeline ? std::format(" | draws {}/{} in view", lastDrawCounts[1],
+                                                   lastDrawCounts[0])
+                                     : "");
     };
 
     FlyCamera camera;
@@ -2147,6 +2240,36 @@ int main(int argc, char** argv) {
                         std::max(sceneMax.z, w.z)};
         }
     };
+    // Merge a local AABB pushed through a placement matrix into `bounds`.
+    auto mergeTransformedAabb = [&](ObjectBounds& bounds, const math::Vec3& localMin,
+                                    const math::Vec3& localMax, const math::Mat4& m) {
+        for (int corner = 0; corner < 8; ++corner) {
+            const float x = (corner & 1) ? localMax.x : localMin.x;
+            const float y = (corner & 2) ? localMax.y : localMin.y;
+            const float z = (corner & 4) ? localMax.z : localMin.z;
+            const float w[3] = {m[0] * x + m[4] * y + m[8] * z + m[12],
+                                m[1] * x + m[5] * y + m[9] * z + m[13],
+                                m[2] * x + m[6] * y + m[10] * z + m[14]};
+            for (int axis = 0; axis < 3; ++axis) {
+                bounds.bmin[axis] = std::min(bounds.bmin[axis], w[axis]);
+                bounds.bmax[axis] = std::max(bounds.bmax[axis], w[axis]);
+            }
+        }
+    };
+    // Refresh a resource's per-mesh world AABBs (the cull shader's frustum
+    // input) as the union over its instances — v1 culls per draw entry,
+    // so all instances of a mesh cull as one unit.
+    auto updateResourceBounds = [&](const GeometryResource& resource) {
+        for (std::size_t m = 0; m < resource.meshObjectIndices.size(); ++m) {
+            ObjectBounds bounds;
+            for (const ResourceInstance& instance : resource.instances) {
+                mergeTransformedAabb(bounds, resource.meshBounds[m].first,
+                                     resource.meshBounds[m].second,
+                                     objectTransforms[instance.transformIndex]);
+            }
+            objectBounds[resource.meshObjectIndices[m]] = bounds;
+        }
+    };
 
     // Rewrites one slot's whole template region from the canonical draw
     // list, reapplying that slot's animated posed-vertex overrides.
@@ -2217,6 +2340,7 @@ int main(int argc, char** argv) {
         }
         resource.instances.push_back({.handle = cmd.handle, .transformIndex = *transformIndex});
         liveHandles.push_back(cmd.handle);
+        updateResourceBounds(resource);
         templatesDirty.fill(true);
         writeTemplates(slot);
         templatesDirty[slot] = false;
@@ -2250,6 +2374,9 @@ int main(int argc, char** argv) {
         for (std::uint32_t m = 0; m < meshCount; ++m) {
             draws[resource.meshObjectIndices[m]].instanceCount =
                 static_cast<std::uint32_t>(resource.instances.size());
+        }
+        if (!resource.instances.empty()) {
+            updateResourceBounds(resource); // emptied rows are never drawn
         }
         templatesDirty.fill(true);
         if (batch.mode == gpu::DrawSubmitMode::Direct) {
@@ -2612,6 +2739,7 @@ int main(int argc, char** argv) {
                 geometry.emplace_back();
                 objectData.emplace_back();
                 draws.emplace_back();
+                objectBounds.emplace_back();
             }
             geometry[objectIndex] = {.vertices = vertexSlice.value(),
                                      .indices = indexSlice.value(),
@@ -2798,6 +2926,7 @@ int main(int argc, char** argv) {
                     for (ResourceInstance& instance : resource.instances) {
                         if (instance.handle == cmd.transform.handle) {
                             objectTransforms[instance.transformIndex] = placement;
+                            updateResourceBounds(resource);
                             found = true;
                             break;
                         }
@@ -3057,6 +3186,22 @@ int main(int argc, char** argv) {
                             objectTransforms.data(),
                             objectTransforms.size() * sizeof(math::Mat4));
             }
+            // Cull-count stats: the slot's counts are from its last
+            // completed frame (fenced) — this frame overwrites them later.
+            if (countBuffer && batch.cullPipeline) {
+                std::memcpy(lastDrawCounts,
+                            static_cast<const std::byte*>(countBuffer->mapped()) +
+                                renderer->frameSlot() * batch.countRegionStride,
+                            sizeof(lastDrawCounts));
+            }
+            // Same for the cull-pass bounds: runtime instances move, so the
+            // current slot's region tracks the canonical AABBs.
+            if (boundsBuffer && !objectBounds.empty()) {
+                std::memcpy(static_cast<std::byte*>(boundsBuffer->mapped()) +
+                                std::uint64_t{renderer->frameSlot()} * templateCapacity *
+                                    sizeof(ObjectBounds),
+                            objectBounds.data(), objectBounds.size() * sizeof(ObjectBounds));
+            }
             // Animation playback: sample every channel, rebuild node worlds
             // and joint matrices, and write this slot's regions (safe after
             // waitFrameSlot). The skinning pass consumes them this frame.
@@ -3261,6 +3406,17 @@ int main(int argc, char** argv) {
                         }
                     }
                     ImGui::EndCombo();
+                }
+                if (!batch.rtPrimary && batch.cullPipeline) {
+                    if (ImGui::Checkbox("Frustum culling", &frustumCull)) {
+                        // The flag rides the cull dispatch's push
+                        // constants, which static recordings bake.
+                        batch.cullFlags = frustumCull ? 1u : 0u;
+                        renderer->invalidateStaticRecordings();
+                        log::info("Frustum culling {}", frustumCull ? "on" : "off");
+                    }
+                    ImGui::Text("Draws: %u in view / %u live / %u table", lastDrawCounts[1],
+                                lastDrawCounts[0], batch.drawCount);
                 }
                 if (ImGui::TreeNode("Advanced")) {
                     ImGui::SliderFloat("Azimuth", &sun.azimuthDeg, -180.0f, 180.0f, "%.0f deg");

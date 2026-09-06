@@ -79,10 +79,20 @@ struct DrawBatch {
     // GPU compaction (IndirectCount mode only): a compute pipeline whose
     // shader reads the draw templates (descriptor binding 3), appends
     // visible entries to `indirect` (binding 4) and counts them into
-    // `count` (binding 5). Recorded before the render pass: zero the
-    // slot's count, dispatch one thread per template, barrier to the
-    // indirect read. Null = no compaction pass.
+    // `count` (binding 5, two uint32 per slot: [0] visibility-only for
+    // the shadow passes, [1] frustum-culled for the scene pass). Recorded
+    // before the render pass: zero the slot's counts, dispatch one thread
+    // per template, barrier to the indirect read. Null = no compaction.
     const Pipeline* cullPipeline = nullptr;
+    // Frustum-culled draw stream (binding 21) the MAIN pass draws in
+    // IndirectCount mode; `indirect` keeps the visibility-only stream the
+    // shadow passes draw (casters outside the camera frustum still cast).
+    // Null = the main pass draws `indirect` too.
+    VkBuffer sceneIndirect = nullptr;
+    // Cull-shader flags pushed with the dispatch (bit 0 = frustum culling
+    // against binding 22's per-object AABBs). Baked into static
+    // recordings — invalidate them after flipping.
+    std::uint32_t cullFlags = 0;
     // Byte distance between per-frame-slot copies of the indirect array
     // inside `indirect`. Non-zero lets the CPU rewrite the slot's region
     // (host-visible buffer) while the other slot's region is in flight —

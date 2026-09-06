@@ -115,6 +115,17 @@ Result<std::unique_ptr<DescriptorTable>> DescriptorTable::create(const Device& d
                         .descriptorCount = 1,
                         .stageFlags = VK_SHADER_STAGE_VERTEX_BIT});
     bindingFlags.push_back(VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT);
+    // Frustum culling (compute): binding 21 = the frustum-culled compacted
+    // draw list the main scene pass draws (the shadow passes keep drawing
+    // binding 4's visibility-only list), 22 = per-slot world AABBs per
+    // draw entry.
+    for (std::uint32_t binding = 21; binding <= 22; ++binding) {
+        bindings.push_back({.binding = binding,
+                            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                            .descriptorCount = 1,
+                            .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT});
+        bindingFlags.push_back(VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT);
+    }
     // Reflection probe cubemap (binding 18): written after the load-time
     // capture; shaders only sample it when the light buffer selects the
     // probe tier, so it may stay unwritten (partially bound).
@@ -142,7 +153,7 @@ Result<std::unique_ptr<DescriptorTable>> DescriptorTable::create(const Device& d
     }
 
     std::vector<VkDescriptorPoolSize> poolSizes{
-        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 15},
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 17},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, maxTextures + 5},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_SAMPLER, 2}};
     if (rayQuery) {

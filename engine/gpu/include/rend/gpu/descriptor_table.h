@@ -46,6 +46,10 @@ class Device;
 //   19 — per-object world transforms (vertex; per-camera-slot regions)
 //   20 — instance rows SSBO (vertex; {objectIndex, transformIndex} per
 //        drawn instance — SV_InstanceID resolves through it)
+//   21 — frustum-culled compacted draws SSBO (compute; the scene pass's
+//        stream — shadow passes keep drawing binding 4's list)
+//   22 — per-object world AABBs SSBO (compute; per-slot regions,
+//        min.w = 1 marks always-visible entries)
 class DescriptorTable {
 public:
     static Result<std::unique_ptr<DescriptorTable>> create(const Device& device,

@@ -291,10 +291,11 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
     }
 
     if (batch && !rtDraw && batch->cullPipeline && batch->mode == DrawSubmitMode::IndirectCount) {
-        // GPU compaction: zero the slot's draw count, run one thread per
-        // template, then make the writes visible to the indirect fetch.
+        // GPU compaction: zero the slot's draw counts (shadow + scene
+        // streams), run one thread per template, then make the writes
+        // visible to the indirect fetch.
         vkCmdFillBuffer(cmd, batch->count, slot * batch->countRegionStride,
-                        sizeof(std::uint32_t), 0);
+                        2 * sizeof(std::uint32_t), 0);
 
         VkMemoryBarrier2 fillToCompute{};
         fillToCompute.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
@@ -317,10 +318,11 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
         }
         // capacity = the per-slot region stride in entries; drawCount can
         // grow at runtime (model loads) while the regions stay put.
-        const std::uint32_t push[3] = {
+        const std::uint32_t push[4] = {
             batch->drawCount, slot,
             static_cast<std::uint32_t>(batch->indirectRegionStride /
-                                       sizeof(DrawIndexedIndirect))};
+                                       sizeof(DrawIndexedIndirect)),
+            batch->cullFlags};
         vkCmdPushConstants(cmd, batch->cullPipeline->layout(), VK_SHADER_STAGE_COMPUTE_BIT, 0,
                            sizeof(push), push);
         vkCmdDispatch(cmd, (batch->drawCount + 63) / 64, 1, 1);
@@ -337,8 +339,10 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
 
     // Binds the batch's geometry/descriptors and emits its draw stream
     // with the given pipeline — shared by the shadow and main passes. The
-    // cascade index only matters to the shadow pipeline.
-    auto bindAndDraw = [&](const Pipeline& p, std::uint32_t cascade) {
+    // cascade index only matters to the shadow pipeline. sceneStream picks
+    // the frustum-culled list (when the batch carries one) over the
+    // visibility-only list the shadow passes draw.
+    auto bindAndDraw = [&](const Pipeline& p, std::uint32_t cascade, bool sceneStream) {
         const VkDeviceSize zero = 0;
         if (batch->descriptors != VK_NULL_HANDLE) {
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, p.layout(), 0, 1,
@@ -350,12 +354,15 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
         vkCmdPushConstants(cmd, p.layout(),
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                            sizeof(push), push);
+        const bool culledStream = sceneStream && batch->sceneIndirect != VK_NULL_HANDLE;
         switch (batch->mode) {
         case DrawSubmitMode::IndirectCount:
-            vkCmdDrawIndexedIndirectCount(cmd, batch->indirect,
-                                          slot * batch->indirectRegionStride, batch->count,
-                                          slot * batch->countRegionStride, batch->drawCount,
-                                          sizeof(DrawIndexedIndirect));
+            vkCmdDrawIndexedIndirectCount(
+                cmd, culledStream ? batch->sceneIndirect : batch->indirect,
+                slot * batch->indirectRegionStride, batch->count,
+                slot * batch->countRegionStride +
+                    (culledStream ? sizeof(std::uint32_t) : 0),
+                batch->drawCount, sizeof(DrawIndexedIndirect));
             break;
         case DrawSubmitMode::Indirect:
             vkCmdDrawIndexedIndirect(cmd, batch->indirect, slot * batch->indirectRegionStride,
@@ -424,7 +431,7 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
             vkCmdSetScissor(cmd, 0, 1, &shadowScissor);
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                               batch->shadowPipeline->handle());
-            bindAndDraw(*batch->shadowPipeline, c);
+            bindAndDraw(*batch->shadowPipeline, c, false);
             vkCmdEndRendering(cmd);
 
             // Written depth becomes sampleable by the main pass's fragments.
@@ -523,7 +530,7 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.handle());
         if (batch) {
             // The whole scene: geometry pool bound once, one indirect stream.
-            bindAndDraw(pipeline, 0);
+            bindAndDraw(pipeline, 0, true);
         } else {
             vkCmdDraw(cmd, 3, 1, 0, 0);
         }
