@@ -106,11 +106,15 @@ void transformNormals(const float m[16], std::vector<float>& xyz) {
     const float c00 = a11 * a22 - a12 * a21, c01 = a12 * a20 - a10 * a22, c02 = a10 * a21 - a11 * a20;
     const float c10 = a02 * a21 - a01 * a22, c11 = a00 * a22 - a02 * a20, c12 = a01 * a20 - a00 * a21;
     const float c20 = a01 * a12 - a02 * a11, c21 = a02 * a10 - a00 * a12, c22 = a00 * a11 - a01 * a10;
+    // The cofactor matrix is det(M) * M^-T; normalization removes |det| but
+    // not its sign, so mirrored transforms (det < 0) still need a flip.
+    const float det = a00 * c00 + a01 * c01 + a02 * c02;
+    const float flip = det < 0.0f ? -1.0f : 1.0f;
     for (std::size_t i = 0; i + 2 < xyz.size(); i += 3) {
         const float x = xyz[i], y = xyz[i + 1], z = xyz[i + 2];
-        float nx = c00 * x + c10 * y + c20 * z;
-        float ny = c01 * x + c11 * y + c21 * z;
-        float nz = c02 * x + c12 * y + c22 * z;
+        float nx = (c00 * x + c01 * y + c02 * z) * flip;
+        float ny = (c10 * x + c11 * y + c12 * z) * flip;
+        float nz = (c20 * x + c21 * y + c22 * z) * flip;
         const float len = std::sqrt(nx * nx + ny * ny + nz * nz);
         if (len > 0.0f) {
             nx /= len;
