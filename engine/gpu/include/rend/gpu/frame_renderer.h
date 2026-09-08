@@ -92,6 +92,14 @@ struct DrawBatch {
     // shadow passes draw (casters outside the camera frustum still cast).
     // Null = the main pass draws `indirect` too.
     VkBuffer sceneIndirect = nullptr;
+    // Sky pass (optional): after the opaque draws, one fullscreen triangle
+    // at the far plane paints the light buffer's per-slot skyColor over
+    // the pixels no geometry covered (depth test LESS_OR_EQUAL, write
+    // off), making the background per-frame dynamic even under static
+    // recordings — the real clear value is baked at prerecord time.
+    // Drawn before the transparency pass so glass blends over it. Null =
+    // the baked clear color stays the background.
+    const Pipeline* skyPipeline = nullptr;
     // Transparency pass (IndirectCount mode only): the cull shader routes
     // transparent-flagged entries into this stream (binding 24) instead of
     // sceneIndirect; after the opaque scene draw, the blend pipeline draws

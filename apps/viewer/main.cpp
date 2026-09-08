@@ -423,6 +423,15 @@ constexpr ProbeFaceBasis kProbeFaceBases[kProbeFaces] = {
     {{-1, 0, 0}, {0, 1, 0}, {0, 0, -1}}, // -Z
 };
 
+// One dynamic point light inside LightData — must match shading.hlsli.
+// Rides the per-slot host-visible light buffer, so per-frame updates
+// (the script-driven day/night cycle) are a memcpy, never a stall.
+inline constexpr std::uint32_t kMaxPointLights = 16;
+struct PointLight {
+    std::array<float, 4> positionRadius{}; // xyz world position, w falloff radius
+    std::array<float, 4> colorIntensity{}; // rgb color, w intensity (0 = off)
+};
+
 // One region per frame slot in the light buffer (bindless binding 7).
 // Must match LightData in scene.hlsl / shadow.hlsl.
 struct LightData {
@@ -445,8 +454,13 @@ struct LightData {
     std::array<float, 4> fogBoxMin{}; // xyz min corner, w = density
     std::array<float, 4> fogBoxMax{}; // xyz max corner, w = anisotropy
     std::array<float, 4> fogColor{};  // rgb albedo, w = steps (0 = off)
+    // Dynamic sky/ambient + point lights; the defaults reproduce the old
+    // hardcoded look (probe-face regions rely on them).
+    std::array<float, 4> skyColor{0.02f, 0.02f, 0.04f, 0.0f}; // rgb bg, w = light count
+    std::array<float, 4> ambientColor{0.30f, 0.32f, 0.36f, 0.0f};
+    std::array<PointLight, kMaxPointLights> pointLights{};
 };
-static_assert(sizeof(LightData) == 384);
+static_assert(sizeof(LightData) == 928);
 
 // Live-tunable sun state behind the ImGui panel; direction is stored as
 // angles so the sliders stay intuitive.
@@ -2040,12 +2054,13 @@ int main(int argc, char** argv) {
     // depth-tested, camera via push constant.
     std::unique_ptr<gpu::Pipeline> scenePipeline;
     std::unique_ptr<gpu::Pipeline> transparentPipeline;
+    std::unique_ptr<gpu::Pipeline> skyPipeline;
     std::unique_ptr<gpu::Pipeline> cullPipeline;
     std::unique_ptr<gpu::Pipeline> occlusionPipeline;
     std::unique_ptr<gpu::Pipeline> shadowPipeline;
     std::unique_ptr<gpu::Pipeline> skinPipeline;
     std::unique_ptr<gpu::Shader> sceneVert, sceneFrag, cullShader, shadowVert, shadowFrag,
-        skinShader, proxyVert, proxyFrag;
+        skinShader, proxyVert, proxyFrag, skyVert, skyFrag;
     if (scene) {
         auto vertResult = gpu::Shader::createFromFile(*device, shaderDir / "scene.vert.spv");
         // Scene-shipped fragment override (scene-local looks like toon)
@@ -2117,6 +2132,35 @@ int main(int argc, char** argv) {
             return 1;
         }
         transparentPipeline = std::move(transparentResult).value();
+
+        // Sky pass: fullscreen far-plane triangle painting the per-slot
+        // light buffer's skyColor over background pixels — the dynamic
+        // replacement for the baked clear color. Optional: failure just
+        // leaves the static clear color as the background.
+        auto skyVertResult = gpu::Shader::createFromFile(*device, shaderDir / "sky.vert.spv");
+        auto skyFragResult = gpu::Shader::createFromFile(*device, shaderDir / "sky.frag.spv");
+        if (skyVertResult && skyFragResult) {
+            skyVert = std::move(skyVertResult).value();
+            skyFrag = std::move(skyFragResult).value();
+            auto skyResult = gpu::Pipeline::createGraphics(
+                *device, {
+                             .vertexShader = skyVert.get(),
+                             .fragmentShader = skyFrag.get(),
+                             .colorFormat = swapchain->imageFormat(),
+                             .depthFormat = gpu::kFormatD32Sfloat,
+                             .pushConstantBytes = 2 * sizeof(std::uint32_t), // {slot, cascade}
+                             .descriptorLayout = descriptorTable->layout(),
+                             .background = true,
+                         });
+            if (skyResult) {
+                skyPipeline = std::move(skyResult).value();
+            } else {
+                log::warn("Sky pipeline unavailable: {}", skyResult.error().message);
+            }
+        } else {
+            log::warn("Sky shaders unavailable: {}",
+                      (!skyVertResult ? skyVertResult : skyFragResult).error().message);
+        }
 
         // The compaction pass (IndirectCount mode only). A failure here is
         // not fatal: the draw-mode ladder just skips to Indirect.
@@ -2313,6 +2357,7 @@ int main(int argc, char** argv) {
         batch.countRegionStride = 8 * sizeof(std::uint32_t);
         batch.cpuDraws = draws.data();
         batch.descriptors = descriptorTable->set();
+        batch.skyPipeline = skyPipeline.get();
         if (shadowPipeline && !shadowMaps.empty() &&
             (scene->lights.empty() || scene->lights.front().castsShadows)) {
             batch.shadowPipeline = shadowPipeline.get();
@@ -2423,6 +2468,11 @@ int main(int argc, char** argv) {
 
     FlyCamera camera;
     SunControls sun;
+    // Script-controllable sky/ambient/point-light state, written into the
+    // per-slot light buffer every frame (defaults = the old constants).
+    std::array<float, 3> skyColor{0.02f, 0.02f, 0.04f};
+    std::array<float, 3> ambientColor{0.30f, 0.32f, 0.36f};
+    std::array<PointLight, kMaxPointLights> pointLights{};
     // Reflection technique for reflective-tagged objects in the raster
     // path; defaults to the best offer (traced where available, so nothing
     // visually regresses vs. the per-object RT milestone).
@@ -2451,9 +2501,10 @@ int main(int argc, char** argv) {
             const assetio::FogDesc& fog = scene->fog;
             const float sunScatter = sun.intensity / (4.0f * 3.14159265f);
             const std::array<float, 3> ambient{0.15f, 0.16f, 0.18f};
-            renderer->setClearColor(fog.color[0] * (sun.color[0] * sunScatter + ambient[0]),
-                                    fog.color[1] * (sun.color[1] * sunScatter + ambient[1]),
-                                    fog.color[2] * (sun.color[2] * sunScatter + ambient[2]));
+            for (int i = 0; i < 3; ++i) {
+                skyColor[i] = fog.color[i] * (sun.color[i] * sunScatter + ambient[i]);
+            }
+            renderer->setClearColor(skyColor[0], skyColor[1], skyColor[2]);
             log::info("Volumetric fog: box ({:.0f} {:.0f} {:.0f}) size ({:.0f} {:.0f} {:.0f}), "
                       "density {:.3f}, anisotropy {:.2f}, {} steps",
                       fog.position[0], fog.position[1], fog.position[2], fog.size[0],
@@ -3810,6 +3861,18 @@ int main(int argc, char** argv) {
                                        fog.position[2] + fog.size[2] * 0.5f, fog.anisotropy};
                 lightData.fogColor = {fog.color[0], fog.color[1], fog.color[2], fog.steps};
             }
+            // Sky/ambient/point lights: per-slot buffer data, so scripts
+            // changing them per frame never touch the static recordings.
+            std::uint32_t activeLights = 0;
+            for (std::uint32_t i = 0; i < kMaxPointLights; ++i) {
+                if (pointLights[i].colorIntensity[3] > 0.0f) {
+                    activeLights = i + 1;
+                }
+            }
+            lightData.skyColor = {skyColor[0], skyColor[1], skyColor[2],
+                                  static_cast<float>(activeLights)};
+            lightData.ambientColor = {ambientColor[0], ambientColor[1], ambientColor[2], 0.0f};
+            lightData.pointLights = pointLights;
             std::memcpy(static_cast<std::byte*>(lightBuffer->mapped()) +
                             renderer->frameSlot() * sizeof(LightData),
                         &lightData, sizeof(LightData));

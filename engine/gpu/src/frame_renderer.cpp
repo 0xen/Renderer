@@ -577,6 +577,23 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
         if (batch) {
             // The whole scene: geometry pool bound once, opaques first.
             bindAndDraw(pipeline, 0, 1);
+            // Sky pass: fullscreen triangle at the far plane, depth test
+            // only — paints the per-slot skyColor over background pixels
+            // before the transparents blend on top of it.
+            if (batch->skyPipeline != nullptr) {
+                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                  batch->skyPipeline->handle());
+                if (batch->descriptors != VK_NULL_HANDLE) {
+                    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                            batch->skyPipeline->layout(), 0, 1,
+                                            &batch->descriptors, 0, nullptr);
+                }
+                const std::uint32_t skyPush[2] = {slot, 0};
+                vkCmdPushConstants(cmd, batch->skyPipeline->layout(),
+                                   VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                                   0, sizeof(skyPush), skyPush);
+                vkCmdDraw(cmd, 3, 1, 0, 0);
+            }
             // Transparency pass: same rendering pass, blend pipeline,
             // depth write off — the cull shader routed these entries out
             // of the opaque stream. Unsorted for now (single-layer glass

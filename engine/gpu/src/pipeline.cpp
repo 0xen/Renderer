@@ -178,11 +178,12 @@ Result<std::unique_ptr<Pipeline>> Pipeline::createGraphics(const Device& device,
     // Blended surfaces and occlusion proxies test against the opaque
     // depth but never write it.
     depthStencil.depthWriteEnable =
-        (desc.alphaBlend || desc.occlusionProxy) ? VK_FALSE : VK_TRUE;
+        (desc.alphaBlend || desc.occlusionProxy || desc.background) ? VK_FALSE : VK_TRUE;
     // LESS_OR_EQUAL for proxies: a flat object's zero-extent box is
     // coplanar with its own rendered surface and must still pass.
-    depthStencil.depthCompareOp =
-        desc.occlusionProxy ? VK_COMPARE_OP_LESS_OR_EQUAL : VK_COMPARE_OP_LESS;
+    depthStencil.depthCompareOp = (desc.occlusionProxy || desc.background)
+                                      ? VK_COMPARE_OP_LESS_OR_EQUAL
+                                      : VK_COMPARE_OP_LESS;
 
     // colorFormat 0 = depth-only pipeline (shadow passes): no color
     // attachment, no blend state.

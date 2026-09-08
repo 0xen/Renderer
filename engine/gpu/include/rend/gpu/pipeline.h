@@ -54,6 +54,10 @@ struct GraphicsPipelineDesc {
     // passes), no depth write, color writes fully masked — the pass
     // exists purely for its fragment shader's visibility-buffer stores.
     bool occlusionProxy = false;
+    // Background state (the sky pass): depth TEST only at LESS_OR_EQUAL —
+    // a far-plane fullscreen triangle passes exactly where the cleared
+    // depth (1.0) survived the opaques — no depth write, color writes on.
+    bool background = false;
 };
 
 struct ComputePipelineDesc {

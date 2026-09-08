@@ -35,6 +35,15 @@ struct ObjectData {
     float roughnessFactor;
 };
 
+// One dynamic point light (no shadows): position + falloff radius,
+// color + intensity. Rides inside LightData so per-frame CPU updates
+// stay a single host-visible memcpy — nothing baked into recordings.
+static const uint kMaxPointLights = 16;
+struct PointLight {
+    float4 positionRadius; // xyz = world position, w = falloff radius
+    float4 colorIntensity; // rgb = color, w = intensity (0 = off)
+};
+
 struct LightData {
     column_major float4x4 cascadeViewProj[4]; // light-space transforms per cascade
     float4 splitDepths; // view-space depth where each cascade ends
@@ -56,6 +65,12 @@ struct LightData {
     float4 fogBoxMin; // xyz = box min corner, w = density (extinction/m)
     float4 fogBoxMax; // xyz = box max corner, w = anisotropy g (-1..1)
     float4 fogColor;  // rgb = scattering albedo, w = step count (0 = off)
+    // Dynamic sky + ambient (day/night control): the sky pass paints
+    // skyColor over background pixels every frame; ambientColor replaces
+    // the old hardcoded hemisphere constant (its default matches it).
+    float4 skyColor;     // rgb = background color, w = active point lights
+    float4 ambientColor; // rgb = hemispherical ambient tint, w unused
+    PointLight pointLights[kMaxPointLights];
 };
 
 // LightData.reflections values: where reflective-tagged fragments get
@@ -119,9 +134,43 @@ float3 shadeSurface(float3 albedo, float metallic, float roughness, float3 n, fl
     return (diffuse + specular) * lightColor * (intensity * ndotl * shadow * kPi);
 }
 
-// Hemispherical ambient shared by both paths.
-float3 ambientLight(float3 n) {
-    return float3(0.30f, 0.32f, 0.36f) * (n.y * 0.2f + 0.5f);
+// Hemispherical ambient shared by both paths; the tint rides LightData
+// (default 0.30/0.32/0.36 — the old hardcoded constant) so scripts can
+// dim it through the night.
+float3 ambientLight(float3 n, float3 tint) {
+    return tint * (n.y * 0.2f + 0.5f);
+}
+
+// Sum of the dynamic point lights (never shadowed): inverse-square with a
+// smooth window to zero at each light's radius, through the same BRDF as
+// the sun. skyColor.w carries the active count, so scenes without point
+// lights skip the loop entirely.
+float3 shadePointLights(float3 albedo, float metallic, float roughness, float3 n, float3 v,
+                        float3 worldPos, LightData light) {
+    const uint count = min((uint)light.skyColor.w, kMaxPointLights);
+    float3 sum = 0.0f;
+    for (uint i = 0; i < count; ++i) {
+        const PointLight pl = light.pointLights[i];
+        if (pl.colorIntensity.w <= 0.0f) {
+            continue;
+        }
+        const float3 toLight = pl.positionRadius.xyz - worldPos;
+        const float d2 = dot(toLight, toLight);
+        const float radius = max(pl.positionRadius.w, 1.0e-2f);
+        if (d2 >= radius * radius) {
+            continue;
+        }
+        const float d = sqrt(max(d2, 1.0e-4f));
+        // Windowed inverse square: physical near the light, rolled
+        // smoothly to zero at the radius so the reach never pops.
+        const float ratio2 = d2 / (radius * radius);
+        float window = saturate(1.0f - ratio2 * ratio2);
+        window *= window;
+        const float atten = window / max(d2, 1.0e-2f);
+        sum += shadeSurface(albedo, metallic, roughness, n, v, toLight / d,
+                            pl.colorIntensity.rgb, pl.colorIntensity.w * atten, 1.0f);
+    }
+    return sum;
 }
 
 // Probe tier: the reflected direction looks up the capture cubemap, with

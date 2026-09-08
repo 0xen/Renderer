@@ -192,7 +192,8 @@ TracedHit shadeCommittedHit(uint objectIndex, uint primitive, float2 bary, float
     const float shadow = direct > 0.0f ? shadowRay(hit.position, n, light) : 0.0f;
     const float3 sun = shadeSurface(albedo.rgb, metallic, roughness, n, -dir, l, light.color,
                                     light.intensity, shadow);
-    hit.color = albedo.rgb * ambientLight(n) + sun;
+    hit.color = albedo.rgb * ambientLight(n, light.ambientColor.rgb) + sun;
+    hit.color += shadePointLights(albedo.rgb, metallic, roughness, n, -dir, hit.position, light);
     hit.opacity =
         (object.flags & kFlagTransparent) != 0 ? saturate(albedo.a * object.baseAlpha) : 1.0f;
     hit.normal = n;

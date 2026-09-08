@@ -185,8 +185,8 @@ float3 applyFog(float3 color, float3 camPos, float3 worldPos, float viewDepth, f
     const float phase = fogPhase(dot(rayDir, sunDir), light.fogBoxMax.w);
     const float3 sunLight = light.color * light.intensity;
     // Isotropic ambient in-scatter keeps shadowed fog from going black;
-    // matches ambientLight's mid-hemisphere value.
-    const float3 ambient = float3(0.30f, 0.32f, 0.36f) * 0.5f;
+    // matches ambientLight's mid-hemisphere value (and dims with it).
+    const float3 ambient = light.ambientColor.rgb * 0.5f;
     const float stepTrans = exp(-sigmaT * dt);
 
     float transmittance = 1.0f;
@@ -266,7 +266,8 @@ float4 PSMain(VSOutput input) : SV_Target0 {
     const float3 v = normalize(cameras[pc.cameraSlot].position.xyz - input.worldPos);
     const float3 sun = shadeSurface(albedo.rgb, metallic, roughness, n, v, l, light.color,
                                     light.intensity, shadow);
-    float3 color = albedo.rgb * ambientLight(n) + sun;
+    float3 color = albedo.rgb * ambientLight(n, light.ambientColor.rgb) + sun;
+    color += shadePointLights(albedo.rgb, metallic, roughness, n, v, input.worldPos, light);
     // Reflective-flagged fragments mix in a reflected color from the
     // technique the light buffer selects: the probe cubemap everywhere, or
     // (RT variant only) one traced reflection ray whose cost scales with
