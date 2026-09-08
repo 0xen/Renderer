@@ -126,10 +126,15 @@ Result<std::unique_ptr<DescriptorTable>> DescriptorTable::create(const Device& d
     // draw stream the blend pass draws, 25 = the per-entry mesh LOD
     // tables the cull pass picks index ranges from.
     for (std::uint32_t binding = 21; binding <= 25; ++binding) {
+        // Binding 22 (bounds) is also read by the occlusion proxy pass's
+        // vertex shader, which generates each entry's AABB cube from it.
+        const VkShaderStageFlags stages =
+            binding == 22 ? VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_VERTEX_BIT
+                          : VK_SHADER_STAGE_COMPUTE_BIT;
         bindings.push_back({.binding = binding,
                             .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
                             .descriptorCount = 1,
-                            .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT});
+                            .stageFlags = stages});
         bindingFlags.push_back(VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT);
     }
     // Occlusion visibility (binding 26): the proxy pass's fragment shader

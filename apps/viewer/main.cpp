@@ -2141,7 +2141,9 @@ int main(int argc, char** argv) {
         // the cull pipeline: failure just leaves occlusion off.
         auto proxyVertResult = gpu::Shader::createFromFile(*device, shaderDir / "proxy.vert.spv");
         auto proxyFragResult = gpu::Shader::createFromFile(*device, shaderDir / "proxy.frag.spv");
-        if (proxyVertResult && proxyFragResult) {
+        if (!device->isEnabled(gpu::Feature::FragmentStores)) {
+            log::warn("Occlusion culling unavailable: fragmentStoresAndAtomics not enabled");
+        } else if (proxyVertResult && proxyFragResult) {
             proxyVert = std::move(proxyVertResult).value();
             proxyFrag = std::move(proxyFragResult).value();
             auto proxyResult = gpu::Pipeline::createGraphics(

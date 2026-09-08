@@ -23,6 +23,7 @@ enum class Feature : std::uint32_t {
     ShaderDemote,              // 1.3: dxc compiles HLSL discard to OpDemote
     AccelerationStructure,     // ext: BLAS/TLAS build + storage
     RayQuery,                  // ext: inline ray tracing from any stage
+    FragmentStores,            // core: fragmentStoresAndAtomics (occlusion proxy PS)
     Count,
 };
 

@@ -49,6 +49,7 @@ struct FeatureChain {
 bool supports(const FeatureChain& c, Feature f) {
     switch (f) {
     case Feature::MultiDrawIndirect: return c.f2.features.multiDrawIndirect;
+    case Feature::FragmentStores: return c.f2.features.fragmentStoresAndAtomics;
     case Feature::DrawIndirectFirstInstance: return c.f2.features.drawIndirectFirstInstance;
     case Feature::ShaderDrawParameters: return c.v11.shaderDrawParameters;
     case Feature::DescriptorIndexing:
@@ -72,6 +73,7 @@ bool supports(const FeatureChain& c, Feature f) {
 void enable(FeatureChain& c, Feature f) {
     switch (f) {
     case Feature::MultiDrawIndirect: c.f2.features.multiDrawIndirect = VK_TRUE; break;
+    case Feature::FragmentStores: c.f2.features.fragmentStoresAndAtomics = VK_TRUE; break;
     case Feature::DrawIndirectFirstInstance: c.f2.features.drawIndirectFirstInstance = VK_TRUE; break;
     case Feature::ShaderDrawParameters: c.v11.shaderDrawParameters = VK_TRUE; break;
     case Feature::DescriptorIndexing:
@@ -258,6 +260,7 @@ std::string_view featureName(Feature f) {
     case Feature::Synchronization2: return "Synchronization2";
     case Feature::AccelerationStructure: return "AccelerationStructure";
     case Feature::RayQuery: return "RayQuery";
+    case Feature::FragmentStores: return "FragmentStores";
     case Feature::Count: break;
     }
     return "Unknown";
@@ -275,7 +278,10 @@ FeatureSet FeatureSet::gpuDriven() {
         // offer on top of the shadow-map floor (docs/ARCHITECTURE.md).
         .optional = {Feature::MultiDrawIndirect, Feature::DrawIndirectFirstInstance,
                      Feature::DrawIndirectCount, Feature::BufferDeviceAddress,
-                     Feature::AccelerationStructure, Feature::RayQuery},
+                     Feature::AccelerationStructure, Feature::RayQuery,
+                     // Occlusion proxy PS visibility stores; without it the
+                     // viewer simply skips building the proxy pipeline.
+                     Feature::FragmentStores},
         .requiredExtensions = {},
         .optionalExtensions = {},
     };
