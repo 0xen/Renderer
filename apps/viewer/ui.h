@@ -46,13 +46,26 @@ public:
         std::uint32_t total = 0;
     };
 
+    // Cull-pass counters for the debug panel's culling section (from the
+    // viewer's fenced count-buffer readback — kFramesInFlight frames
+    // late, stats only). Null = no GPU culling active (lower draw tiers).
+    struct CullStats {
+        std::uint32_t drawsInView = 0;  // opaque + transparent emitted
+        std::uint32_t drawsLive = 0;    // shadow stream = every live entry
+        std::uint32_t triangles = 0;    // post-LOD, both scene streams
+        std::uint32_t occluded = 0;     // dropped by the occlusion test
+    };
+
     // Starts the ImGui frame and lays out the debug panel (FPS counter,
     // frame-rate history graph, and — when vsync is non-null — a VSync
-    // checkbox bound to it). loading non-null draws the loading bar (see
-    // LoadingStatus). Call once per frame before FrameRenderer::drawFrame;
-    // the caller reacts to a toggled *vsync.
+    // checkbox bound to it). cull non-null adds the culling section
+    // (draws, triangle count + history graph, occluded). loading non-null
+    // draws the loading bar (see LoadingStatus). Call once per frame
+    // before FrameRenderer::drawFrame; the caller reacts to a toggled
+    // *vsync.
     void buildFrame(std::uint32_t width, std::uint32_t height, float deltaSeconds,
-                    bool* vsync = nullptr, const LoadingStatus* loading = nullptr);
+                    bool* vsync = nullptr, const LoadingStatus* loading = nullptr,
+                    const CullStats* cull = nullptr);
 
     // The FrameRenderer overlay recorder: finalizes the ImGui frame and
     // records its draw data. Runs inside an active rendering pass.
@@ -68,6 +81,9 @@ private:
     // Total tracked GPU memory (MiB) per frame — the memory graph's ring.
     std::array<float, 180> memoryHistory_{};
     std::size_t memoryHistoryOffset_ = 0;
+    // Rendered triangles (millions) per frame — the culling graph's ring.
+    std::array<float, 180> triangleHistory_{};
+    std::size_t triangleHistoryOffset_ = 0;
     bool frameBuilt_ = false;
 };
 

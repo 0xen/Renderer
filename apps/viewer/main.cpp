@@ -3790,8 +3790,15 @@ int main(int argc, char** argv) {
                 .total = static_cast<std::uint32_t>(texStream.total),
             };
             const bool loadingVisible = texStream.active || waitForTextures;
+            const viewer::Ui::CullStats cullStats{
+                .drawsInView = lastDrawCounts[1] + lastDrawCounts[3],
+                .drawsLive = lastDrawCounts[0],
+                .triangles = (lastDrawCounts[4] + lastDrawCounts[5]) / 3,
+                .occluded = lastDrawCounts[6],
+            };
             ui->buildFrame(viewWidth, viewHeight, deltaSeconds, &vsync,
-                           loadingVisible ? &loadingStatus : nullptr);
+                           loadingVisible ? &loadingStatus : nullptr,
+                           batch.cullPipeline ? &cullStats : nullptr);
             if (vsync != vsyncBefore) {
                 // The preference lands on the next swapchain build; forcing
                 // a same-size resize triggers that recreate (and the static
@@ -3804,9 +3811,10 @@ int main(int argc, char** argv) {
                 // Sun & shadow tuning; changes land in the light buffer on
                 // the next frame's write.
                 // Below the debug panel (FPS + graph + VSync) in the corner.
-                // Below the debug panel, which grew a GPU-memory section
-                // (screenshot 055 caught the old 160 overlapping it).
-                ImGui::SetNextWindowPos(ImVec2(8.0f, 300.0f), ImGuiCond_FirstUseEver);
+                // Below the debug panel, which grew GPU-memory and culling
+                // sections (screenshots 055/039 caught earlier overlaps of
+                // exactly this kind — keep this below the panel's bottom).
+                ImGui::SetNextWindowPos(ImVec2(8.0f, 420.0f), ImGuiCond_FirstUseEver);
                 ImGui::Begin("Settings", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
                 // One shadow choice, built from the device's offer list.
                 // Ray traced additionally needs the BVH the viewer built.

@@ -149,7 +149,7 @@ void Ui::handleEvent(const rend::platform::Event& event) {
 }
 
 void Ui::buildFrame(std::uint32_t width, std::uint32_t height, float deltaSeconds,
-                    bool* vsync, const LoadingStatus* loading) {
+                    bool* vsync, const LoadingStatus* loading, const CullStats* cull) {
     ImGuiIO& io = ImGui::GetIO();
     io.DisplaySize = ImVec2(static_cast<float>(width), static_cast<float>(height));
     io.DeltaTime = deltaSeconds > 0.0f ? deltaSeconds : 1.0f / 60.0f;
@@ -203,6 +203,24 @@ void Ui::buildFrame(std::uint32_t width, std::uint32_t height, float deltaSecond
     ImGui::Text("Images: %.1f MiB (%u)",
                 mem.bytes[static_cast<std::uint32_t>(Kind::Image)] / kMiB,
                 mem.counts[static_cast<std::uint32_t>(Kind::Image)]);
+
+    // GPU culling result, same treatment: what the cull dispatch emitted
+    // last completed frame — draws that survived, the triangles they
+    // carry (post-LOD; the graph makes LOD/occlusion react visibly while
+    // flying), and what the occlusion test dropped.
+    if (cull != nullptr) {
+        const float megaTris = static_cast<float>(cull->triangles) / 1.0e6f;
+        triangleHistory_[triangleHistoryOffset_] = megaTris;
+        triangleHistoryOffset_ = (triangleHistoryOffset_ + 1) % triangleHistory_.size();
+        ImGui::Separator();
+        ImGui::Text("Culling: %u / %u draws, %u occluded", cull->drawsInView,
+                    cull->drawsLive, cull->occluded);
+        ImGui::Text("Triangles: %.2fM", megaTris);
+        ImGui::PlotLines("##triHistory", triangleHistory_.data(),
+                         static_cast<int>(triangleHistory_.size()),
+                         static_cast<int>(triangleHistoryOffset_), nullptr, 0.0f, FLT_MAX,
+                         ImVec2(180.0f, 42.0f));
+    }
     ImGui::End();
 
     // Scene asset loading bar. Wait mode covers the whole viewport (the
