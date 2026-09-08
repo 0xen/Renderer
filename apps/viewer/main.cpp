@@ -3798,9 +3798,12 @@ int main(int argc, char** argv) {
                 .triangles = (lastDrawCounts[4] + lastDrawCounts[5]) / 3,
                 .occluded = lastDrawCounts[6],
             };
+            // No culling section while traced primary owns the frame: the
+            // cull dispatch is skipped there, so the counters would freeze
+            // at their last raster values.
             ui->buildFrame(viewWidth, viewHeight, deltaSeconds, &vsync,
                            loadingVisible ? &loadingStatus : nullptr,
-                           batch.cullPipeline ? &cullStats : nullptr);
+                           batch.cullPipeline && !batch.rtPrimary ? &cullStats : nullptr);
             if (vsync != vsyncBefore) {
                 // The preference lands on the next swapchain build; forcing
                 // a same-size resize triggers that recreate (and the static
