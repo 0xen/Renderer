@@ -124,6 +124,70 @@ PYBIND11_EMBEDDED_MODULE(rend, m) {
         py::arg("handle"), "Remove a loaded model from the scene.");
 
     m.def(
+        "set_sun",
+        [](std::array<float, 3> direction, std::array<float, 3> color, float intensity) {
+            renderer::Command cmd;
+            cmd.type = renderer::Command::Type::SetSun;
+            for (int i = 0; i < 3; ++i) {
+                cmd.sun.direction[i] = direction[i];
+                cmd.sun.color[i] = color[i];
+            }
+            cmd.sun.intensity = intensity;
+            pushCommand(cmd);
+        },
+        py::arg("direction"), py::arg("color") = std::array<float, 3>{1.0f, 1.0f, 1.0f},
+        py::arg("intensity") = 1.0f,
+        "Set the directional sun: direction points from the light toward "
+        "the scene; intensity 0 turns the sun off for the frame.");
+
+    m.def(
+        "set_sky_color",
+        [](std::array<float, 3> color) {
+            renderer::Command cmd;
+            cmd.type = renderer::Command::Type::SetSkyColor;
+            for (int i = 0; i < 3; ++i) {
+                cmd.sky.color[i] = color[i];
+            }
+            pushCommand(cmd);
+        },
+        py::arg("color"),
+        "Set the background/sky color the frame paints behind the scene.");
+
+    m.def(
+        "set_ambient",
+        [](std::array<float, 3> color) {
+            renderer::Command cmd;
+            cmd.type = renderer::Command::Type::SetAmbient;
+            for (int i = 0; i < 3; ++i) {
+                cmd.ambient.color[i] = color[i];
+            }
+            pushCommand(cmd);
+        },
+        py::arg("color"),
+        "Set the hemispherical ambient tint (default 0.30 0.32 0.36).");
+
+    m.def(
+        "set_point_light",
+        [](std::uint32_t index, std::array<float, 3> position, std::array<float, 3> color,
+           float intensity, float radius) {
+            renderer::Command cmd;
+            cmd.type = renderer::Command::Type::SetPointLight;
+            cmd.pointLight.index = index;
+            for (int i = 0; i < 3; ++i) {
+                cmd.pointLight.position[i] = position[i];
+                cmd.pointLight.color[i] = color[i];
+            }
+            cmd.pointLight.intensity = intensity;
+            cmd.pointLight.radius = radius;
+            pushCommand(cmd);
+        },
+        py::arg("index"), py::arg("position"),
+        py::arg("color") = std::array<float, 3>{1.0f, 1.0f, 1.0f}, py::arg("intensity") = 1.0f,
+        py::arg("radius") = 10.0f,
+        "Set one dynamic point light slot (16 slots, no shadows); "
+        "intensity 0 turns the slot off.");
+
+    m.def(
         "poll_events",
         [] {
             refillEventCache();

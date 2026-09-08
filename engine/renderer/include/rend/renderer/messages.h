@@ -34,13 +34,54 @@ struct UnloadModelCmd {
     ModelHandle handle = kInvalidModel;
 };
 
+// Lighting state (the script-driven day/night cycle). Each command
+// replaces the named viewer-side state wholesale; the frame loop copies
+// it into the per-slot light buffer, so per-frame updates never stall.
+
+struct SetSunCmd {
+    float direction[3] = {0.0f, -1.0f, 0.0f}; // from the light toward the scene
+    float color[3] = {1.0f, 1.0f, 1.0f};
+    float intensity = 1.0f;
+};
+
+struct SetSkyColorCmd {
+    float color[3] = {};
+};
+
+struct SetAmbientCmd {
+    float color[3] = {};
+};
+
+// One dynamic point light slot (no shadows); intensity 0 turns it off.
+// The consumer bounds the slot count (16 today) and ignores out-of-range
+// indices with a warning.
+struct SetPointLightCmd {
+    std::uint32_t index = 0;
+    float position[3] = {};
+    float color[3] = {1.0f, 1.0f, 1.0f};
+    float intensity = 0.0f;
+    float radius = 10.0f;
+};
+
 struct Command {
-    enum class Type : std::uint32_t { LoadModel, SetTransform, UnloadModel };
+    enum class Type : std::uint32_t {
+        LoadModel,
+        SetTransform,
+        UnloadModel,
+        SetSun,
+        SetSkyColor,
+        SetAmbient,
+        SetPointLight,
+    };
     Type type = Type::LoadModel;
     union {
         LoadModelCmd load;
         SetTransformCmd transform;
         UnloadModelCmd unload;
+        SetSunCmd sun;
+        SetSkyColorCmd sky;
+        SetAmbientCmd ambient;
+        SetPointLightCmd pointLight;
     };
     Command() : load{} {}
 };

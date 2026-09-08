@@ -3358,6 +3358,45 @@ int main(int argc, char** argv) {
             case renderer::Command::Type::UnloadModel:
                 applyUnloadModel(cmd.unload);
                 break;
+            // Lighting commands replace viewer-side state the frame loop
+            // copies into the per-slot light buffer every frame — no
+            // recordings touched, no stalls (the sun's cascades refit on
+            // the CPU each frame already).
+            case renderer::Command::Type::SetSun: {
+                assetio::LightDesc desc;
+                desc.direction = {cmd.sun.direction[0], cmd.sun.direction[1],
+                                  cmd.sun.direction[2]};
+                desc.color = {cmd.sun.color[0], cmd.sun.color[1], cmd.sun.color[2]};
+                desc.intensity = cmd.sun.intensity;
+                const SunControls incoming = SunControls::fromLight(desc);
+                sun.azimuthDeg = incoming.azimuthDeg;
+                sun.elevationDeg = incoming.elevationDeg;
+                sun.color = incoming.color;
+                sun.intensity = incoming.intensity;
+                break;
+            }
+            case renderer::Command::Type::SetSkyColor:
+                skyColor = {cmd.sky.color[0], cmd.sky.color[1], cmd.sky.color[2]};
+                break;
+            case renderer::Command::Type::SetAmbient:
+                ambientColor = {cmd.ambient.color[0], cmd.ambient.color[1],
+                                cmd.ambient.color[2]};
+                break;
+            case renderer::Command::Type::SetPointLight: {
+                if (cmd.pointLight.index >= kMaxPointLights) {
+                    log::warn("SetPointLight: index {} out of range (max {})",
+                              cmd.pointLight.index, kMaxPointLights - 1);
+                    break;
+                }
+                PointLight& light = pointLights[cmd.pointLight.index];
+                light.positionRadius = {cmd.pointLight.position[0], cmd.pointLight.position[1],
+                                        cmd.pointLight.position[2],
+                                        std::max(cmd.pointLight.radius, 0.0f)};
+                light.colorIntensity = {cmd.pointLight.color[0], cmd.pointLight.color[1],
+                                        cmd.pointLight.color[2],
+                                        std::max(cmd.pointLight.intensity, 0.0f)};
+                break;
+            }
             }
         }
         // Integrate whatever the loader finished, in completion order —

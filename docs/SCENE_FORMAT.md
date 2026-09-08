@@ -119,7 +119,8 @@ alongside the scene, resolved against the scene file's directory like mesh paths
 viewer feeds them to the optional embedded Python host (`rend_pyhost.dll`), which runs
 them in order on the interpreter's own thread; scripts `import rend` and speak the
 renderer message queue (`load_model` / `set_transform` / `unload_model`, `poll_events`
-/ `wait_model_ready`, `should_quit`, `log`). A scene that lists no scripts involves no
+/ `wait_model_ready`, `should_quit`, `log`, and the lighting controls `set_sun` /
+`set_sky_color` / `set_ambient` / `set_point_light` — see pyhost/CLAUDE.md). A scene that lists no scripts involves no
 Python at all — the host DLL is never even loaded, so it and the CPython runtime may
 be absent. assetio only parses the paths; it never executes code.
 
