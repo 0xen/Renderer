@@ -296,18 +296,46 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
         // counts, scratch-row allocator, emitted-index stats), run one
         // thread per template, then make the writes visible to the
         // indirect fetch.
+        const bool occlusion = batch->occlusionPipeline != nullptr &&
+                               batch->occlusionVisibility != VK_NULL_HANDLE &&
+                               (batch->cullFlags & 4u) != 0;
+        VkDependencyInfo cullDependency{};
+        cullDependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        if (occlusion) {
+            // This slot's visibility region was read by the PREVIOUS
+            // frame's cull dispatch — order that read before the clear.
+            VkMemoryBarrier2 computeToClear{};
+            computeToClear.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+            computeToClear.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+            computeToClear.srcAccessMask = VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
+            computeToClear.dstStageMask = VK_PIPELINE_STAGE_2_CLEAR_BIT;
+            computeToClear.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+            cullDependency.memoryBarrierCount = 1;
+            cullDependency.pMemoryBarriers = &computeToClear;
+            vkCmdPipelineBarrier2(cmd, &cullDependency);
+            // Zero this slot's region for the proxy pass at the end of
+            // THIS frame; the cull dispatch below reads the OTHER slot's.
+            vkCmdFillBuffer(cmd, batch->occlusionVisibility,
+                            slot * batch->occlusionRegionStride,
+                            batch->occlusionRegionStride, 0);
+        }
         vkCmdFillBuffer(cmd, batch->count, slot * batch->countRegionStride,
                         batch->countRegionStride, 0);
 
+        // The fills must land before the dispatch reads/increments, and —
+        // with occlusion — the previous frame's proxy-pass fragment
+        // stores into the other slot's region must be visible too.
         VkMemoryBarrier2 fillToCompute{};
         fillToCompute.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
-        fillToCompute.srcStageMask = VK_PIPELINE_STAGE_2_CLEAR_BIT;
-        fillToCompute.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+        fillToCompute.srcStageMask = VK_PIPELINE_STAGE_2_CLEAR_BIT |
+                                     (occlusion ? VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT
+                                                : VkPipelineStageFlags2{0});
+        fillToCompute.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT |
+                                      (occlusion ? VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT
+                                                 : VkAccessFlags2{0});
         fillToCompute.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
         fillToCompute.dstAccessMask =
             VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
-        VkDependencyInfo cullDependency{};
-        cullDependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
         cullDependency.memoryBarrierCount = 1;
         cullDependency.pMemoryBarriers = &fillToCompute;
         vkCmdPipelineBarrier2(cmd, &cullDependency);
@@ -558,6 +586,28 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
                 vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                   batch->transparentPipeline->handle());
                 bindAndDraw(*batch->transparentPipeline, 0, 2);
+            }
+            // Occlusion proxy pass: every template's world AABB as an
+            // instanced cube against the frame's finished depth (test
+            // only, color masked); survivors mark the visibility buffer
+            // the NEXT frame's cull dispatch consumes. Same rendering
+            // pass, so the scene's depth writes are already ordered.
+            if (batch->occlusionPipeline != nullptr && (batch->cullFlags & 4u) != 0 &&
+                batch->mode == DrawSubmitMode::IndirectCount) {
+                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                  batch->occlusionPipeline->handle());
+                if (batch->descriptors != VK_NULL_HANDLE) {
+                    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                            batch->occlusionPipeline->layout(), 0, 1,
+                                            &batch->descriptors, 0, nullptr);
+                }
+                const std::uint32_t proxyPush[2] = {
+                    slot, static_cast<std::uint32_t>(batch->indirectRegionStride /
+                                                     sizeof(DrawIndexedIndirect))};
+                vkCmdPushConstants(cmd, batch->occlusionPipeline->layout(),
+                                   VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                                   0, sizeof(proxyPush), proxyPush);
+                vkCmdDraw(cmd, 36, batch->drawCount, 0, 0);
             }
         } else {
             vkCmdDraw(cmd, 3, 1, 0, 0);

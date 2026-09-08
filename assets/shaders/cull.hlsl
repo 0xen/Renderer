@@ -21,6 +21,9 @@
 // entry's AABB selects a simplified index range baked at scene load, so
 // the emitted command's firstIndex/indexCount may differ from the
 // template's. The shadow stream always keeps full detail.
+// Occlusion (binding 26): entries whose world AABB left no pixel in
+// front of last frame's depth (proxy pass, end of the previous frame)
+// are dropped from the scene streams — never from the shadow stream.
 
 // Must match rend::gpu::DrawIndexedIndirect (VkDrawIndexedIndirectCommand).
 struct DrawCommand {
@@ -75,6 +78,7 @@ struct CullPush {
 
 static const uint kCullFrustum = 1u;
 static const uint kCullLod = 2u;
+static const uint kCullOcclusion = 4u;
 // Must match kTransformCapacity / kInstanceRowCapacity in the viewer.
 static const uint kTransformCapacity = 4096;
 static const uint kInstanceRowCapacity = 4096;
@@ -88,8 +92,9 @@ static const uint kBoundsTransparent = 2u;
 // [1] opaque scene-stream count, [2] scratch-row allocator for partial
 // entries, [3] transparent-stream count, [4]/[5] INDICES emitted to the
 // opaque/transparent streams (post-LOD, x instanceCount — the CPU's
-// triangle stat, /3), [6][7] spare. Must match countRegionStride in the
-// viewer and the count offsets in frame_renderer's bindAndDraw.
+// triangle stat, /3), [6] entries dropped by the occlusion test, [7]
+// spare. Must match countRegionStride in the viewer and the count
+// offsets in frame_renderer's bindAndDraw.
 static const uint kCountStride = 8;
 [[vk::binding(5, 0)]] RWStructuredBuffer<uint> counts;
 [[vk::binding(6, 0)]] StructuredBuffer<CameraData> cameras;
@@ -125,6 +130,14 @@ struct MeshLodTable {
     MeshLodLevel lods[kMaxMeshLods];
 };
 [[vk::binding(25, 0)]] StructuredBuffer<MeshLodTable> meshLods;
+
+// Occlusion visibility (per-slot regions of push.capacity entries): the
+// proxy pass at the END of the previous frame drew every entry's world
+// AABB against the finished scene depth (test only, [earlydepthstencil])
+// and marked survivors 1 — so region [slot ^ 1] holds "had any pixel in
+// front of last frame's depth". Zeroed each frame before the proxy pass
+// refills it; seeded all-1 at load so frame 0 draws everything.
+[[vk::binding(26, 0)]] RWStructuredBuffer<uint> visibility;
 
 // AABB vs the camera frustum, planes pulled from the slot's viewProj
 // (Gribb-Hartmann; clip = M * v, Vulkan z in [0, w]). Each plane points
@@ -218,6 +231,26 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
             }
         }
     }
+    // Occlusion test (world-bounds entries only, never the always-visible
+    // ones, never the shadow stream above — a caster hidden from the
+    // camera still casts into view): the entry is dropped when its box
+    // left no pixel in front of LAST frame's depth. One frame of latency
+    // by design — a disoccluded object pops in a frame late. The camera
+    // sitting inside the (slightly expanded) box bypasses the test: near-
+    // plane clipping can wipe out every box face and read as a false
+    // "occluded" exactly when the object surrounds the viewer.
+    if ((push.flags & kCullOcclusion) != 0 && (boundFlags & kBoundsAlwaysVisible) == 0 &&
+        b.bmax.w == 0.0f) {
+        const float3 camPos = cameras[push.slot].position.xyz;
+        const bool cameraInside = all(camPos >= b.bmin.xyz - 0.5f) &&
+                                  all(camPos <= b.bmax.xyz + 0.5f);
+        // kFramesInFlight == 2: the other slot's region is last frame's.
+        if (!cameraInside && visibility[(push.slot ^ 1) * push.capacity + id.x] == 0) {
+            InterlockedAdd(counts[push.slot * kCountStride + 6], 1);
+            return;
+        }
+    }
+
     // LOD pick, only for the streams below — the shadow stream above drew
     // the full-detail template (a distance-based swap tied to the CAMERA
     // would move shadow silhouettes as the viewer walks). World-bounds

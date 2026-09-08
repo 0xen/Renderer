@@ -102,9 +102,20 @@ struct DrawBatch {
     const Pipeline* transparentPipeline = nullptr;
     // Cull-shader flags pushed with the dispatch (bit 0 = frustum culling
     // against binding 22's per-object AABBs, bit 1 = LOD selection from
-    // binding 25's per-entry tables). Baked into static recordings —
+    // binding 25's per-entry tables, bit 2 = occlusion culling against
+    // binding 26's proxy-pass visibility). Baked into static recordings —
     // invalidate them after flipping.
     std::uint32_t cullFlags = 0;
+    // Occlusion proxy pass (IndirectCount mode, cullFlags bit 2): after
+    // the transparency draw, every template's world AABB is rasterized as
+    // an instanced unindexed cube (36 verts x drawCount) against the
+    // frame's finished depth — test only, color masked — and surviving
+    // fragments mark occlusionVisibility's current-slot region (binding
+    // 26), which the NEXT frame's cull dispatch reads. The region is
+    // zeroed alongside the count fill. Null pipeline = no proxy pass.
+    const Pipeline* occlusionPipeline = nullptr;
+    VkBuffer occlusionVisibility = nullptr;
+    std::uint64_t occlusionRegionStride = 0; // bytes per frame-slot region
     // LOD screen-size scale pushed with the dispatch: pixels per world
     // unit at unit distance over the target error in pixels. 0 keeps
     // every entry at full detail. Depends only on the viewport height and

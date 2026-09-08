@@ -49,6 +49,11 @@ struct GraphicsPipelineDesc {
     // NO depth write — the transparency-pass state. Blended fragments must
     // not occlude each other; opaques drawn first still occlude them.
     bool alphaBlend = false;
+    // Occlusion-proxy state: depth TEST only (LESS_OR_EQUAL, so a flat
+    // object's zero-extent box coplanar with its own surface still
+    // passes), no depth write, color writes fully masked — the pass
+    // exists purely for its fragment shader's visibility-buffer stores.
+    bool occlusionProxy = false;
 };
 
 struct ComputePipelineDesc {

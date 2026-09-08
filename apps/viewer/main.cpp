@@ -632,6 +632,9 @@ int main(int argc, char** argv) {
     // GPU LOD selection in the same pass (scene meshes with baked chains);
     // --nolod locks everything to full detail for A/B comparisons.
     bool lodSelect = true;
+    // GPU occlusion culling (proxy-pass visibility, IndirectCount mode);
+    // --noocclusion turns it off for A/B comparisons.
+    bool occlusionCull = true;
     std::uint64_t benchFrames = 0; // non-zero: exit after N frames with a report
     // Streaming test harness: auto-spawn this model at random intervals
     // through the message queue.
@@ -664,6 +667,8 @@ int main(int argc, char** argv) {
             frustumCull = false;
         } else if (arg == "--nolod") {
             lodSelect = false;
+        } else if (arg == "--noocclusion") {
+            occlusionCull = false;
         } else if (arg == "--spawn-test" && i + 1 < argc) {
             spawnTestPath = argv[++i];
         } else if (arg == "--bench" && i + 1 < argc) {
@@ -898,6 +903,10 @@ int main(int argc, char** argv) {
     // order; runtime rows past the scene's stay zeroed = full detail.
     std::unique_ptr<gpu::Buffer> meshLodBuffer;
     std::vector<MeshLodTable> meshLodTables;
+    // Occlusion visibility (binding 26): per-slot regions the proxy pass
+    // marks and the next frame's cull dispatch reads. GPU-only after the
+    // all-ones seed (frame 0 must draw everything).
+    std::unique_ptr<gpu::Buffer> visibilityBuffer;
     const auto importers = assetio::ImporterRegistry::withBuiltins();
     // Capability offer from the gpu layer: which shadow techniques this
     // device can run. The UI is built from this list, never from
@@ -1451,6 +1460,33 @@ int main(int argc, char** argv) {
                           (1024.0 * 1024.0));
         }
 
+        // Occlusion visibility: device-local (the proxy pass hammers it
+        // with fragment stores), seeded all-ones so the first frames draw
+        // everything until real proxy results exist.
+        auto visibilityResult = gpu::Buffer::create(
+            *device, {
+                         .size = std::uint64_t{templateCapacity} * sizeof(std::uint32_t) *
+                                 gpu::FrameRenderer::kFramesInFlight,
+                         .usage = gpu::kUsageStorage | gpu::kUsageTransferDst,
+                         .location = gpu::MemoryLocation::DeviceLocal,
+                     });
+        if (!visibilityResult) {
+            log::error("Visibility buffer creation failed: {}",
+                       visibilityResult.error().message);
+            return 1;
+        }
+        visibilityBuffer = std::move(visibilityResult).value();
+        {
+            const std::vector<std::uint32_t> seed(
+                std::size_t{templateCapacity} * gpu::FrameRenderer::kFramesInFlight, 1u);
+            if (auto staged = transfer->stage(*visibilityBuffer, 0, seed.data(),
+                                              seed.size() * sizeof(std::uint32_t));
+                !staged) {
+                log::error("Visibility seeding failed: {}", staged.error().message);
+                return 1;
+            }
+        }
+
         // Light data, same per-slot scheme (and capture regions) as the camera.
         auto lightResult = gpu::Buffer::create(
             *device, {
@@ -1710,6 +1746,8 @@ int main(int argc, char** argv) {
                                             transparentBuffer->size());
         descriptorTable->writeStorageBuffer(22, boundsBuffer->handle(), boundsBuffer->size());
         descriptorTable->writeStorageBuffer(25, meshLodBuffer->handle(), meshLodBuffer->size());
+        descriptorTable->writeStorageBuffer(26, visibilityBuffer->handle(),
+                                            visibilityBuffer->size());
         // The rows buffer again, writable for the cull pass's scratch
         // regions (same VkBuffer, second binding — no aliasing hazard,
         // canonical and scratch ranges are disjoint).
@@ -1998,10 +2036,11 @@ int main(int argc, char** argv) {
     std::unique_ptr<gpu::Pipeline> scenePipeline;
     std::unique_ptr<gpu::Pipeline> transparentPipeline;
     std::unique_ptr<gpu::Pipeline> cullPipeline;
+    std::unique_ptr<gpu::Pipeline> occlusionPipeline;
     std::unique_ptr<gpu::Pipeline> shadowPipeline;
     std::unique_ptr<gpu::Pipeline> skinPipeline;
     std::unique_ptr<gpu::Shader> sceneVert, sceneFrag, cullShader, shadowVert, shadowFrag,
-        skinShader;
+        skinShader, proxyVert, proxyFrag;
     if (scene) {
         auto vertResult = gpu::Shader::createFromFile(*device, shaderDir / "scene.vert.spv");
         // Scene-shipped fragment override (scene-local looks like toon)
@@ -2093,6 +2132,37 @@ int main(int argc, char** argv) {
             }
         } else {
             log::warn("Cull shader unavailable: {}", cullShaderResult.error().message);
+        }
+
+        // Occlusion proxy pipeline (IndirectCount mode only): AABB cubes
+        // generated in the vertex shader, depth TEST only against the
+        // frame's finished scene depth, color writes masked — exists for
+        // the fragment shader's visibility stores alone. Optional like
+        // the cull pipeline: failure just leaves occlusion off.
+        auto proxyVertResult = gpu::Shader::createFromFile(*device, shaderDir / "proxy.vert.spv");
+        auto proxyFragResult = gpu::Shader::createFromFile(*device, shaderDir / "proxy.frag.spv");
+        if (proxyVertResult && proxyFragResult) {
+            proxyVert = std::move(proxyVertResult).value();
+            proxyFrag = std::move(proxyFragResult).value();
+            auto proxyResult = gpu::Pipeline::createGraphics(
+                *device, {
+                             .vertexShader = proxyVert.get(),
+                             .fragmentShader = proxyFrag.get(),
+                             .colorFormat = swapchain->imageFormat(),
+                             .depthFormat = gpu::kFormatD32Sfloat,
+                             .pushConstantBytes = 2 * sizeof(std::uint32_t), // {slot, capacity}
+                             .descriptorLayout = descriptorTable->layout(),
+                             .occlusionProxy = true,
+                         });
+            if (proxyResult) {
+                occlusionPipeline = std::move(proxyResult).value();
+            } else {
+                log::warn("Occlusion proxy pipeline unavailable: {}",
+                          proxyResult.error().message);
+            }
+        } else {
+            log::warn("Occlusion proxy shaders unavailable: {}",
+                      (!proxyVertResult ? proxyVertResult : proxyFragResult).error().message);
         }
 
         // GPU skinning pass (animated scenes only): failure falls back to
@@ -2223,7 +2293,12 @@ int main(int argc, char** argv) {
             batch.transparentIndirect = transparentBuffer->handle();
             batch.transparentPipeline = transparentPipeline.get();
             batch.cullPipeline = cullPipeline.get();
-            batch.cullFlags = (frustumCull ? 1u : 0u) | (lodSelect ? 2u : 0u);
+            batch.occlusionPipeline = occlusionPipeline.get();
+            batch.occlusionVisibility = visibilityBuffer->handle();
+            batch.occlusionRegionStride =
+                std::uint64_t{templateCapacity} * sizeof(std::uint32_t);
+            batch.cullFlags = (frustumCull ? 1u : 0u) | (lodSelect ? 2u : 0u) |
+                              (occlusionCull && occlusionPipeline ? 4u : 0u);
         } else {
             batch.indirect = indirectBuffer->handle();
         }
@@ -2308,9 +2383,10 @@ int main(int argc, char** argv) {
     // stream, [1] the scene pass's frustum-culled stream, [2] scratch
     // rows written for partially visible instanced draws, [3] transparent
     // draws, [4]/[5] indices emitted to the opaque/transparent streams
-    // (post-LOD, /3 = triangles — the LOD A/B stat). Stats only — read
-    // after the slot's fence, kFramesInFlight frames late.
-    std::uint32_t lastDrawCounts[6] = {0, 0, 0, 0, 0, 0};
+    // (post-LOD, /3 = triangles — the LOD A/B stat), [6] entries dropped
+    // by the occlusion test. Stats only — read after the slot's fence,
+    // kFramesInFlight frames late.
+    std::uint32_t lastDrawCounts[7] = {0, 0, 0, 0, 0, 0, 0};
 
     // Stats window: wall time + renderer CPU counters, reported per mode.
     constexpr std::uint64_t kReportInterval = 600;
@@ -2329,10 +2405,12 @@ int main(int argc, char** argv) {
                   stats.frames > 0 ? static_cast<double>(stats.recordMicros) / stats.frames : 0.0,
                   stats.prerecords > 0 ? std::format(" | {} prerecords", stats.prerecords) : "",
                   batch.cullPipeline
-                      ? std::format(" | draws {}+{}t/{} in view, {} partial rows, {:.2f}M tris",
+                      ? std::format(" | draws {}+{}t/{} in view, {} partial rows, {:.2f}M tris"
+                                    ", {} occluded",
                                     lastDrawCounts[1], lastDrawCounts[3], lastDrawCounts[0],
                                     lastDrawCounts[2],
-                                    (lastDrawCounts[4] + lastDrawCounts[5]) / 3.0e6)
+                                    (lastDrawCounts[4] + lastDrawCounts[5]) / 3.0e6,
+                                    lastDrawCounts[6])
                       : "");
     };
 
@@ -3787,14 +3865,23 @@ int main(int argc, char** argv) {
                     if (ImGui::Checkbox("Frustum culling", &frustumCull)) {
                         // The flag rides the cull dispatch's push
                         // constants, which static recordings bake.
-                        batch.cullFlags = (frustumCull ? 1u : 0u) | (lodSelect ? 2u : 0u);
+                        batch.cullFlags = (frustumCull ? 1u : 0u) | (lodSelect ? 2u : 0u) |
+                                          (occlusionCull && occlusionPipeline ? 4u : 0u);
                         renderer->invalidateStaticRecordings();
                         log::info("Frustum culling {}", frustumCull ? "on" : "off");
                     }
                     if (ImGui::Checkbox("LOD selection", &lodSelect)) {
-                        batch.cullFlags = (frustumCull ? 1u : 0u) | (lodSelect ? 2u : 0u);
+                        batch.cullFlags = (frustumCull ? 1u : 0u) | (lodSelect ? 2u : 0u) |
+                                          (occlusionCull && occlusionPipeline ? 4u : 0u);
                         renderer->invalidateStaticRecordings();
                         log::info("LOD selection {}", lodSelect ? "on" : "off");
+                    }
+                    if (occlusionPipeline &&
+                        ImGui::Checkbox("Occlusion culling", &occlusionCull)) {
+                        batch.cullFlags = (frustumCull ? 1u : 0u) | (lodSelect ? 2u : 0u) |
+                                          (occlusionCull ? 4u : 0u);
+                        renderer->invalidateStaticRecordings();
+                        log::info("Occlusion culling {}", occlusionCull ? "on" : "off");
                     }
                     ImGui::Text("Draws: %u in view / %u live / %u table", lastDrawCounts[1],
                                 lastDrawCounts[0], batch.drawCount);
@@ -3806,6 +3893,7 @@ int main(int argc, char** argv) {
                     ImGui::Text("Triangles: %u (%u transparent)",
                                 (lastDrawCounts[4] + lastDrawCounts[5]) / 3,
                                 lastDrawCounts[5] / 3);
+                    ImGui::Text("Occluded: %u", lastDrawCounts[6]);
                 }
                 if (ImGui::TreeNode("Advanced")) {
                     ImGui::SliderFloat("Azimuth", &sun.azimuthDeg, -180.0f, 180.0f, "%.0f deg");

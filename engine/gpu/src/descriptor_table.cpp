@@ -132,6 +132,15 @@ Result<std::unique_ptr<DescriptorTable>> DescriptorTable::create(const Device& d
                             .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT});
         bindingFlags.push_back(VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT);
     }
+    // Occlusion visibility (binding 26): the proxy pass's fragment shader
+    // marks entries whose box survived the depth test; the next frame's
+    // cull dispatch reads the other slot's region.
+    bindings.push_back({.binding = 26,
+                        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                        .descriptorCount = 1,
+                        .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT |
+                                      VK_SHADER_STAGE_COMPUTE_BIT});
+    bindingFlags.push_back(VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT);
     // Reflection probe cubemap (binding 18): written after the load-time
     // capture; shaders only sample it when the light buffer selects the
     // probe tier, so it may stay unwritten (partially bound).
@@ -159,7 +168,7 @@ Result<std::unique_ptr<DescriptorTable>> DescriptorTable::create(const Device& d
     }
 
     std::vector<VkDescriptorPoolSize> poolSizes{
-        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 20},
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 21},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, maxTextures + 5},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_SAMPLER, 2}};
     if (rayQuery) {
