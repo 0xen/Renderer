@@ -24,6 +24,9 @@ struct LightData {
     uint reflections;
     uint pad3;
     uint pad4;
+    float4 fogBoxMin; // volumetric fog box; only the stride matters here
+    float4 fogBoxMax;
+    float4 fogColor;
 };
 
 struct ObjectData {

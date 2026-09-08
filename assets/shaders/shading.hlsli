@@ -50,6 +50,12 @@ struct LightData {
     uint reflections; // kReflection* below: reflective objects' source
     uint pad3;
     uint pad4;
+    // Volumetric fog box (scene <Fog>): world-space AABB of the media.
+    // fogColor.w is the raymarch step count and doubles as the enable
+    // flag — 0 (the probe-capture regions' default) disables fog.
+    float4 fogBoxMin; // xyz = box min corner, w = density (extinction/m)
+    float4 fogBoxMax; // xyz = box max corner, w = anisotropy g (-1..1)
+    float4 fogColor;  // rgb = scattering albedo, w = step count (0 = off)
 };
 
 // LightData.reflections values: where reflective-tagged fragments get

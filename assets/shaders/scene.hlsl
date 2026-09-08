@@ -116,6 +116,95 @@ float shadowFactor(float3 worldPos, float3 n, float viewDepth, LightData light,
     return shadow;
 }
 
+// One-tap cascade visibility for a point in AIR: the cascade is picked by
+// the sample's own view depth, and with no surface normal there is no
+// slope-scaled bias — the flat biasBase floor suffices for volume samples.
+// Out-of-map samples read the border (opaque white = lit), so fog past the
+// cascade reach is simply unshadowed.
+float fogShadow(float3 pos, float viewDepth, LightData light) {
+    if (light.cascadeCount == 0) {
+        return 1.0f;
+    }
+    uint cascade = light.cascadeCount - 1;
+    for (uint i = 0; i < light.cascadeCount; ++i) {
+        if (viewDepth < light.splitDepths[i]) {
+            cascade = i;
+            break;
+        }
+    }
+    const float4 lightClip = mul(light.cascadeViewProj[cascade], float4(pos, 1.0f));
+    const float2 uv = lightClip.xy * 0.5f + 0.5f;
+    return shadowMaps[NonUniformResourceIndex(cascade)].SampleCmpLevelZero(
+        shadowSampler, uv, lightClip.z - light.biasBase);
+}
+
+// Henyey-Greenstein phase function, normalized over the sphere. g > 0
+// scatters forward (halos around the sun direction), 0 is isotropic.
+float fogPhase(float cosTheta, float g) {
+    const float g2 = g * g;
+    const float denom = 1.0f + g2 - 2.0f * g * cosTheta;
+    return (1.0f - g2) / (4.0f * kPi * pow(max(denom, 1.0e-4f), 1.5f));
+}
+
+// Volumetric fog: march the camera->fragment segment through the scene's
+// fog box accumulating Beer-Lambert transmittance and single-scattered,
+// cascade-shadowed sunlight — geometry that blocks the sun carves visible
+// shafts out of the fog. Runs inside the ordinary scene fragment shader:
+// no extra pass, no depth readback, nothing baked into static recordings
+// (the box rides the per-slot light buffer), and the cost scales with
+// resolution x step count, never with scene complexity. Culled geometry
+// contributes no fragments, so culling wins carry through unchanged.
+float3 applyFog(float3 color, float3 camPos, float3 worldPos, float viewDepth, float2 pixel,
+                LightData light) {
+    const float3 toFrag = worldPos - camPos;
+    const float dist = length(toFrag);
+    const float3 rayDir = toFrag / max(dist, 1.0e-4f);
+
+    // Clip the segment to the fog box (slab test).
+    const float3 invDir = 1.0f / select(abs(rayDir) > 1.0e-6f, rayDir, 1.0e-6f);
+    const float3 tLo = (light.fogBoxMin.xyz - camPos) * invDir;
+    const float3 tHi = (light.fogBoxMax.xyz - camPos) * invDir;
+    const float3 tMin3 = min(tLo, tHi);
+    const float3 tMax3 = max(tLo, tHi);
+    const float tEnter = max(max(tMin3.x, tMin3.y), max(tMin3.z, 0.0f));
+    const float tExit = min(min(tMax3.x, tMax3.y), min(tMax3.z, dist));
+    if (tExit <= tEnter) {
+        return color;
+    }
+
+    const uint steps = (uint)light.fogColor.w;
+    const float dt = (tExit - tEnter) / steps;
+    // Interleaved-gradient jitter per pixel: turns step banding into
+    // stable fine-grained noise (no temporal component, no TAA needed).
+    const float jitter =
+        frac(52.9829189f * frac(dot(pixel, float2(0.06711056f, 0.00583715f))));
+
+    const float sigmaT = light.fogBoxMin.w;
+    const float3 sigmaS = sigmaT * light.fogColor.rgb;
+    const float3 sunDir = -normalize(light.direction);
+    const float phase = fogPhase(dot(rayDir, sunDir), light.fogBoxMax.w);
+    const float3 sunLight = light.color * light.intensity;
+    // Isotropic ambient in-scatter keeps shadowed fog from going black;
+    // matches ambientLight's mid-hemisphere value.
+    const float3 ambient = float3(0.30f, 0.32f, 0.36f) * 0.5f;
+    const float stepTrans = exp(-sigmaT * dt);
+
+    float transmittance = 1.0f;
+    float3 inscatter = 0.0f;
+    float t = tEnter + jitter * dt;
+    for (uint i = 0; i < steps; ++i) {
+        const float3 p = camPos + rayDir * t;
+        const float shadow = fogShadow(p, viewDepth * (t / dist), light);
+        const float3 scattered = sigmaS * (sunLight * (shadow * phase) + ambient);
+        // Analytic integral of the source term across the step keeps the
+        // result stable at low step counts.
+        inscatter += scattered * (transmittance * (1.0f - stepTrans) / max(sigmaT, 1.0e-4f));
+        transmittance *= stepTrans;
+        t += dt;
+    }
+    return color * transmittance + inscatter;
+}
+
 // Tangent-space normal map applied via the screen-space cotangent frame
 // (Schueler): derivatives of position and uv rebuild the tangent basis, so
 // the vertex layout needs no baked tangents.
@@ -206,6 +295,15 @@ float4 PSMain(VSOutput input) : SV_Target0 {
         const float3 tints[4] = {float3(1.0f, 0.6f, 0.6f), float3(0.6f, 1.0f, 0.6f),
                                  float3(0.6f, 0.6f, 1.0f), float3(1.0f, 1.0f, 0.6f)};
         color *= tints[cascade];
+    }
+    // Volumetric fog last: attenuates everything shaded above and adds the
+    // in-scattered light between the camera and this fragment. Transparent
+    // fragments get the same treatment — their fogged color is then scaled
+    // by the blend factor (slight in-scatter double-count on glass,
+    // accepted for this slice).
+    if (light.fogColor.w > 0.0f) {
+        color = applyFog(color, cameras[pc.cameraSlot].position.xyz, input.worldPos,
+                         input.viewDepth, input.position.xy, light);
     }
     // Transparent objects draw in the blend pass, where alpha is the
     // blend factor (glTF blend / transmission approximated as opacity =

@@ -440,8 +440,13 @@ struct LightData {
     std::uint32_t reflections = kReflectionProbe; // kReflection* above
     std::uint32_t pad3 = 0;
     std::uint32_t pad4 = 0;
+    // Volumetric fog box; fogColor[3] = step count doubles as the enable
+    // flag, so the zero-initialized probe-face regions render fog-free.
+    std::array<float, 4> fogBoxMin{}; // xyz min corner, w = density
+    std::array<float, 4> fogBoxMax{}; // xyz max corner, w = anisotropy
+    std::array<float, 4> fogColor{};  // rgb albedo, w = steps (0 = off)
 };
-static_assert(sizeof(LightData) == 336);
+static_assert(sizeof(LightData) == 384);
 
 // Live-tunable sun state behind the ImGui panel; direction is stored as
 // angles so the sliders stay intuitive.
@@ -2438,6 +2443,23 @@ int main(int argc, char** argv) {
         log::info("Sun: azimuth {:.0f}, elevation {:.0f}, intensity {:.2f}, shadows {}",
                   sun.azimuthDeg, sun.elevationDeg, sun.intensity,
                   batch.shadowPipeline ? "on" : "off");
+        if (scene->fog.enabled) {
+            // The raster background is a clear color, never a shaded pixel,
+            // so match it to the fog's converged in-scatter (isotropic
+            // phase + the shader's ambient term) — sky pixels then read as
+            // "fog all the way out" instead of punching a clear hole.
+            const assetio::FogDesc& fog = scene->fog;
+            const float sunScatter = sun.intensity / (4.0f * 3.14159265f);
+            const std::array<float, 3> ambient{0.15f, 0.16f, 0.18f};
+            renderer->setClearColor(fog.color[0] * (sun.color[0] * sunScatter + ambient[0]),
+                                    fog.color[1] * (sun.color[1] * sunScatter + ambient[1]),
+                                    fog.color[2] * (sun.color[2] * sunScatter + ambient[2]));
+            log::info("Volumetric fog: box ({:.0f} {:.0f} {:.0f}) size ({:.0f} {:.0f} {:.0f}), "
+                      "density {:.3f}, anisotropy {:.2f}, {} steps",
+                      fog.position[0], fog.position[1], fog.position[2], fog.size[0],
+                      fog.size[1], fog.size[2], fog.density, fog.anisotropy,
+                      static_cast<int>(fog.steps));
+        }
     }
     // ---- Runtime model loading over the renderer message queue ----
     // The viewer is the first producer (Settings panel + --spawn-test);
@@ -3778,6 +3800,16 @@ int main(int argc, char** argv) {
             lightData.reflections = (rtReady && reflectionsTraced) ? kReflectionTraced
                                     : probeReady                  ? kReflectionProbe
                                                                   : kReflectionNone;
+            if (scene && scene->fog.enabled) {
+                const assetio::FogDesc& fog = scene->fog;
+                lightData.fogBoxMin = {fog.position[0] - fog.size[0] * 0.5f,
+                                       fog.position[1] - fog.size[1] * 0.5f,
+                                       fog.position[2] - fog.size[2] * 0.5f, fog.density};
+                lightData.fogBoxMax = {fog.position[0] + fog.size[0] * 0.5f,
+                                       fog.position[1] + fog.size[1] * 0.5f,
+                                       fog.position[2] + fog.size[2] * 0.5f, fog.anisotropy};
+                lightData.fogColor = {fog.color[0], fog.color[1], fog.color[2], fog.steps};
+            }
             std::memcpy(static_cast<std::byte*>(lightBuffer->mapped()) +
                             renderer->frameSlot() * sizeof(LightData),
                         &lightData, sizeof(LightData));

@@ -123,6 +123,23 @@ Result<SceneDesc> parseScene(const std::filesystem::path& xmlFile) {
         scene.reflectionProbes.push_back(desc);
     }
 
+    if (const pugi::xml_node fog = root.child("Fog")) {
+        scene.fog.enabled = true;
+        if (auto r = parseFloats(fog.attribute("position"), scene.fog.position, "Fog position");
+            !r) {
+            return r.error();
+        }
+        if (auto r = parseFloats(fog.attribute("size"), scene.fog.size, "Fog size"); !r) {
+            return r.error();
+        }
+        if (auto r = parseFloats(fog.attribute("color"), scene.fog.color, "Fog color"); !r) {
+            return r.error();
+        }
+        scene.fog.density = fog.attribute("density").as_float(scene.fog.density);
+        scene.fog.anisotropy = fog.attribute("anisotropy").as_float(scene.fog.anisotropy);
+        scene.fog.steps = fog.attribute("steps").as_float(scene.fog.steps);
+    }
+
     const std::filesystem::path baseDir = xmlFile.parent_path();
     for (const pugi::xml_node model : root.children("Model")) {
         ModelNodeDesc desc;
@@ -179,6 +196,7 @@ Result<LoadedScene> loadScene(const std::filesystem::path& xmlFile,
     loaded.camera = desc.camera;
     loaded.lights = std::move(desc.lights);
     loaded.reflectionProbes = std::move(desc.reflectionProbes);
+    loaded.fog = desc.fog;
     loaded.scripts = std::move(desc.scripts);
     for (ModelNodeDesc& model : desc.models) {
         auto imported = importers.import(model.meshPath);

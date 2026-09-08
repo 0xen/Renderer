@@ -40,6 +40,21 @@ struct ReflectionProbeDesc {
     std::array<float, 3> position{0.0f, 0.0f, 0.0f};
 };
 
+// A box of participating media (<Fog>): position is the box center, size
+// its full extents. Like lights it describes the scene, never the
+// technique — how the renderer integrates the media (per-pixel march,
+// froxels, ...) is its own offer. enabled is false when the scene
+// declares no <Fog> element.
+struct FogDesc {
+    bool enabled = false;
+    std::array<float, 3> position{0.0f, 0.0f, 0.0f};
+    std::array<float, 3> size{100.0f, 20.0f, 100.0f};
+    std::array<float, 3> color{0.75f, 0.8f, 0.87f}; // scattering albedo
+    float density = 0.02f;    // extinction per meter inside the box
+    float anisotropy = 0.0f;  // Henyey-Greenstein g, -1..1 (0 = isotropic)
+    float steps = 24.0f;      // raymarch sample budget hint
+};
+
 struct TransformDesc {
     std::array<float, 3> position{0.0f, 0.0f, 0.0f};
     std::array<float, 3> rotationDegrees{0.0f, 0.0f, 0.0f};
@@ -183,6 +198,8 @@ struct SceneDesc {
     // Optional; a probe-capable renderer with none listed picks its own
     // default position (see SCENE_FORMAT.md).
     std::vector<ReflectionProbeDesc> reflectionProbes;
+    // Optional volumetric fog volume (<Fog>); enabled=false when absent.
+    FogDesc fog;
     std::vector<ModelNodeDesc> models;
     // Optional Python scripts to run alongside the scene (<Script path>,
     // resolved to absolute like mesh paths). A scene listing none runs
@@ -204,6 +221,7 @@ struct LoadedScene {
     CameraDesc camera;
     std::vector<LightDesc> lights;
     std::vector<ReflectionProbeDesc> reflectionProbes;
+    FogDesc fog;
     std::vector<LoadedModel> models;
     std::vector<std::filesystem::path> scripts;
 };

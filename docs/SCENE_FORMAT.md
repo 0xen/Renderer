@@ -100,6 +100,20 @@ capture is static: animated meshes bake at the bind pose, lighting never re-capt
 and there is no parallax correction — probes are approximate by design, ray traced
 reflections are the exact tier above.
 
+`Fog position="x y z" size="x y z" density="0.03" color="r g b" anisotropy="0.6"
+steps="24"` (optional, at most one) fills a world-space box of participating media:
+`position` is the box center, `size` its full extents. Like lights it describes what
+the media *is*, never the technique — the current renderer integrates it per shaded
+fragment (a camera-to-surface raymarch sampling the sun's cascade shadow maps, so
+occluders carve visible light shafts), but a froxel-based integrator would consume the
+same element. `density` is the extinction coefficient per meter inside the box
+(0.02-0.05 reads as heavy morning fog at street scale), `color` the scattering albedo,
+`anisotropy` the Henyey-Greenstein g in -1..1 (positive = forward scattering, brighter
+looking toward the sun), and `steps` the per-pixel raymarch budget. The raster
+background clear color is matched to the fog's converged in-scatter so sky pixels read
+as fog all the way out. Current gaps: the traced-primary path (`--rtprimary`) ignores
+fog, and in-scatter on transparent surfaces is scaled by their blend factor.
+
 `Script path="scripts/foo.py"` (optional, zero or more) names Python scripts that run
 alongside the scene, resolved against the scene file's directory like mesh paths. The
 viewer feeds them to the optional embedded Python host (`rend_pyhost.dll`), which runs
