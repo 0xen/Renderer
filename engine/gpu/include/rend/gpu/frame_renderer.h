@@ -100,9 +100,15 @@ struct DrawBatch {
     VkBuffer transparentIndirect = nullptr;
     const Pipeline* transparentPipeline = nullptr;
     // Cull-shader flags pushed with the dispatch (bit 0 = frustum culling
-    // against binding 22's per-object AABBs). Baked into static
-    // recordings — invalidate them after flipping.
+    // against binding 22's per-object AABBs, bit 1 = LOD selection from
+    // binding 25's per-entry tables). Baked into static recordings —
+    // invalidate them after flipping.
     std::uint32_t cullFlags = 0;
+    // LOD screen-size scale pushed with the dispatch: pixels per world
+    // unit at unit distance over the target error in pixels. 0 keeps
+    // every entry at full detail. Depends only on the viewport height and
+    // vertical fov, so the resize path's recording rebuild refreshes it.
+    float lodFactor = 0.0f;
     // Byte distance between per-frame-slot copies of the indirect array
     // inside `indirect`. Non-zero lets the CPU rewrite the slot's region
     // (host-visible buffer) while the other slot's region is in flight —

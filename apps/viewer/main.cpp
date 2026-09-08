@@ -20,6 +20,8 @@
 #include "rend/pyhost/pyhost.h"
 #include "rend/renderer/message_queue.h"
 
+#include <meshoptimizer.h>
+
 #include "ui.h"
 
 // LoadLibrary only — the Python host DLL is optional at runtime.
@@ -99,6 +101,38 @@ struct ObjectBounds {
 };
 constexpr math::Mat4 kIdentityMat4 = {1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
                                       0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f};
+
+// Discrete GPU LOD (binding 25): one table per draw entry; each level is
+// a simplified index range into the SAME vertex block (meshopt only drops
+// triangles), built at scene load and static after. lods[0] mirrors the
+// template's full-detail ranges; errors are absolute world-space
+// simplification error, ascending, and the cull shader picks the coarsest
+// level whose error still projects under kLodTargetPixels. lodCount <= 1
+// (animated meshes, runtime models, <Model lod="off">, meshes under the
+// floor) leaves the template untouched. Must match MeshLodTable in
+// cull.hlsl.
+constexpr std::uint32_t kMaxMeshLods = 4;
+struct MeshLodLevel {
+    std::uint32_t firstIndex = 0;
+    std::uint32_t indexCount = 0;
+    float error = 0.0f;
+    std::uint32_t pad = 0;
+};
+struct MeshLodTable {
+    std::uint32_t lodCount = 0;
+    std::uint32_t pad0 = 0;
+    std::uint32_t pad1 = 0;
+    std::uint32_t pad2 = 0;
+    std::array<MeshLodLevel, kMaxMeshLods> lods{};
+};
+static_assert(sizeof(MeshLodTable) == 16 + kMaxMeshLods * 16);
+// Meshes under this many indices never grow a chain (a few hundred
+// triangles simplify into visible mush for no draw-cost win), and a level
+// whose target falls under a quarter of it stops the chain.
+constexpr std::size_t kLodMinIndices = 1536;
+// Simplification error target in screen pixels: a level is only picked
+// once its geometric error would project under this size.
+constexpr float kLodTargetPixels = 1.0f;
 
 // Maps assetio's backend-agnostic texture payload onto the uploader:
 // decoded RGBA8 takes the mip-generating path (color space = the caller's
@@ -595,6 +629,9 @@ int main(int argc, char** argv) {
     // GPU frustum culling in the compaction pass (IndirectCount mode);
     // --nocull turns it off for A/B comparisons.
     bool frustumCull = true;
+    // GPU LOD selection in the same pass (scene meshes with baked chains);
+    // --nolod locks everything to full detail for A/B comparisons.
+    bool lodSelect = true;
     std::uint64_t benchFrames = 0; // non-zero: exit after N frames with a report
     // Streaming test harness: auto-spawn this model at random intervals
     // through the message queue.
@@ -625,6 +662,8 @@ int main(int argc, char** argv) {
             }
         } else if (arg == "--nocull") {
             frustumCull = false;
+        } else if (arg == "--nolod") {
+            lodSelect = false;
         } else if (arg == "--spawn-test" && i + 1 < argc) {
             spawnTestPath = argv[++i];
         } else if (arg == "--bench" && i + 1 < argc) {
@@ -855,6 +894,10 @@ int main(int argc, char** argv) {
     std::unique_ptr<gpu::Buffer> culledBuffer;
     std::unique_ptr<gpu::Buffer> transparentBuffer;
     std::vector<ObjectBounds> objectBounds;
+    // Per-entry LOD chains (binding 25), one table per scene mesh in draw
+    // order; runtime rows past the scene's stay zeroed = full detail.
+    std::unique_ptr<gpu::Buffer> meshLodBuffer;
+    std::vector<MeshLodTable> meshLodTables;
     const auto importers = assetio::ImporterRegistry::withBuiltins();
     // Capability offer from the gpu layer: which shadow techniques this
     // device can run. The UI is built from this list, never from
@@ -926,6 +969,8 @@ int main(int argc, char** argv) {
         std::vector<float> morphDeltaData;
         std::vector<float> morphWeightsCpu;
 
+        std::size_t lodMeshCount = 0;
+        std::uint64_t lodExtraIndices = 0;
         for (std::size_t modelIndex = 0; modelIndex < scene->models.size(); ++modelIndex) {
             const auto& model = scene->models[modelIndex];
             for (const auto& mesh : model.data.meshes) {
@@ -1004,6 +1049,84 @@ int main(int argc, char** argv) {
                                     .indices = indexSlice.value(),
                                     .indexCount = static_cast<std::uint32_t>(mesh.indices.size()),
                                     .materialIndex = mesh.materialIndex});
+
+                // Discrete LOD chain: cascade meshopt_simplify over the
+                // mesh's own indices (each level starts from the previous
+                // one) at 1/4 the index count per step, staging each
+                // level's indices as another pool slice over the SAME
+                // vertex block. Failures just end the chain — LOD is an
+                // optimization, never a load error. Animated meshes are
+                // excluded (their templates patch vertexOffset to per-slot
+                // posed regions; the pairing must stay untouched).
+                MeshLodTable lodTable;
+                if (model.desc.lodEnabled && !mesh.skinned && mesh.morphTargets.empty() &&
+                    mesh.indices.size() >= kLodMinIndices) {
+                    lodTable.lodCount = 1;
+                    lodTable.lods[0] = {
+                        .firstIndex = static_cast<std::uint32_t>(indexSlice.value().offset /
+                                                                 sizeof(std::uint32_t)),
+                        .indexCount = static_cast<std::uint32_t>(mesh.indices.size()),
+                        .error = 0.0f};
+                    const std::size_t vertexCount = mesh.vertexCount();
+                    // result_error is relative to the mesh extent; this
+                    // scale takes it to absolute (world-baked) units.
+                    const float errorScale = meshopt_simplifyScale(mesh.positions.data(),
+                                                                   vertexCount, 3 * sizeof(float));
+                    std::vector<std::uint32_t> lodIndices = mesh.indices;
+                    std::vector<std::uint32_t> simplified;
+                    float lastError = 0.0f;
+                    for (std::uint32_t level = 1; level < kMaxMeshLods; ++level) {
+                        const std::size_t target = mesh.indices.size() >> (2 * level);
+                        if (target < kLodMinIndices / 4) {
+                            break;
+                        }
+                        simplified.resize(lodIndices.size());
+                        float relError = 0.0f;
+                        const std::size_t count = meshopt_simplify(
+                            simplified.data(), lodIndices.data(), lodIndices.size(),
+                            mesh.positions.data(), vertexCount, 3 * sizeof(float), target,
+                            0.25f, 0, &relError);
+                        // No meaningful reduction (dense/degenerate
+                        // topology): further levels won't do better.
+                        if (count == 0 || count >= lodIndices.size() * 9 / 10) {
+                            break;
+                        }
+                        simplified.resize(count);
+                        auto lodSlice =
+                            geometryPool->allocate(count * sizeof(std::uint32_t), 4);
+                        if (!lodSlice) {
+                            log::warn("LOD index allocation failed: {}",
+                                      lodSlice.error().message);
+                            break;
+                        }
+                        if (auto staged =
+                                transfer->stage(geometryPool->buffer(),
+                                                lodSlice.value().offset, simplified.data(),
+                                                lodSlice.value().size);
+                            !staged) {
+                            log::warn("LOD index staging failed: {}", staged.error().message);
+                            geometryPool->free(lodSlice.value());
+                            break;
+                        }
+                        // Keep errors non-decreasing so the shader's
+                        // coarsest-that-fits scan stays well ordered.
+                        lastError = std::max(relError * errorScale, lastError);
+                        lodTable.lods[lodTable.lodCount++] = {
+                            .firstIndex = static_cast<std::uint32_t>(lodSlice.value().offset /
+                                                                     sizeof(std::uint32_t)),
+                            .indexCount = static_cast<std::uint32_t>(count),
+                            .error = lastError};
+                        lodExtraIndices += count;
+                        lodIndices = std::move(simplified);
+                        simplified = {};
+                    }
+                    if (lodTable.lodCount > 1) {
+                        ++lodMeshCount;
+                    } else {
+                        lodTable = {}; // single level: leave the entry zeroed
+                    }
+                }
+                meshLodTables.push_back(lodTable);
 
                 // Animated meshes additionally get a per-slot destination
                 // region the skinning pass poses into; the indirect entry
@@ -1302,6 +1425,30 @@ int main(int argc, char** argv) {
                         objectBounds.data(), objectBounds.size() * sizeof(ObjectBounds));
         }
 
+        // Per-entry LOD tables: static after load, so ONE global region —
+        // no per-slot copies. Zero-fill the runtime headroom (and any
+        // chainless entries): lodCount 0 reads as "template stands".
+        auto lodTableResult = gpu::Buffer::create(
+            *device, {
+                         .size = std::uint64_t{templateCapacity} * sizeof(MeshLodTable),
+                         .usage = gpu::kUsageStorage,
+                         .location = gpu::MemoryLocation::HostVisible,
+                     });
+        if (!lodTableResult) {
+            log::error("LOD table buffer creation failed: {}", lodTableResult.error().message);
+            return 1;
+        }
+        meshLodBuffer = std::move(lodTableResult).value();
+        std::memset(meshLodBuffer->mapped(), 0, meshLodBuffer->size());
+        std::memcpy(meshLodBuffer->mapped(), meshLodTables.data(),
+                    meshLodTables.size() * sizeof(MeshLodTable));
+        if (lodMeshCount > 0) {
+            log::info("LOD chains: {} of {} meshes, {:.1f} MiB of simplified indices",
+                      lodMeshCount, geometry.size(),
+                      static_cast<double>(lodExtraIndices * sizeof(std::uint32_t)) /
+                          (1024.0 * 1024.0));
+        }
+
         // Light data, same per-slot scheme (and capture regions) as the camera.
         auto lightResult = gpu::Buffer::create(
             *device, {
@@ -1560,6 +1707,7 @@ int main(int argc, char** argv) {
         descriptorTable->writeStorageBuffer(24, transparentBuffer->handle(),
                                             transparentBuffer->size());
         descriptorTable->writeStorageBuffer(22, boundsBuffer->handle(), boundsBuffer->size());
+        descriptorTable->writeStorageBuffer(25, meshLodBuffer->handle(), meshLodBuffer->size());
         // The rows buffer again, writable for the cull pass's scratch
         // regions (same VkBuffer, second binding — no aliasing hazard,
         // canonical and scratch ranges are disjoint).
@@ -1933,7 +2081,8 @@ int main(int argc, char** argv) {
                 *device, {
                              .shader = cullShader.get(),
                              .descriptorLayout = descriptorTable->layout(),
-                             .pushConstantBytes = 4 * sizeof(std::uint32_t),
+                             // {drawCount, slot, capacity, flags, lodFactor}
+                             .pushConstantBytes = 5 * sizeof(std::uint32_t),
                          });
             if (cullResult) {
                 cullPipeline = std::move(cullResult).value();
@@ -2072,7 +2221,7 @@ int main(int argc, char** argv) {
             batch.transparentIndirect = transparentBuffer->handle();
             batch.transparentPipeline = transparentPipeline.get();
             batch.cullPipeline = cullPipeline.get();
-            batch.cullFlags = frustumCull ? 1u : 0u;
+            batch.cullFlags = (frustumCull ? 1u : 0u) | (lodSelect ? 2u : 0u);
         } else {
             batch.indirect = indirectBuffer->handle();
         }
@@ -3484,6 +3633,15 @@ int main(int argc, char** argv) {
                 cameraData.upAxis = {camUp.x * tanHalf, camUp.y * tanHalf, camUp.z * tanHalf,
                                      0.0f};
                 cameraData.forwardAxis = {camFwd.x, camFwd.y, camFwd.z, 0.0f};
+                // LOD screen-size scale for the cull pass: pixels per
+                // world unit at unit distance over the target pixel size.
+                // Rides the push constants (baked into static recordings),
+                // but its only inputs — viewport height and fov — change
+                // exactly when the recordings rebuild anyway (resize).
+                batch.lodFactor =
+                    viewHeight > 0
+                        ? static_cast<float>(viewHeight) / (2.0f * tanHalf * kLodTargetPixels)
+                        : 0.0f;
             }
             std::memcpy(static_cast<std::byte*>(cameraBuffer->mapped()) +
                             renderer->frameSlot() * sizeof(CameraData),
@@ -3597,9 +3755,14 @@ int main(int argc, char** argv) {
                     if (ImGui::Checkbox("Frustum culling", &frustumCull)) {
                         // The flag rides the cull dispatch's push
                         // constants, which static recordings bake.
-                        batch.cullFlags = frustumCull ? 1u : 0u;
+                        batch.cullFlags = (frustumCull ? 1u : 0u) | (lodSelect ? 2u : 0u);
                         renderer->invalidateStaticRecordings();
                         log::info("Frustum culling {}", frustumCull ? "on" : "off");
+                    }
+                    if (ImGui::Checkbox("LOD selection", &lodSelect)) {
+                        batch.cullFlags = (frustumCull ? 1u : 0u) | (lodSelect ? 2u : 0u);
+                        renderer->invalidateStaticRecordings();
+                        log::info("LOD selection {}", lodSelect ? "on" : "off");
                     }
                     ImGui::Text("Draws: %u in view / %u live / %u table", lastDrawCounts[1],
                                 lastDrawCounts[0], batch.drawCount);

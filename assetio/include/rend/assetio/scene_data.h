@@ -155,6 +155,10 @@ struct ModelNodeDesc {
     // the technique): reflective objects may get traced reflections on
     // hardware that offers them; elsewhere they shade as plain surfaces.
     bool reflective = false;
+    // GPU-driven level-of-detail (<Model lod="off">): on by default; off
+    // locks the model's meshes to full detail (no simplified chains are
+    // built, the cull pass never swaps their index ranges).
+    bool lodEnabled = true;
 };
 
 // Scene-wide asset-loading intent (<Scene loading=...>): how the app

@@ -123,8 +123,9 @@ Result<std::unique_ptr<DescriptorTable>> DescriptorTable::create(const Device& d
     // entry, 23 = the instance-row buffer again (same VkBuffer as binding
     // 20), writable so partially visible draws compact their surviving
     // instances' rows into per-slot scratch regions, 24 = the transparent
-    // draw stream the blend pass draws.
-    for (std::uint32_t binding = 21; binding <= 24; ++binding) {
+    // draw stream the blend pass draws, 25 = the per-entry mesh LOD
+    // tables the cull pass picks index ranges from.
+    for (std::uint32_t binding = 21; binding <= 25; ++binding) {
         bindings.push_back({.binding = binding,
                             .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
                             .descriptorCount = 1,
@@ -158,7 +159,7 @@ Result<std::unique_ptr<DescriptorTable>> DescriptorTable::create(const Device& d
     }
 
     std::vector<VkDescriptorPoolSize> poolSizes{
-        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 19},
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 20},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, maxTextures + 5},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_SAMPLER, 2}};
     if (rayQuery) {

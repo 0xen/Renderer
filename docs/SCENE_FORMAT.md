@@ -83,6 +83,13 @@ device, ray traced where ray queries exist — cost scales with screen coverage)
 technique is a user/renderer choice, superseded entirely when primary visibility is
 ray traced.
 
+`Model` also takes an optional `lod="off"` attribute (default on). With LOD on, the
+viewer bakes simplified index chains for the model's meshes at load and the GPU cull
+pass picks a level per frame from each mesh's distance — full detail up close, fewer
+triangles far away, chosen so the simplification error stays under about a pixel.
+`lod="off"` locks the model to full detail (hero assets, close-up subjects); animated
+meshes and meshes under a size floor are always full detail regardless.
+
 `ReflectionProbe position="x y z"` (optional, zero or more) marks where a probe-based
 renderer captures its environment cubemap at load time. Like lights it describes the
 scene, not the technique. Only the first probe is used for now (single probe, no

@@ -17,6 +17,10 @@
 // keep their canonical rows (no copies); fully hidden ones are dropped.
 // The scene pass then draws via vkCmdDrawIndexedIndirectCount, so no
 // visibility decision ever touches the CPU.
+// Survivors also pick a level of detail (binding 25): distance to the
+// entry's AABB selects a simplified index range baked at scene load, so
+// the emitted command's firstIndex/indexCount may differ from the
+// template's. The shadow stream always keeps full detail.
 
 // Must match rend::gpu::DrawIndexedIndirect (VkDrawIndexedIndirectCommand).
 struct DrawCommand {
@@ -61,11 +65,16 @@ struct CullPush {
     uint slot;      // frame-in-flight index selecting the buffer regions
     uint capacity;  // entries per slot region — the fixed stride; runtime
                     // model loads change drawCount but never this
-    uint flags;     // bit 0: frustum culling enabled
+    uint flags;     // bit 0: frustum culling, bit 1: LOD selection
+    // Screen-size scale for the LOD pick: pixels per world unit at unit
+    // distance, divided by the target error in pixels. 0 disables the
+    // pick (guards the first frames before the viewer measures it).
+    float lodFactor;
 };
 [[vk::push_constant]] CullPush push;
 
 static const uint kCullFrustum = 1u;
+static const uint kCullLod = 2u;
 // Must match kTransformCapacity / kInstanceRowCapacity in the viewer.
 static const uint kTransformCapacity = 4096;
 static const uint kInstanceRowCapacity = 4096;
@@ -88,6 +97,30 @@ static const uint kBoundsTransparent = 2u;
 // regions above hold the compacted survivors of partially visible draws.
 [[vk::binding(23, 0)]] RWStructuredBuffer<InstanceRow> instanceRows;
 [[vk::binding(24, 0)]] RWStructuredBuffer<DrawCommand> transparent;
+
+// Discrete LOD chain per draw entry (must match MeshLodTable in the
+// viewer). Every level indexes the SAME vertex block as the template —
+// simplification only removes triangles — so a level is just another
+// firstIndex/indexCount pair into the geometry pool. lods[0] is the full
+// mesh; errors are absolute world-space simplification error, ascending.
+// lodCount <= 1 (runtime models, animated meshes, <Model lod="off">,
+// meshes below the size floor) means the template's ranges stand.
+// Static after load: ONE global region, no per-slot copies.
+static const uint kMaxMeshLods = 4;
+struct MeshLodLevel {
+    uint firstIndex;
+    uint indexCount;
+    float error;
+    uint pad;
+};
+struct MeshLodTable {
+    uint lodCount;
+    uint pad0;
+    uint pad1;
+    uint pad2;
+    MeshLodLevel lods[kMaxMeshLods];
+};
+[[vk::binding(25, 0)]] StructuredBuffer<MeshLodTable> meshLods;
 
 // AABB vs the camera frustum, planes pulled from the slot's viewProj
 // (Gribb-Hartmann; clip = M * v, Vulkan z in [0, w]). Each plane points
@@ -178,6 +211,33 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
                 }
                 cmd.firstInstance = scratch;
                 cmd.instanceCount = visible;
+            }
+        }
+    }
+    // LOD pick, only for the streams below — the shadow stream above drew
+    // the full-detail template (a distance-based swap tied to the CAMERA
+    // would move shadow silhouettes as the viewer walks). World-bounds
+    // entries only: instanced/runtime entries carry lodCount 0 anyway, and
+    // animated meshes must keep the template's per-slot posed vertexOffset
+    // pairing untouched. Picks the COARSEST level whose simplification
+    // error still projects under the target pixel size at the entry's
+    // distance (error * lodFactor <= distance); a camera inside the AABB
+    // gives distance 0, so it keeps full detail.
+    if ((push.flags & kCullLod) != 0 && push.lodFactor > 0.0f && b.bmax.w == 0.0f) {
+        const MeshLodTable lodTable = meshLods[id.x];
+        if (lodTable.lodCount > 1) {
+            const float3 camPos = cameras[push.slot].position.xyz;
+            const float3 nearest = clamp(camPos, b.bmin.xyz, b.bmax.xyz);
+            const float dist = length(camPos - nearest);
+            uint lod = 0;
+            for (uint i = 1; i < lodTable.lodCount; ++i) {
+                if (lodTable.lods[i].error * push.lodFactor <= dist) {
+                    lod = i;
+                }
+            }
+            if (lod != 0) {
+                cmd.firstIndex = lodTable.lods[lod].firstIndex;
+                cmd.indexCount = lodTable.lods[lod].indexCount;
             }
         }
     }

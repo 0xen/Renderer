@@ -10,6 +10,7 @@
 #include <volk.h>
 
 #include <chrono>
+#include <cstring>
 
 namespace rend::gpu {
 
@@ -318,12 +319,14 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
                                     nullptr);
         }
         // capacity = the per-slot region stride in entries; drawCount can
-        // grow at runtime (model loads) while the regions stay put.
-        const std::uint32_t push[4] = {
+        // grow at runtime (model loads) while the regions stay put. The
+        // fifth word is the LOD screen-size factor, a float in disguise.
+        std::uint32_t push[5] = {
             batch->drawCount, slot,
             static_cast<std::uint32_t>(batch->indirectRegionStride /
                                        sizeof(DrawIndexedIndirect)),
-            batch->cullFlags};
+            batch->cullFlags, 0};
+        std::memcpy(&push[4], &batch->lodFactor, sizeof(float));
         vkCmdPushConstants(cmd, batch->cullPipeline->layout(), VK_SHADER_STAGE_COMPUTE_BIT, 0,
                            sizeof(push), push);
         vkCmdDispatch(cmd, (batch->drawCount + 63) / 64, 1, 1);
