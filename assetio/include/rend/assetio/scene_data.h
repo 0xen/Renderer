@@ -15,6 +15,12 @@ struct CameraDesc {
     std::array<float, 3> position{0.0f, 0.0f, 0.0f};
     std::array<float, 3> target{0.0f, 0.0f, -1.0f};
     float fovDegrees = 60.0f;
+    // Optional fly-in (<Camera flyFrom="x y z" flySeconds="s">): the
+    // camera spawns at flyFrom and eases into the authored position over
+    // flySeconds, looking at the target throughout; free flight takes
+    // over when it lands. flySeconds <= 0 = no fly-in.
+    std::array<float, 3> flyFrom{0.0f, 0.0f, 0.0f};
+    float flySeconds = 0.0f;
 };
 
 // Lights describe WHAT the light is, never the technique (shadow maps vs

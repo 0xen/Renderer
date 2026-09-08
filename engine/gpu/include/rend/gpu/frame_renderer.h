@@ -79,10 +79,11 @@ struct DrawBatch {
     // GPU compaction (IndirectCount mode only): a compute pipeline whose
     // shader reads the draw templates (descriptor binding 3), appends
     // visible entries to `indirect` (binding 4) and counts them into
-    // `count` (binding 5, four uint32 per slot: [0] visibility-only for
+    // `count` (binding 5, eight uint32 per slot: [0] visibility-only for
     // the shadow passes, [1] frustum-culled opaques for the scene pass,
     // [2] the scratch-row allocator for per-instance culling, [3]
-    // frustum-culled transparents for the blend pass). Recorded before
+    // frustum-culled transparents for the blend pass, [4]/[5] indices
+    // emitted to the opaque/transparent streams — stats). Recorded before
     // the render pass: zero the slot's counters, dispatch one thread per
     // template, barrier to the indirect + vertex reads. Null = none.
     const Pipeline* cullPipeline = nullptr;

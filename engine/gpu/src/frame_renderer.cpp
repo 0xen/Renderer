@@ -292,10 +292,10 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
     }
 
     if (batch && !rtDraw && batch->cullPipeline && batch->mode == DrawSubmitMode::IndirectCount) {
-        // GPU compaction: zero the slot's whole counter region (shadow
-        // stream, opaque stream, scratch-row allocator, transparent
-        // stream), run one thread per template, then make the writes
-        // visible to the indirect fetch.
+        // GPU compaction: zero the slot's whole counter region (stream
+        // counts, scratch-row allocator, emitted-index stats), run one
+        // thread per template, then make the writes visible to the
+        // indirect fetch.
         vkCmdFillBuffer(cmd, batch->count, slot * batch->countRegionStride,
                         batch->countRegionStride, 0);
 

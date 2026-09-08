@@ -1306,16 +1306,18 @@ int main(int argc, char** argv) {
 
         // Draw-count buffer for IndirectCount mode: written by the cull
         // pass (zeroed via fill, incremented by the shader) and read by
-        // vkCmdDrawIndexedIndirectCount. Four counters per frame slot:
-        // [0] the shadow passes' visibility-only stream, [1] the scene
-        // pass's frustum-culled opaque stream, [2] the scratch-row
-        // allocator for per-instance culling, [3] the blend pass's
-        // transparent stream. Host-visible so the CPU can report them
-        // (read after the slot's fence, i.e. kFramesInFlight frames late —
-        // stats, never a sync point).
+        // vkCmdDrawIndexedIndirectCount. Eight counters per frame slot
+        // (must match kCountStride in cull.hlsl): [0] the shadow passes'
+        // visibility-only stream, [1] the scene pass's frustum-culled
+        // opaque stream, [2] the scratch-row allocator for per-instance
+        // culling, [3] the blend pass's transparent stream, [4]/[5] the
+        // indices emitted to the opaque/transparent streams (post-LOD —
+        // the triangle stat, /3), [6][7] spare. Host-visible so the CPU
+        // can report them (read after the slot's fence, i.e.
+        // kFramesInFlight frames late — stats, never a sync point).
         auto countResult = gpu::Buffer::create(
             *device, {
-                         .size = 4 * sizeof(std::uint32_t) * gpu::FrameRenderer::kFramesInFlight,
+                         .size = 8 * sizeof(std::uint32_t) * gpu::FrameRenderer::kFramesInFlight,
                          .usage = gpu::kUsageIndirect | gpu::kUsageStorage |
                                   gpu::kUsageTransferDst,
                          .location = gpu::MemoryLocation::HostVisible,
@@ -2226,7 +2228,7 @@ int main(int argc, char** argv) {
             batch.indirect = indirectBuffer->handle();
         }
         batch.count = countBuffer->handle();
-        batch.countRegionStride = 4 * sizeof(std::uint32_t);
+        batch.countRegionStride = 8 * sizeof(std::uint32_t);
         batch.cpuDraws = draws.data();
         batch.descriptors = descriptorTable->set();
         if (shadowPipeline && !shadowMaps.empty() &&
@@ -2304,9 +2306,11 @@ int main(int argc, char** argv) {
     // Cull-pass counters read back from the frame slot's last completed
     // frame (IndirectCount mode): [0] the shadow passes' visibility-only
     // stream, [1] the scene pass's frustum-culled stream, [2] scratch
-    // rows written for partially visible instanced draws. Stats only —
-    // read after the slot's fence, kFramesInFlight frames late.
-    std::uint32_t lastDrawCounts[4] = {0, 0, 0, 0};
+    // rows written for partially visible instanced draws, [3] transparent
+    // draws, [4]/[5] indices emitted to the opaque/transparent streams
+    // (post-LOD, /3 = triangles — the LOD A/B stat). Stats only — read
+    // after the slot's fence, kFramesInFlight frames late.
+    std::uint32_t lastDrawCounts[6] = {0, 0, 0, 0, 0, 0};
 
     // Stats window: wall time + renderer CPU counters, reported per mode.
     constexpr std::uint64_t kReportInterval = 600;
@@ -2325,9 +2329,10 @@ int main(int argc, char** argv) {
                   stats.frames > 0 ? static_cast<double>(stats.recordMicros) / stats.frames : 0.0,
                   stats.prerecords > 0 ? std::format(" | {} prerecords", stats.prerecords) : "",
                   batch.cullPipeline
-                      ? std::format(" | draws {}+{}t/{} in view, {} partial rows",
+                      ? std::format(" | draws {}+{}t/{} in view, {} partial rows, {:.2f}M tris",
                                     lastDrawCounts[1], lastDrawCounts[3], lastDrawCounts[0],
-                                    lastDrawCounts[2])
+                                    lastDrawCounts[2],
+                                    (lastDrawCounts[4] + lastDrawCounts[5]) / 3.0e6)
                       : "");
     };
 
@@ -2337,8 +2342,15 @@ int main(int argc, char** argv) {
     // path; defaults to the best offer (traced where available, so nothing
     // visually regresses vs. the per-object RT milestone).
     bool reflectionsTraced = false;
+    // Fly-in countdown (scene camera's flySeconds); 0 = no fly-in or done.
+    float flyRemaining = 0.0f;
     if (scene) {
         camera = FlyCamera::fromScene(scene->camera);
+        flyRemaining = scene->camera.flySeconds;
+        if (flyRemaining > 0.0f) {
+            camera.position = {scene->camera.flyFrom[0], scene->camera.flyFrom[1],
+                               scene->camera.flyFrom[2]};
+        }
         sun = SunControls::fromLight(scene->lights.empty() ? assetio::LightDesc{}
                                                            : scene->lights.front());
         sun.rtShadows = rtFromStart && rtReady;
@@ -3454,6 +3466,26 @@ int main(int argc, char** argv) {
             if (held(platform::Key::E)) move({0.0f, 1.0f, 0.0f}, speed);
             if (held(platform::Key::Q)) move({0.0f, 1.0f, 0.0f}, -speed);
 
+            // Scene fly-in (<Camera flyFrom flySeconds>): ease from the
+            // spawn point into the authored pose, aimed at the scene
+            // target throughout; overrides input until it lands. Holds at
+            // the spawn while a wait-mode loading cover hides the scene.
+            if (scene && flyRemaining > 0.0f && !waitForTextures) {
+                flyRemaining = std::max(flyRemaining - deltaSeconds, 0.0f);
+                const float t = 1.0f - flyRemaining / scene->camera.flySeconds;
+                const float e = t * t * (3.0f - 2.0f * t); // smoothstep
+                const auto& from = scene->camera.flyFrom;
+                const auto& to = scene->camera.position;
+                camera.position = {from[0] + (to[0] - from[0]) * e,
+                                   from[1] + (to[1] - from[1]) * e,
+                                   from[2] + (to[2] - from[2]) * e};
+                const math::Vec3 aim = math::normalize(math::sub(
+                    {scene->camera.target[0], scene->camera.target[1], scene->camera.target[2]},
+                    camera.position));
+                camera.yaw = std::atan2(aim.x, -aim.z);
+                camera.pitch = std::asin(std::clamp(aim.y, -1.0f, 1.0f));
+            }
+
             // Publish this frame's camera into the slot's region: safe to
             // write once the slot's previous submission retired.
             if (auto r = renderer->waitFrameSlot(); !r) {
@@ -3768,6 +3800,12 @@ int main(int argc, char** argv) {
                                 lastDrawCounts[0], batch.drawCount);
                     ImGui::Text("Transparent draws: %u", lastDrawCounts[3]);
                     ImGui::Text("Partial instance rows: %u", lastDrawCounts[2]);
+                    // Free stat: the cull pass already counts emitted
+                    // indices; this readback rides the existing fenced
+                    // count-buffer memcpy, so it costs no GPU time at all.
+                    ImGui::Text("Triangles: %u (%u transparent)",
+                                (lastDrawCounts[4] + lastDrawCounts[5]) / 3,
+                                lastDrawCounts[5] / 3);
                 }
                 if (ImGui::TreeNode("Advanced")) {
                     ImGui::SliderFloat("Azimuth", &sun.azimuthDeg, -180.0f, 180.0f, "%.0f deg");

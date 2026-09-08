@@ -84,9 +84,13 @@ static const uint kBoundsTransparent = 2u;
 
 [[vk::binding(3, 0)]] StructuredBuffer<DrawCommand> templates;
 [[vk::binding(4, 0)]] RWStructuredBuffer<DrawCommand> compacted;
-// 4 per slot, zeroed before dispatch: [0] shadow-stream count, [1]
-// opaque scene-stream count, [2] scratch-row allocator for partial
-// entries, [3] transparent-stream count.
+// kCountStride per slot, zeroed before dispatch: [0] shadow-stream count,
+// [1] opaque scene-stream count, [2] scratch-row allocator for partial
+// entries, [3] transparent-stream count, [4]/[5] INDICES emitted to the
+// opaque/transparent streams (post-LOD, x instanceCount — the CPU's
+// triangle stat, /3), [6][7] spare. Must match countRegionStride in the
+// viewer and the count offsets in frame_renderer's bindAndDraw.
+static const uint kCountStride = 8;
 [[vk::binding(5, 0)]] RWStructuredBuffer<uint> counts;
 [[vk::binding(6, 0)]] StructuredBuffer<CameraData> cameras;
 [[vk::binding(19, 0)]] StructuredBuffer<column_major float4x4> objectTransforms;
@@ -174,7 +178,7 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
         return; // hidden
     }
     uint dst;
-    InterlockedAdd(counts[push.slot * 4], 1, dst);
+    InterlockedAdd(counts[push.slot * kCountStride], 1, dst);
     compacted[base + dst] = cmd;
 
     const ObjectBounds b = bounds[base + id.x];
@@ -199,7 +203,7 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
             }
             if (visible < cmd.instanceCount) {
                 uint rowBase;
-                InterlockedAdd(counts[push.slot * 4 + 2], visible, rowBase);
+                InterlockedAdd(counts[push.slot * kCountStride + 2], visible, rowBase);
                 const uint scratch = (1 + push.slot) * kInstanceRowCapacity + rowBase;
                 uint written = 0;
                 for (uint k = 0; k < cmd.instanceCount; ++k) {
@@ -242,10 +246,14 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
         }
     }
     if ((boundFlags & kBoundsTransparent) != 0) {
-        InterlockedAdd(counts[push.slot * 4 + 3], 1, dst);
+        InterlockedAdd(counts[push.slot * kCountStride + 3], 1, dst);
         transparent[base + dst] = cmd;
+        InterlockedAdd(counts[push.slot * kCountStride + 5],
+                       cmd.indexCount * cmd.instanceCount);
     } else {
-        InterlockedAdd(counts[push.slot * 4 + 1], 1, dst);
+        InterlockedAdd(counts[push.slot * kCountStride + 1], 1, dst);
         culled[base + dst] = cmd;
+        InterlockedAdd(counts[push.slot * kCountStride + 4],
+                       cmd.indexCount * cmd.instanceCount);
     }
 }

@@ -86,6 +86,12 @@ Result<SceneDesc> parseScene(const std::filesystem::path& xmlFile) {
             return r.error();
         }
         scene.camera.fovDegrees = camera.attribute("fovDegrees").as_float(scene.camera.fovDegrees);
+        if (const pugi::xml_attribute flyFrom = camera.attribute("flyFrom")) {
+            if (auto r = parseFloats(flyFrom, scene.camera.flyFrom, "Camera flyFrom"); !r) {
+                return r.error();
+            }
+            scene.camera.flySeconds = camera.attribute("flySeconds").as_float(8.0f);
+        }
     }
 
     for (const pugi::xml_node light : root.children("Light")) {

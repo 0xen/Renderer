@@ -60,7 +60,9 @@ renderer supplies them, not the asset.
 Loaded by the standalone `assetio` project (pugixml). Mesh paths resolve against the
 scene file's directory; `Shader` paths resolve against the engine's data root. Vector
 attributes are whitespace-separated floats. `Camera` and `Transform` are optional and
-default sensibly. Model formats are dispatched by extension through assetio's importer
+default sensibly. `Camera` also takes an optional fly-in: `flyFrom="x y z"` spawns the
+camera there and eases it into `position` over `flySeconds` (default 8) while looking
+at `target`; free flight takes over when it lands. Model formats are dispatched by extension through assetio's importer
 registry (currently glTF 2.0 via cgltf; new formats = new importer, nothing else changes).
 
 ```xml
