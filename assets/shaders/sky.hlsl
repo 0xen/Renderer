@@ -7,15 +7,13 @@
 // Two modes, selected by the light buffer per frame:
 //   ambientColor.w <  0  — flat skyColor.rgb (the original clear-color
 //                          replacement; every scene's default).
-//   ambientColor.w >= 0  — procedural skybox CUBE: the fragment's view
-//                          direction (rebuilt from the camera's ray axes,
-//                          same math as rt_primary) picks a cube face by
-//                          dominant axis, and the day phase in [0,1)
-//                          (0 sunrise, 0.25 noon, 0.5 sunset) drives the
-//                          palette. A stand-in for a real cubemap: face
-//                          selection is exactly what a cubemap sample
-//                          would do, so swapping in a TextureCube later
-//                          changes only this shader.
+//   ambientColor.w >= 0  — procedural skybox: one UNIFORM color blended
+//                          from the day phase in [0,1) (0 sunrise, 0.25
+//                          noon, 0.5 sunset). Deliberately directionless
+//                          — earlier per-face tints made the box corners
+//                          visible. A real TextureCube later would
+//                          reintroduce direction here (rebuild it from
+//                          the camera ray axes as rt_primary does).
 
 struct PushConstants {
     uint cameraSlot; // frame-in-flight index into the camera/light buffers
@@ -46,12 +44,6 @@ float4 PSMain(VSOutput input) : SV_Target0 {
         return float4(light.skyColor.rgb, 1.0f);
     }
 
-    // View direction through this pixel (rt_primary's reconstruction: the
-    // camera axes are premultiplied by tan(fov/2), NDC y points down).
-    const CameraData cam = cameras[pc.cameraSlot];
-    const float3 dir = normalize(cam.forwardAxis.xyz + cam.rightAxis.xyz * input.ndc.x -
-                                 cam.upAxis.xyz * input.ndc.y);
-
     // Day phase -> palette weights. altitude = sin(2 pi t): positive is
     // daytime; the dusk band peaks while the sun crosses the horizon.
     const float t = frac(timeOfDay);
@@ -59,29 +51,8 @@ float4 PSMain(VSOutput input) : SV_Target0 {
     const float day = smoothstep(0.0f, 0.25f, altitude);
     const float dusk = saturate(1.0f - abs(altitude) * 3.0f);
 
-    // Vertical gradient in each palette, blended night -> day -> dusk.
-    const float up = saturate(dir.y);
-    const float3 dayColor = lerp(float3(0.55f, 0.68f, 0.85f), float3(0.28f, 0.48f, 0.80f), up);
-    const float3 nightColor =
-        lerp(float3(0.012f, 0.016f, 0.038f), float3(0.003f, 0.005f, 0.016f), up);
-    float3 sky = lerp(nightColor, dayColor, day);
-    sky = lerp(sky, float3(0.85f, 0.32f, 0.10f), dusk * saturate(1.0f - up * 2.0f) * 0.8f);
-
-    // Colored-cube face tint: the dominant axis is the face a cubemap
-    // lookup would hit — tinted so the placeholder cube reads as a cube.
-    const float3 a = abs(dir);
-    float3 faceTint;
-    if (a.x >= a.y && a.x >= a.z) {
-        faceTint = dir.x > 0.0f ? float3(1.10f, 0.97f, 0.93f) : float3(0.90f, 1.00f, 1.08f);
-    } else if (a.y >= a.z) {
-        faceTint = dir.y > 0.0f ? float3(0.98f, 1.02f, 1.10f) : float3(0.88f, 0.90f, 0.88f);
-    } else {
-        faceTint = dir.z > 0.0f ? float3(1.06f, 1.00f, 0.92f) : float3(0.94f, 1.00f, 1.05f);
-    }
-    sky *= faceTint;
-
-    // A soft glow around the sun direction ties the box to the light.
-    const float glow = pow(saturate(dot(dir, -normalize(light.direction))), 32.0f);
-    sky += light.color * light.intensity * glow * 0.35f;
+    // One uniform color: night -> day, warmed through dusk.
+    float3 sky = lerp(float3(0.006f, 0.009f, 0.024f), float3(0.42f, 0.58f, 0.83f), day);
+    sky = lerp(sky, float3(0.70f, 0.28f, 0.10f), dusk * 0.6f);
     return float4(sky, 1.0f);
 }
