@@ -275,23 +275,38 @@ void bakeMeshTransform(assetio::MeshData& mesh, const math::Mat4& m) {
         mesh.positions[v + 1] = m[1] * x + m[5] * y + m[9] * z + m[13];
         mesh.positions[v + 2] = m[2] * x + m[6] * y + m[10] * z + m[14];
     }
+    // Normals are renormalized per vertex; remember each vertex's factor —
+    // morph NORMAL deltas add onto the stored normal at pose time
+    // (skin.hlsl normalizes the sum), so they must live in the SAME scaled
+    // space or a scaled transform under/over-applies them and morphed
+    // normals lag the surface (the animation_lab cube's scale-0.4 bug).
+    std::vector<float> invNormalLen(mesh.normals.size() / 3, 1.0f);
     for (std::size_t v = 0; v + 2 < mesh.normals.size(); v += 3) {
         const float x = mesh.normals[v], y = mesh.normals[v + 1], z = mesh.normals[v + 2];
-        const math::Vec3 n = math::normalize({m[0] * x + m[4] * y + m[8] * z,
-                                              m[1] * x + m[5] * y + m[9] * z,
-                                              m[2] * x + m[6] * y + m[10] * z});
-        mesh.normals[v] = n.x;
-        mesh.normals[v + 1] = n.y;
-        mesh.normals[v + 2] = n.z;
+        const math::Vec3 tn{m[0] * x + m[4] * y + m[8] * z, m[1] * x + m[5] * y + m[9] * z,
+                            m[2] * x + m[6] * y + m[10] * z};
+        const float len = std::sqrt(tn.x * tn.x + tn.y * tn.y + tn.z * tn.z);
+        const float inv = len > 0.0f ? 1.0f / len : 0.0f;
+        invNormalLen[v / 3] = inv;
+        mesh.normals[v] = tn.x * inv;
+        mesh.normals[v + 1] = tn.y * inv;
+        mesh.normals[v + 2] = tn.z * inv;
     }
     for (auto& target : mesh.morphTargets) {
-        for (auto* deltas : {&target.positionDeltas, &target.normalDeltas}) {
-            for (std::size_t v = 0; v + 2 < deltas->size(); v += 3) {
-                const float x = (*deltas)[v], y = (*deltas)[v + 1], z = (*deltas)[v + 2];
-                (*deltas)[v] = m[0] * x + m[4] * y + m[8] * z;
-                (*deltas)[v + 1] = m[1] * x + m[5] * y + m[9] * z;
-                (*deltas)[v + 2] = m[2] * x + m[6] * y + m[10] * z;
-            }
+        for (std::size_t v = 0; v + 2 < target.positionDeltas.size(); v += 3) {
+            const float x = target.positionDeltas[v], y = target.positionDeltas[v + 1],
+                        z = target.positionDeltas[v + 2];
+            target.positionDeltas[v] = m[0] * x + m[4] * y + m[8] * z;
+            target.positionDeltas[v + 1] = m[1] * x + m[5] * y + m[9] * z;
+            target.positionDeltas[v + 2] = m[2] * x + m[6] * y + m[10] * z;
+        }
+        for (std::size_t v = 0; v + 2 < target.normalDeltas.size(); v += 3) {
+            const float k = v / 3 < invNormalLen.size() ? invNormalLen[v / 3] : 1.0f;
+            const float x = target.normalDeltas[v], y = target.normalDeltas[v + 1],
+                        z = target.normalDeltas[v + 2];
+            target.normalDeltas[v] = (m[0] * x + m[4] * y + m[8] * z) * k;
+            target.normalDeltas[v + 1] = (m[1] * x + m[5] * y + m[9] * z) * k;
+            target.normalDeltas[v + 2] = (m[2] * x + m[6] * y + m[10] * z) * k;
         }
     }
 }
