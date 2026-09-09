@@ -141,8 +141,41 @@ float3 ambientLight(float3 n, float3 tint) {
     return tint * (n.y * 0.2f + 0.5f);
 }
 
-// Sum of the dynamic point lights (never shadowed): inverse-square with a
-// smooth window to zero at each light's radius, through the same BRDF as
+// Geometry + attenuation of one point light at a surface point: unit
+// direction and distance to the light, and the windowed inverse-square
+// attenuation (physical near the light, rolled smoothly to zero at the
+// radius so the reach never pops). atten 0 = off or out of range. Shared
+// by the unshadowed sum below and the traced variant in rt_common.hlsli.
+struct PointLightSample {
+    float3 l;
+    float dist;
+    float atten;
+};
+
+PointLightSample samplePointLight(PointLight pl, float3 worldPos) {
+    PointLightSample s;
+    s.l = 0.0f;
+    s.dist = 0.0f;
+    s.atten = 0.0f;
+    if (pl.colorIntensity.w <= 0.0f) {
+        return s;
+    }
+    const float3 toLight = pl.positionRadius.xyz - worldPos;
+    const float d2 = dot(toLight, toLight);
+    const float radius = max(pl.positionRadius.w, 1.0e-2f);
+    if (d2 >= radius * radius) {
+        return s;
+    }
+    s.dist = sqrt(max(d2, 1.0e-4f));
+    s.l = toLight / s.dist;
+    const float ratio2 = d2 / (radius * radius);
+    float window = saturate(1.0f - ratio2 * ratio2);
+    window *= window;
+    s.atten = window / max(d2, 1.0e-2f);
+    return s;
+}
+
+// Sum of the dynamic point lights, unshadowed, through the same BRDF as
 // the sun. skyColor.w carries the active count, so scenes without point
 // lights skip the loop entirely.
 float3 shadePointLights(float3 albedo, float metallic, float roughness, float3 n, float3 v,
@@ -151,24 +184,12 @@ float3 shadePointLights(float3 albedo, float metallic, float roughness, float3 n
     float3 sum = 0.0f;
     for (uint i = 0; i < count; ++i) {
         const PointLight pl = light.pointLights[i];
-        if (pl.colorIntensity.w <= 0.0f) {
+        const PointLightSample s = samplePointLight(pl, worldPos);
+        if (s.atten <= 0.0f) {
             continue;
         }
-        const float3 toLight = pl.positionRadius.xyz - worldPos;
-        const float d2 = dot(toLight, toLight);
-        const float radius = max(pl.positionRadius.w, 1.0e-2f);
-        if (d2 >= radius * radius) {
-            continue;
-        }
-        const float d = sqrt(max(d2, 1.0e-4f));
-        // Windowed inverse square: physical near the light, rolled
-        // smoothly to zero at the radius so the reach never pops.
-        const float ratio2 = d2 / (radius * radius);
-        float window = saturate(1.0f - ratio2 * ratio2);
-        window *= window;
-        const float atten = window / max(d2, 1.0e-2f);
-        sum += shadeSurface(albedo, metallic, roughness, n, v, toLight / d,
-                            pl.colorIntensity.rgb, pl.colorIntensity.w * atten, 1.0f);
+        sum += shadeSurface(albedo, metallic, roughness, n, v, s.l, pl.colorIntensity.rgb,
+                            pl.colorIntensity.w * s.atten, 1.0f);
     }
     return sum;
 }

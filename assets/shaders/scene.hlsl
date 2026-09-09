@@ -249,7 +249,9 @@ float4 PSMain(VSOutput input) : SV_Target0 {
         metallic *= mr.y;
     }
     const float3 l = -normalize(light.direction);
-    const float direct = saturate(dot(n, l));
+    // A zero-intensity sun (scripted night) contributes nothing — skip
+    // its shadow work entirely instead of tracing/sampling for it.
+    const float direct = light.intensity > 0.0f ? saturate(dot(n, l)) : 0.0f;
     uint cascade = 0;
     float shadow = 1.0f;
 #if RT_SHADOWS
@@ -267,7 +269,18 @@ float4 PSMain(VSOutput input) : SV_Target0 {
     const float3 sun = shadeSurface(albedo.rgb, metallic, roughness, n, v, l, light.color,
                                     light.intensity, shadow);
     float3 color = albedo.rgb * ambientLight(n, light.ambientColor.rgb) + sun;
-    color += shadePointLights(albedo.rgb, metallic, roughness, n, v, input.worldPos, light);
+    // Point lights follow the shadow technique offer: traced when ray
+    // traced shadows are selected (one short distance-bounded ray per
+    // contributing light), unshadowed otherwise (no maps exist for them).
+#if RT_SHADOWS
+    if (light.rtShadows != 0) {
+        color +=
+            shadePointLightsTraced(albedo.rgb, metallic, roughness, n, v, input.worldPos, light);
+    } else
+#endif
+    {
+        color += shadePointLights(albedo.rgb, metallic, roughness, n, v, input.worldPos, light);
+    }
     // Reflective-flagged fragments mix in a reflected color from the
     // technique the light buffer selects: the probe cubemap everywhere, or
     // (RT variant only) one traced reflection ray whose cost scales with

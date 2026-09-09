@@ -83,6 +83,53 @@ float shadowRay(float3 worldPos, float3 n, LightData light) {
     return q.CommittedStatus() == COMMITTED_TRIANGLE_HIT ? 0.0f : 1.0f;
 }
 
+// Distance-bounded occlusion ray toward one point light. The reach stops
+// short of the light point: scripts place lamp lights at (or inside) the
+// fixture's bulb geometry, which would otherwise occlude everything.
+float pointShadowRay(float3 worldPos, float3 n, float3 l, float dist) {
+    RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_FORCE_OPAQUE> q;
+    RayDesc ray;
+    ray.Origin = worldPos + n * 0.02f;
+    ray.Direction = l;
+    ray.TMin = 0.0f;
+    ray.TMax = max(dist - 0.3f, 0.0f);
+    q.TraceRayInline(sceneBVH, RAY_FLAG_NONE, 0xff, ray);
+    q.Proceed();
+    return q.CommittedStatus() == COMMITTED_TRIANGLE_HIT ? 0.0f : 1.0f;
+}
+
+// Traced variant of shading.hlsli's shadePointLights: same sample math,
+// plus one short shadow ray per light that would actually contribute —
+// the attenuation window and a luminance floor gate the rays, so cost
+// scales with the lights covering the fragment, not the light count.
+static const float kPointShadowMinContribution = 0.004f;
+float3 shadePointLightsTraced(float3 albedo, float metallic, float roughness, float3 n, float3 v,
+                              float3 worldPos, LightData light) {
+    const uint count = min((uint)light.skyColor.w, kMaxPointLights);
+    float3 sum = 0.0f;
+    for (uint i = 0; i < count; ++i) {
+        const PointLight pl = light.pointLights[i];
+        const PointLightSample s = samplePointLight(pl, worldPos);
+        if (s.atten <= 0.0f) {
+            continue;
+        }
+        const float ndotl = dot(n, s.l);
+        if (ndotl <= 0.0f) {
+            continue;
+        }
+        const float peak = max(pl.colorIntensity.r, max(pl.colorIntensity.g, pl.colorIntensity.b));
+        if (pl.colorIntensity.w * s.atten * ndotl * peak < kPointShadowMinContribution) {
+            continue;
+        }
+        if (pointShadowRay(worldPos, n, s.l, s.dist) <= 0.0f) {
+            continue;
+        }
+        sum += shadeSurface(albedo, metallic, roughness, n, v, s.l, pl.colorIntensity.rgb,
+                            pl.colorIntensity.w * s.atten, 1.0f);
+    }
+    return sum;
+}
+
 // Ray-cone texture LOD (rays have no screen derivatives, so mip selection
 // is manual): the triangle's uv-per-world-unit density, in log2 space.
 // Final mip = base + 0.5*log2(texel count) + log2(cone width), stretched
@@ -188,12 +235,13 @@ TracedHit shadeCommittedHit(uint objectIndex, uint primitive, float2 bary, float
             .SampleLevel(linearSampler, uv,
                          textureLod(object.textureIndex, lodBase, coneWidth, ndotd));
     const float3 l = -normalize(light.direction);
-    const float direct = saturate(dot(n, l));
+    const float direct = light.intensity > 0.0f ? saturate(dot(n, l)) : 0.0f;
     const float shadow = direct > 0.0f ? shadowRay(hit.position, n, light) : 0.0f;
     const float3 sun = shadeSurface(albedo.rgb, metallic, roughness, n, -dir, l, light.color,
                                     light.intensity, shadow);
     hit.color = albedo.rgb * ambientLight(n, light.ambientColor.rgb) + sun;
-    hit.color += shadePointLights(albedo.rgb, metallic, roughness, n, -dir, hit.position, light);
+    hit.color +=
+        shadePointLightsTraced(albedo.rgb, metallic, roughness, n, -dir, hit.position, light);
     hit.opacity =
         (object.flags & kFlagTransparent) != 0 ? saturate(albedo.a * object.baseAlpha) : 1.0f;
     hit.normal = n;
