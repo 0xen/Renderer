@@ -53,7 +53,9 @@ Result<std::unique_ptr<Image>> ProbeCapture::render(const Device& device,
         return Error{"Probe capture needs a pipeline and a non-empty draw list"};
     }
 
-    const std::uint32_t mipLevels = std::bit_width(desc.faceSize); // floor(log2) + 1
+    const std::uint32_t fullChain = std::bit_width(desc.faceSize); // floor(log2) + 1
+    const std::uint32_t mipLevels =
+        desc.mipLevels == 0 ? fullChain : std::min(desc.mipLevels, fullChain);
     auto cubeResult = Image::create(device, {
                                                 .width = desc.faceSize,
                                                 .height = desc.faceSize,
@@ -149,7 +151,8 @@ Result<std::unique_ptr<Image>> ProbeCapture::render(const Device& device,
         color.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         color.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-        color.clearValue.color = {{0.02f, 0.02f, 0.04f, 1.0f}};
+        color.clearValue.color = {{desc.clearColor[0], desc.clearColor[1], desc.clearColor[2],
+                                   desc.clearColor[3]}};
 
         VkRenderingAttachmentInfo depthAttachment{};
         depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;

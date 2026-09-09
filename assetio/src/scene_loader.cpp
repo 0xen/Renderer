@@ -97,19 +97,34 @@ Result<SceneDesc> parseScene(const std::filesystem::path& xmlFile) {
     for (const pugi::xml_node light : root.children("Light")) {
         LightDesc desc;
         const char* type = light.attribute("type").as_string("directional");
-        if (std::string_view(type) != "directional") {
-            return Error{std::format("'{}': unsupported light type '{}' (directional only for now)",
-                                     xmlFile.string(), type)};
-        }
-        if (auto r = parseFloats(light.attribute("direction"), desc.direction, "Light direction");
-            !r) {
-            return r.error();
+        if (std::string_view(type) == "directional") {
+            desc.type = LightType::Directional;
+            if (auto r =
+                    parseFloats(light.attribute("direction"), desc.direction, "Light direction");
+                !r) {
+                return r.error();
+            }
+            desc.castsShadows = light.attribute("castsShadows").as_bool(true);
+        } else if (std::string_view(type) == "point") {
+            desc.type = LightType::Point;
+            if (auto r =
+                    parseFloats(light.attribute("position"), desc.position, "Light position");
+                !r) {
+                return r.error();
+            }
+            desc.radius = light.attribute("radius").as_float(desc.radius);
+            // Shadows are opt-in for point lights: each shadowing light
+            // costs a capture (raster) or rays (traced).
+            desc.castsShadows = light.attribute("castsShadows").as_bool(false);
+        } else {
+            return Error{std::format(
+                "'{}': unsupported light type '{}' (directional or point)", xmlFile.string(),
+                type)};
         }
         if (auto r = parseFloats(light.attribute("color"), desc.color, "Light color"); !r) {
             return r.error();
         }
         desc.intensity = light.attribute("intensity").as_float(desc.intensity);
-        desc.castsShadows = light.attribute("castsShadows").as_bool(desc.castsShadows);
         scene.lights.push_back(desc);
     }
 

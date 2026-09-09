@@ -33,6 +33,7 @@ set(REND_SHADER_STAGES
     "proxy.hlsl|PSMain|ps_6_0|proxy.frag.spv"
     "sky.hlsl|VSMain|vs_6_0|sky.vert.spv"
     "sky.hlsl|PSMain|ps_6_0|sky.frag.spv"
+    "point_shadow.hlsl|PSMain|ps_6_0|point_shadow.frag.spv"
 )
 
 set(REND_SHADER_ARTIFACTS "")
@@ -77,11 +78,11 @@ endforeach()
 set_source_files_properties(
     shaders/triangle.hlsl shaders/scene.hlsl shaders/cull.hlsl shaders/shadow.hlsl
     shaders/rt_primary.hlsl shaders/skin.hlsl shaders/proxy.hlsl shaders/sky.hlsl
-    shaders/shading.hlsli shaders/rt_common.hlsli
+    shaders/point_shadow.hlsl shaders/shading.hlsli shaders/rt_common.hlsli
     PROPERTIES VS_TOOL_OVERRIDE "None")
 
 add_custom_target(shaders ALL DEPENDS ${REND_SHADER_ARTIFACTS}
     SOURCES shaders/triangle.hlsl shaders/scene.hlsl shaders/cull.hlsl shaders/shadow.hlsl
             shaders/rt_primary.hlsl shaders/skin.hlsl shaders/proxy.hlsl shaders/sky.hlsl
-            shaders/shading.hlsli shaders/rt_common.hlsli)
+            shaders/point_shadow.hlsl shaders/shading.hlsli shaders/rt_common.hlsli)
 set_target_properties(shaders PROPERTIES FOLDER "assets")

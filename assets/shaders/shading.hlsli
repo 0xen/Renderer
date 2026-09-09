@@ -35,13 +35,17 @@ struct ObjectData {
     float roughnessFactor;
 };
 
-// One dynamic point light (no shadows): position + falloff radius,
-// color + intensity. Rides inside LightData so per-frame CPU updates
-// stay a single host-visible memcpy — nothing baked into recordings.
+// One dynamic point light: position + falloff radius, color + intensity,
+// and shadow state. Rides inside LightData so per-frame CPU updates stay
+// a single host-visible memcpy — nothing baked into recordings.
 static const uint kMaxPointLights = 16;
 struct PointLight {
     float4 positionRadius; // xyz = world position, w = falloff radius
     float4 colorIntensity; // rgb = color, w = intensity (0 = off)
+    // x = castsShadows (traced paths fire an occlusion ray), y = a baked
+    // shadow cube exists at this light's slot in pointShadowMaps (the
+    // raster path samples it), zw spare.
+    float4 params;
 };
 
 struct LightData {
@@ -88,6 +92,10 @@ static const uint kReflectionNone = 2u;   // shade plain (probe capture pass)
 // sampled when reflections == kReflectionProbe, so the binding may stay
 // unwritten on scenes that never captured one (partially bound).
 [[vk::binding(18, 0)]] TextureCube probeMap;
+// Point-light shadow cubes (load-time capture, one per shadow-casting
+// light slot): R32F world distance from the light. Sampled only when the
+// light's params.y flags a written slot (partially bound).
+[[vk::binding(27, 0)]] TextureCube pointShadowMaps[kMaxPointLights];
 // Per-object world transforms: one region per camera slot (frame slots +
 // probe faces), kTransformCapacity entries each, indexed by the object
 // index. Scene geometry is world-baked and rides identity; runtime-spawned
@@ -175,9 +183,11 @@ PointLightSample samplePointLight(PointLight pl, float3 worldPos) {
     return s;
 }
 
-// Sum of the dynamic point lights, unshadowed, through the same BRDF as
-// the sun. skyColor.w carries the active count, so scenes without point
-// lights skip the loop entirely.
+// Sum of the dynamic point lights through the same BRDF as the sun.
+// Shadow-casting lights with a baked cube (params.y) compare the
+// fragment's distance against the stored light-to-occluder distance —
+// the raster shadow tier. skyColor.w carries the active count, so scenes
+// without point lights skip the loop entirely.
 float3 shadePointLights(float3 albedo, float metallic, float roughness, float3 n, float3 v,
                         float3 worldPos, LightData light) {
     const uint count = min((uint)light.skyColor.w, kMaxPointLights);
@@ -187,6 +197,18 @@ float3 shadePointLights(float3 albedo, float metallic, float roughness, float3 n
         const PointLightSample s = samplePointLight(pl, worldPos);
         if (s.atten <= 0.0f) {
             continue;
+        }
+        if (pl.params.x > 0.0f && pl.params.y > 0.0f) {
+            const float3 fromLight = worldPos - pl.positionRadius.xyz;
+            const float stored =
+                pointShadowMaps[NonUniformResourceIndex(i)]
+                    .SampleLevel(linearSampler, fromLight, 0.0f)
+                    .r;
+            // Distance-space bias: flat floor + a slope with range (the
+            // cube face's texel footprint grows with distance).
+            if (s.dist - (0.05f + s.dist * 0.02f) > stored) {
+                continue;
+            }
         }
         sum += shadeSurface(albedo, metallic, roughness, n, v, s.l, pl.colorIntensity.rgb,
                             pl.colorIntensity.w * s.atten, 1.0f);

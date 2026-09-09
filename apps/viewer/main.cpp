@@ -212,6 +212,9 @@ constexpr float kPi = 3.14159265358979323846f;
 // so scene.hlsl needs no changes to render probe faces).
 constexpr std::uint32_t kProbeFaceSize = 256;
 constexpr std::uint32_t kProbeFormat = 43; // VK_FORMAT_R8G8B8A8_SRGB
+// Point-light shadow-distance cubes (soft lamp shadows need little
+// resolution; 16 lights x 6 x 256^2 R32F = 24 MiB worst case).
+constexpr std::uint32_t kPointShadowFaceSize = 256;
 constexpr std::uint32_t kProbeFaces = 6;
 constexpr std::uint32_t kCameraRegions = gpu::FrameRenderer::kFramesInFlight + kProbeFaces;
 
@@ -430,6 +433,9 @@ inline constexpr std::uint32_t kMaxPointLights = 16;
 struct PointLight {
     std::array<float, 4> positionRadius{}; // xyz world position, w falloff radius
     std::array<float, 4> colorIntensity{}; // rgb color, w intensity (0 = off)
+    // x = castsShadows (traced rays), y = baked shadow cube written at
+    // this slot (raster sampling), zw spare.
+    std::array<float, 4> params{};
 };
 
 // One region per frame slot in the light buffer (bindless binding 7).
@@ -461,7 +467,7 @@ struct LightData {
     std::array<float, 4> ambientColor{0.30f, 0.32f, 0.36f, -1.0f};
     std::array<PointLight, kMaxPointLights> pointLights{};
 };
-static_assert(sizeof(LightData) == 928);
+static_assert(sizeof(LightData) == 1184);
 
 // Live-tunable sun state behind the ImGui panel; direction is stored as
 // angles so the sliders stay intuitive.
@@ -480,6 +486,17 @@ struct SunControls {
         const float az = azimuthDeg * kPi / 180.0f;
         const float el = elevationDeg * kPi / 180.0f;
         return {std::cos(el) * std::cos(az), -std::sin(el), std::cos(el) * std::sin(az)};
+    }
+
+    // The sun is the scene's FIRST directional light; point lights live
+    // in their own slots. No directional light = the default sun.
+    static assetio::LightDesc sceneSun(const std::vector<assetio::LightDesc>& lights) {
+        for (const assetio::LightDesc& light : lights) {
+            if (light.type == assetio::LightType::Directional) {
+                return light;
+            }
+        }
+        return {};
     }
 
     static SunControls fromLight(const assetio::LightDesc& light) {
@@ -942,6 +959,11 @@ int main(int argc, char** argv) {
         device->supportedReflectionTechniques();
     std::unique_ptr<gpu::Image> probeImage; // load-time capture cubemap
     bool probeReady = false; // captured and wired into the bindless table
+    // Dynamic point lights (declared BEFORE capturePendingProbe so the
+    // deferred shadow bake can capture them by reference) + their baked
+    // shadow-distance cubes, one per shadow-casting slot.
+    std::array<PointLight, kMaxPointLights> pointLights{};
+    std::vector<std::unique_ptr<gpu::Image>> pointShadowImages;
     if (scene) {
         const auto start = std::chrono::steady_clock::now();
         // With ray tracing, the geometry pool doubles as the BLAS build
@@ -1887,28 +1909,35 @@ int main(int argc, char** argv) {
 
             // Six capture camera regions after the per-frame ones: 90-degree
             // faces in the spec's cube texel basis (see kProbeFaceBases).
+            // Shared with the point-shadow bake below, which re-centers
+            // the same regions on each light before its own capture.
             const math::Mat4 proj = math::perspective(kPi * 0.5f, 1.0f, 0.05f, 300.0f);
+            auto writeCaptureCameras = [&](const math::Vec3& pos) {
+                for (std::uint32_t face = 0; face < kProbeFaces; ++face) {
+                    const ProbeFaceBasis& basis = kProbeFaceBases[face];
+                    CameraData faceCamera;
+                    faceCamera.viewProj =
+                        math::mul(proj, faceView(pos, basis.right, basis.up, basis.forward));
+                    faceCamera.position = {pos.x, pos.y, pos.z, 0.001f};
+                    faceCamera.rightAxis = {basis.right.x, basis.right.y, basis.right.z, 0.0f};
+                    faceCamera.upAxis = {basis.up.x, basis.up.y, basis.up.z, 0.0f};
+                    faceCamera.forwardAxis = {basis.forward.x, basis.forward.y,
+                                              basis.forward.z, 0.0f};
+                    std::memcpy(static_cast<std::byte*>(cameraBuffer->mapped()) +
+                                    (gpu::FrameRenderer::kFramesInFlight + face) *
+                                        sizeof(CameraData),
+                                &faceCamera, sizeof(CameraData));
+                }
+            };
+            writeCaptureCameras(probePos);
             for (std::uint32_t face = 0; face < kProbeFaces; ++face) {
-                const ProbeFaceBasis& basis = kProbeFaceBases[face];
-                CameraData faceCamera;
-                faceCamera.viewProj =
-                    math::mul(proj, faceView(probePos, basis.right, basis.up, basis.forward));
-                faceCamera.position = {probePos.x, probePos.y, probePos.z, 0.001f};
-                faceCamera.rightAxis = {basis.right.x, basis.right.y, basis.right.z, 0.0f};
-                faceCamera.upAxis = {basis.up.x, basis.up.y, basis.up.z, 0.0f};
-                faceCamera.forwardAxis = {basis.forward.x, basis.forward.y, basis.forward.z,
-                                          0.0f};
-                std::memcpy(static_cast<std::byte*>(cameraBuffer->mapped()) +
-                                (gpu::FrameRenderer::kFramesInFlight + face) *
-                                    sizeof(CameraData),
-                            &faceCamera, sizeof(CameraData));
                 // Matching light regions: sun color/direction but no shadow
                 // sampling (cascadeCount 0, no maps exist yet) and no
                 // reflections — the capture sees reflective objects as
                 // plain surfaces instead of sampling the probe being made.
                 LightData faceLight;
-                const SunControls captureSun = SunControls::fromLight(
-                    scene->lights.empty() ? assetio::LightDesc{} : scene->lights.front());
+                const SunControls captureSun =
+                    SunControls::fromLight(SunControls::sceneSun(scene->lights));
                 const math::Vec3 dir = captureSun.direction();
                 faceLight.direction = {dir.x, dir.y, dir.z};
                 faceLight.intensity = captureSun.intensity;
@@ -1987,6 +2016,95 @@ int main(int argc, char** argv) {
                           (!probeVertResult ? probeVertResult : probeFragResult)
                               .error()
                               .message);
+            }
+
+            // Point-light shadow bake: for each shadow-casting scene
+            // light, the probe-capture machinery renders the scene's
+            // distance-from-light into a small R32F cube (level 0 only,
+            // cleared to "no occluder"), re-centering the capture camera
+            // regions on the light. Static scene only — runtime models
+            // never occlude lamp light (they're spawned after this).
+            bool wantPointShadows = false;
+            for (const PointLight& pl : pointLights) {
+                wantPointShadows |= pl.params[0] > 0.0f && pl.colorIntensity[3] > 0.0f;
+            }
+            if (wantPointShadows) {
+                const auto bakeStart = std::chrono::steady_clock::now();
+                auto psVertResult =
+                    gpu::Shader::createFromFile(*device, probeShaderDir / "scene.vert.spv");
+                auto psFragResult = gpu::Shader::createFromFile(
+                    *device, probeShaderDir / "point_shadow.frag.spv");
+                std::unique_ptr<gpu::Pipeline> bakePipeline;
+                if (psVertResult && psFragResult) {
+                    auto psVert = std::move(psVertResult).value();
+                    auto psFrag = std::move(psFragResult).value();
+                    auto bakeResult = gpu::Pipeline::createGraphics(
+                        *device,
+                        {
+                            .vertexShader = psVert.get(),
+                            .fragmentShader = psFrag.get(),
+                            .colorFormat = gpu::kFormatR32Sfloat,
+                            .vertexStride = kVertexStride,
+                            .vertexAttributes = {{0, gpu::kFormatR32G32B32Sfloat, 0},
+                                                 {1, gpu::kFormatR32G32B32Sfloat, 12},
+                                                 {2, gpu::kFormatR32G32Sfloat, 24}},
+                            .depthFormat = gpu::kFormatD32Sfloat,
+                            .pushConstantBytes = 2 * sizeof(std::uint32_t),
+                            .descriptorLayout = descriptorTable->layout(),
+                        });
+                    if (bakeResult) {
+                        bakePipeline = std::move(bakeResult).value();
+                    } else {
+                        log::warn("Point-shadow pipeline unavailable: {}",
+                                  bakeResult.error().message);
+                    }
+                } else {
+                    log::warn("Point-shadow shader unavailable: {}",
+                              (!psVertResult ? psVertResult : psFragResult).error().message);
+                }
+                std::uint32_t baked = 0;
+                if (bakePipeline) {
+                    pointShadowImages.resize(kMaxPointLights);
+                    for (std::uint32_t i = 0; i < kMaxPointLights; ++i) {
+                        PointLight& pl = pointLights[i];
+                        if (pl.params[0] <= 0.0f || pl.colorIntensity[3] <= 0.0f) {
+                            continue;
+                        }
+                        writeCaptureCameras({pl.positionRadius[0], pl.positionRadius[1],
+                                             pl.positionRadius[2]});
+                        auto cubeResult = gpu::ProbeCapture::render(
+                            *device,
+                            {
+                                .geometry = geometryPool->buffer().handle(),
+                                .draws = draws.data(),
+                                .drawCount = static_cast<std::uint32_t>(draws.size()),
+                                .descriptors = descriptorTable->set(),
+                                .pipeline = bakePipeline.get(),
+                                .format = gpu::kFormatR32Sfloat,
+                                .faceSize = kPointShadowFaceSize,
+                                .cameraSlotBase = gpu::FrameRenderer::kFramesInFlight,
+                                // "No occluder" = far beyond any radius.
+                                .clearColor = {1.0e6f, 0.0f, 0.0f, 0.0f},
+                                .mipLevels = 1,
+                            });
+                        if (!cubeResult) {
+                            log::warn("Point-shadow bake failed for light {}: {}", i,
+                                      cubeResult.error().message);
+                            continue;
+                        }
+                        pointShadowImages[i] = std::move(cubeResult).value();
+                        // Binding 27 is not update-after-bind; the caller
+                        // idles + invalidates around this lambda already.
+                        descriptorTable->writePointShadowMap(i, pointShadowImages[i]->view());
+                        pl.params[1] = 1.0f;
+                        ++baked;
+                    }
+                }
+                const auto bakeMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                        std::chrono::steady_clock::now() - bakeStart)
+                                        .count();
+                log::info("Point-light shadows baked in {} ms: {} cube(s), {}^2 x6 faces",
+                          bakeMs, baked, kPointShadowFaceSize);
             }
         };
     }
@@ -2360,7 +2478,7 @@ int main(int argc, char** argv) {
         batch.descriptors = descriptorTable->set();
         batch.skyPipeline = skyPipeline.get();
         if (shadowPipeline && !shadowMaps.empty() &&
-            (scene->lights.empty() || scene->lights.front().castsShadows)) {
+            SunControls::sceneSun(scene->lights).castsShadows) {
             batch.shadowPipeline = shadowPipeline.get();
             for (std::uint32_t c = 0; c < kShadowCascades; ++c) {
                 batch.shadowCascades[c] = shadowMaps[c].get();
@@ -2473,10 +2591,12 @@ int main(int argc, char** argv) {
     // per-slot light buffer every frame (defaults = the old constants).
     std::array<float, 3> skyColor{0.02f, 0.02f, 0.04f};
     std::array<float, 3> ambientColor{0.30f, 0.32f, 0.36f};
-    std::array<PointLight, kMaxPointLights> pointLights{};
     // Skybox day phase in [0,1) shading the sky pass's procedural cube;
     // negative (the default) keeps the flat skyColor background.
     float timeOfDay = -1.0f;
+    // Global fade over every point light's authored intensity
+    // (set_point_light_scale — the script day/night lamp control).
+    float pointLightScale = 1.0f;
     // Reflection technique for reflective-tagged objects in the raster
     // path; defaults to the best offer (traced where available, so nothing
     // visually regresses vs. the per-object RT milestone).
@@ -2490,9 +2610,33 @@ int main(int argc, char** argv) {
             camera.position = {scene->camera.flyFrom[0], scene->camera.flyFrom[1],
                                scene->camera.flyFrom[2]};
         }
-        sun = SunControls::fromLight(scene->lights.empty() ? assetio::LightDesc{}
-                                                           : scene->lights.front());
+        sun = SunControls::fromLight(SunControls::sceneSun(scene->lights));
         sun.rtShadows = rtFromStart && rtReady;
+        // Scene-XML point lights fill the dynamic slots in declaration
+        // order; scripts fade them via set_point_light_scale (or replace
+        // slots wholesale via set_point_light).
+        std::uint32_t pointSlot = 0;
+        for (const assetio::LightDesc& light : scene->lights) {
+            if (light.type != assetio::LightType::Point) {
+                continue;
+            }
+            if (pointSlot >= kMaxPointLights) {
+                log::warn("Scene declares more than {} point lights; extras dropped",
+                          kMaxPointLights);
+                break;
+            }
+            PointLight& slot = pointLights[pointSlot++];
+            slot.positionRadius = {light.position[0], light.position[1], light.position[2],
+                                   light.radius};
+            slot.colorIntensity = {light.color[0], light.color[1], light.color[2],
+                                   light.intensity};
+            slot.params = {light.castsShadows ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f};
+        }
+        if (pointSlot > 0) {
+            log::info("Scene point lights: {} ({} shadow-casting)", pointSlot,
+                      std::count_if(pointLights.begin(), pointLights.end(),
+                                    [](const PointLight& p) { return p.params[0] > 0.0f; }));
+        }
         reflectionsTraced = rtReady && !forceProbeReflections;
         log::info("Sun: azimuth {:.0f}, elevation {:.0f}, intensity {:.2f}, shadows {}",
                   sun.azimuthDeg, sun.elevationDeg, sun.intensity,
@@ -3402,8 +3546,15 @@ int main(int argc, char** argv) {
                 light.colorIntensity = {cmd.pointLight.color[0], cmd.pointLight.color[1],
                                         cmd.pointLight.color[2],
                                         std::max(cmd.pointLight.intensity, 0.0f)};
+                // A replaced slot drops its baked cube (the light may have
+                // moved); castsShadows keeps gating traced rays.
+                light.params = {cmd.pointLight.castsShadows != 0 ? 1.0f : 0.0f, 0.0f, 0.0f,
+                                0.0f};
                 break;
             }
+            case renderer::Command::Type::SetPointLightScale:
+                pointLightScale = std::max(cmd.pointLightScale.scale, 0.0f);
+                break;
             }
         }
         // Integrate whatever the loader finished, in completion order —
@@ -3909,9 +4060,14 @@ int main(int argc, char** argv) {
             }
             // Sky/ambient/point lights: per-slot buffer data, so scripts
             // changing them per frame never touch the static recordings.
+            // The global scale fades every authored intensity; the count
+            // reflects post-scale intensities so a scale of 0 (daytime)
+            // skips the shading loop entirely.
+            lightData.pointLights = pointLights;
             std::uint32_t activeLights = 0;
             for (std::uint32_t i = 0; i < kMaxPointLights; ++i) {
-                if (pointLights[i].colorIntensity[3] > 0.0f) {
+                lightData.pointLights[i].colorIntensity[3] *= pointLightScale;
+                if (lightData.pointLights[i].colorIntensity[3] > 0.0f) {
                     activeLights = i + 1;
                 }
             }
@@ -3919,7 +4075,6 @@ int main(int argc, char** argv) {
                                   static_cast<float>(activeLights)};
             lightData.ambientColor = {ambientColor[0], ambientColor[1], ambientColor[2],
                                       timeOfDay};
-            lightData.pointLights = pointLights;
             std::memcpy(static_cast<std::byte*>(lightBuffer->mapped()) +
                             renderer->frameSlot() * sizeof(LightData),
                         &lightData, sizeof(LightData));

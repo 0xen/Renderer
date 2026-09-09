@@ -131,12 +131,17 @@ with a progress bar until every asset has landed; `streaming` shows the scene
 immediately, assets popping in as they arrive (textures sample a neutral white
 until theirs lands), with a small inline progress bar.
 
-`Light` describes what the light *is* (direction points from the light toward the
-scene), never the rendering technique — shadow maps vs ray tracing is the renderer's
-offer, per the intent/offer model in ARCHITECTURE.md. `type` is `directional` only for
-now; every attribute is optional with sensible defaults. Multiple lights are parsed
-into a list (the GPU consumes lights as a buffer, so more types scale without new
-passes).
+`Light` describes what the light *is*, never the rendering technique — shadow maps vs
+ray tracing is the renderer's offer, per the intent/offer model in ARCHITECTURE.md.
+`type="directional"` (the default) takes `direction` (from the light toward the
+scene), `color`, `intensity`, `castsShadows` (default true); the first directional
+light is the sun. `type="point"` takes `position`, `radius` (the falloff reach —
+lighting rolls smoothly to zero there), `color`, `intensity`, and `castsShadows`
+(default FALSE — each shadow-casting point light costs a load-time shadow capture in
+the raster path and occlusion rays in the traced paths; today's renderer supports 16
+point lights, extras are dropped with a warning). Every attribute is optional with
+sensible defaults. Scripts can fade all point lights together
+(`rend.set_point_light_scale`) or replace slots wholesale (`rend.set_point_light`).
 
 Example scene: `C:\github\scenes\crytek_sponza\crytek_sponza.xml` (kept outside this
 repo; Crytek Sponza in the Khronos glTF conversion).

@@ -3,6 +3,7 @@
 #include "rend/core/result.h"
 #include "rend/gpu/frame_renderer.h"
 
+#include <array>
 #include <cstdint>
 #include <memory>
 
@@ -32,6 +33,13 @@ struct ProbeCaptureDesc {
     // First camera/light buffer region of the six per-face capture regions;
     // face f is drawn with push constant slot = cameraSlotBase + f.
     std::uint32_t cameraSlotBase = 0;
+    // Per-face clear value (the probe's sky stand-in by default; distance
+    // captures clear to a huge distance instead).
+    std::array<float, 4> clearColor{0.02f, 0.02f, 0.04f, 1.0f};
+    // Mip levels to produce via the post-render blit chain; 0 = the full
+    // pyramid. 1 skips blitting entirely (formats without blit/filter
+    // support, or captures sampled at level 0 only).
+    std::uint32_t mipLevels = 0;
 };
 
 class ProbeCapture {

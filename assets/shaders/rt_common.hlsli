@@ -121,7 +121,9 @@ float3 shadePointLightsTraced(float3 albedo, float metallic, float roughness, fl
         if (pl.colorIntensity.w * s.atten * ndotl * peak < kPointShadowMinContribution) {
             continue;
         }
-        if (pointShadowRay(worldPos, n, s.l, s.dist) <= 0.0f) {
+        // castsShadows (params.x) gates the ray; a non-casting light just
+        // shades unshadowed.
+        if (pl.params.x > 0.0f && pointShadowRay(worldPos, n, s.l, s.dist) <= 0.0f) {
             continue;
         }
         sum += shadeSurface(albedo, metallic, roughness, n, v, s.l, pl.colorIntensity.rgb,

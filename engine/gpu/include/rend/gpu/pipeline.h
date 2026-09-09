@@ -17,6 +17,7 @@ class Shader;
 
 // VkFormat values callers need without including Vulkan headers; the
 // pipeline XML's neutral format vocabulary maps onto these.
+inline constexpr std::uint32_t kFormatR32Sfloat = 100;
 inline constexpr std::uint32_t kFormatR32G32Sfloat = 103;
 inline constexpr std::uint32_t kFormatR32G32B32Sfloat = 106;
 inline constexpr std::uint32_t kFormatD32Sfloat = 126;

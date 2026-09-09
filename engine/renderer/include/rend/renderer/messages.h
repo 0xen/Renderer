@@ -59,15 +59,24 @@ struct SetAmbientCmd {
     float color[3] = {};
 };
 
-// One dynamic point light slot (no shadows); intensity 0 turns it off.
-// The consumer bounds the slot count (16 today) and ignores out-of-range
-// indices with a warning.
+// One dynamic point light slot; intensity 0 turns it off. The consumer
+// bounds the slot count (16 today) and ignores out-of-range indices with
+// a warning. Replacing a slot drops any baked shadow cube it had (a
+// repositioned light can't reuse it); castsShadows still gates traced
+// shadow rays.
 struct SetPointLightCmd {
     std::uint32_t index = 0;
     float position[3] = {};
     float color[3] = {1.0f, 1.0f, 1.0f};
     float intensity = 0.0f;
     float radius = 10.0f;
+    std::uint32_t castsShadows = 0;
+};
+
+// Global multiplier over every point light's authored intensity — the
+// one-call way for a script to fade the scene's lamps in and out.
+struct SetPointLightScaleCmd {
+    float scale = 1.0f;
 };
 
 struct Command {
@@ -80,6 +89,7 @@ struct Command {
         SetTimeOfDay,
         SetAmbient,
         SetPointLight,
+        SetPointLightScale,
     };
     Type type = Type::LoadModel;
     union {
@@ -91,6 +101,7 @@ struct Command {
         SetTimeOfDayCmd timeOfDay;
         SetAmbientCmd ambient;
         SetPointLightCmd pointLight;
+        SetPointLightScaleCmd pointLightScale;
     };
     Command() : load{} {}
 };

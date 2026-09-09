@@ -154,6 +154,14 @@ Result<std::unique_ptr<DescriptorTable>> DescriptorTable::create(const Device& d
                         .descriptorCount = 1,
                         .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT});
     bindingFlags.push_back(VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT);
+    // Point-light shadow cubes (binding 27): one R32F distance cube per
+    // shadow-casting point-light slot, written after the load-time bake;
+    // shaders sample a slot only when its light flags a written cube.
+    bindings.push_back({.binding = 27,
+                        .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
+                        .descriptorCount = 16, // kMaxPointLights
+                        .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT});
+    bindingFlags.push_back(VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT);
 
     VkDescriptorSetLayoutBindingFlagsCreateInfo flagsInfo{};
     flagsInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
@@ -174,7 +182,7 @@ Result<std::unique_ptr<DescriptorTable>> DescriptorTable::create(const Device& d
 
     std::vector<VkDescriptorPoolSize> poolSizes{
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 21},
-        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, maxTextures + 5},
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, maxTextures + 21},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_SAMPLER, 2}};
     if (rayQuery) {
         poolSizes.push_back({VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1});
@@ -302,6 +310,21 @@ void DescriptorTable::writeShadowMap(std::uint32_t cascade, VkImageView view) {
     write.dstSet = set_;
     write.dstBinding = 8;
     write.dstArrayElement = cascade;
+    write.descriptorCount = 1;
+    write.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+    write.pImageInfo = &info;
+    vkUpdateDescriptorSets(device_->handle(), 1, &write, 0, nullptr);
+}
+
+void DescriptorTable::writePointShadowMap(std::uint32_t index, VkImageView view) {
+    VkDescriptorImageInfo info{};
+    info.imageView = view;
+    info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    VkWriteDescriptorSet write{};
+    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write.dstSet = set_;
+    write.dstBinding = 27;
+    write.dstArrayElement = index;
     write.descriptorCount = 1;
     write.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
     write.pImageInfo = &info;

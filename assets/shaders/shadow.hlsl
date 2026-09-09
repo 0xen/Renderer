@@ -27,10 +27,10 @@ struct LightData {
     float4 fogBoxMin; // volumetric fog box; only the stride matters here
     float4 fogBoxMax;
     float4 fogColor;
-    // Sky/ambient + 16 point lights (2 float4 each); stride only here.
+    // Sky/ambient + 16 point lights (3 float4 each); stride only here.
     float4 skyColor;
     float4 ambientColor;
-    float4 pointLights[32];
+    float4 pointLights[48];
 };
 
 struct ObjectData {

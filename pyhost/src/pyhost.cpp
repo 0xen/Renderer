@@ -181,7 +181,7 @@ PYBIND11_EMBEDDED_MODULE(rend, m) {
     m.def(
         "set_point_light",
         [](std::uint32_t index, std::array<float, 3> position, std::array<float, 3> color,
-           float intensity, float radius) {
+           float intensity, float radius, bool castsShadows) {
             renderer::Command cmd;
             cmd.type = renderer::Command::Type::SetPointLight;
             cmd.pointLight.index = index;
@@ -191,13 +191,27 @@ PYBIND11_EMBEDDED_MODULE(rend, m) {
             }
             cmd.pointLight.intensity = intensity;
             cmd.pointLight.radius = radius;
+            cmd.pointLight.castsShadows = castsShadows ? 1u : 0u;
             pushCommand(cmd);
         },
         py::arg("index"), py::arg("position"),
         py::arg("color") = std::array<float, 3>{1.0f, 1.0f, 1.0f}, py::arg("intensity") = 1.0f,
-        py::arg("radius") = 10.0f,
-        "Set one dynamic point light slot (16 slots, no shadows); "
-        "intensity 0 turns the slot off.");
+        py::arg("radius") = 10.0f, py::arg("casts_shadows") = false,
+        "Set one dynamic point light slot (16 slots); intensity 0 turns "
+        "the slot off. casts_shadows applies to traced shadow rays only — "
+        "baked shadow cubes belong to scene-XML lights.");
+
+    m.def(
+        "set_point_light_scale",
+        [](float scale) {
+            renderer::Command cmd;
+            cmd.type = renderer::Command::Type::SetPointLightScale;
+            cmd.pointLightScale.scale = scale;
+            pushCommand(cmd);
+        },
+        py::arg("scale"),
+        "Scale every point light's authored intensity (0 = all off) — the "
+        "one-call fade for scene-XML lamps.");
 
     m.def(
         "poll_events",

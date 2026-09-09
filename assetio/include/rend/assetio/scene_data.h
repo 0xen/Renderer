@@ -24,13 +24,20 @@ struct CameraDesc {
 };
 
 // Lights describe WHAT the light is, never the technique (shadow maps vs
-// ray tracing is the renderer's offer — docs/ARCHITECTURE.md). Directional
-// only for now; position/range arrive with point/spot types.
+// ray tracing is the renderer's offer — docs/ARCHITECTURE.md).
+// Directional: direction/color/intensity/castsShadows. Point: position/
+// radius/color/intensity/castsShadows (radius = falloff reach; shadows
+// default OFF for point lights — they cost a per-light capture or rays).
+enum class LightType { Directional, Point };
+
 struct LightDesc {
+    LightType type = LightType::Directional;
     std::array<float, 3> direction{0.3f, -1.0f, 0.2f}; // world space, toward the scene
+    std::array<float, 3> position{0.0f, 0.0f, 0.0f};   // point lights only
+    float radius = 10.0f;                              // point falloff reach
     std::array<float, 3> color{1.0f, 1.0f, 1.0f};
     float intensity = 1.0f;
-    bool castsShadows = true;
+    bool castsShadows = true; // parse default: true directional, false point
 };
 
 // Where a reflection probe captures its surroundings from. Like lights it

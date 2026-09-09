@@ -74,6 +74,9 @@ public:
     void writeShadowMap(std::uint32_t cascade, VkImageView view);
     // Binding 18: the reflection probe's cube view.
     void writeProbe(VkImageView view);
+    // Binding 27: one point light's shadow-distance cube (index = the
+    // light's slot, 0..15). Not update-after-bind — idle around writes.
+    void writePointShadowMap(std::uint32_t index, VkImageView view);
     // Binding 10 (RayQuery devices only): the scene TLAS.
     void writeAccelerationStructure(VkAccelerationStructureKHR tlas);
 
