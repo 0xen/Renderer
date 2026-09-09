@@ -165,13 +165,6 @@ Result<SceneDesc> parseScene(const std::filesystem::path& xmlFile) {
         desc.pipelinePath = model.child("Shader").attribute("path").as_string("");
         desc.reflective = model.attribute("reflective").as_bool(false);
         desc.lodEnabled = model.attribute("lod").as_bool(true);
-        // Optional scene-local fragment shader override: precompiled
-        // SPIR-V shipped WITH the scene (offline dxc, never runtime),
-        // resolved against the XML's folder like mesh paths.
-        if (const char* fragment = model.child("Shader").attribute("fragment").as_string("");
-            *fragment != '\0') {
-            desc.fragmentShaderPath = std::filesystem::absolute(baseDir / fragment);
-        }
         const char* meshPath = model.child("Mesh").attribute("path").as_string("");
         if (*meshPath == '\0') {
             return Error{std::format("Model '{}' has no <Mesh path=...>", desc.name)};

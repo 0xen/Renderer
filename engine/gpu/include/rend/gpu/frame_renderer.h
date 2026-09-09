@@ -148,15 +148,13 @@ struct DrawBatch {
     // gets recorded — invalidate static recordings after flipping it.
     const Pipeline* rtPrimaryPipeline = nullptr;
     bool rtPrimary = false;
-    // Deferred shading (IndirectCount mode, needs setDeferredTargets):
-    // when BOTH pipelines are set, the opaque stream is rasterized into
-    // the G-buffer targets first (gbufferPipeline: scene VS + attribute
-    // MRT fragment shader), then the composite pass on the swapchain
-    // starts with one fullscreen lighting triangle (lightingPipeline,
-    // depth test off) that reads bindings 28-31 before the sky /
-    // transparent / proxy draws run as usual. Null = forward shading
-    // (today's single pass). Toggling changes what gets recorded —
-    // invalidate static recordings after flipping.
+    // THE raster scene path (deferred shading; requires setDeferredTargets
+    // called once): the opaque stream is rasterized into the G-buffer
+    // targets (gbufferPipeline: scene VS + attribute-MRT fragment shader),
+    // then the composite pass on the swapchain starts with one fullscreen
+    // lighting triangle (lightingPipeline, depth test off) that reads
+    // bindings 28-31 before the sky / transparent / proxy draws. Both
+    // REQUIRED on every raster batch — there is no forward opaque path.
     const Pipeline* gbufferPipeline = nullptr;
     const Pipeline* lightingPipeline = nullptr;
     // GPU skinning (optional): compute dispatches that pose animated
@@ -197,10 +195,11 @@ public:
     FrameRenderer& operator=(const FrameRenderer&) = delete;
 
     // Records and submits one frame. With a batch, the frame renders it
-    // depth-tested via indirect draws; without one it draws the pipeline's
-    // own geometry (the milestone-6 triangle) with no depth attachment —
-    // the pipeline's depthFormat must match. Out-of-date/suboptimal
-    // swapchains are recreated transparently.
+    // through the batch's own pipelines (G-buffer + lighting, or traced
+    // primary) and `pipeline` is unused; without one it draws the
+    // pipeline's own geometry (the fallback triangle) with no depth
+    // attachment — that pipeline's depthFormat must match. Out-of-date/
+    // suboptimal swapchains are recreated transparently.
     Result<void> drawFrame(const Pipeline& pipeline, const DrawBatch* batch = nullptr);
 
     // Static recording (the milestone-7 experiment): command buffers are
