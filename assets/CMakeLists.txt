@@ -16,8 +16,6 @@ set(REND_SHADER_OUT_DIR "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/data/shader
 
 # source | entry point | dxc profile | artifact | optional -D defines
 set(REND_SHADER_STAGES
-    "triangle.hlsl|VSMain|vs_6_0|triangle.vert.spv"
-    "triangle.hlsl|PSMain|ps_6_0|triangle.frag.spv"
     "scene.hlsl|VSMain|vs_6_0|scene.vert.spv"
     "scene.hlsl|PSMain|ps_6_0|scene.frag.spv|-DRT_SHADOWS=0"
     # ps_6_5: RayQuery needs shader model 6.5 (SPV_KHR_ray_query).
@@ -82,14 +80,14 @@ endforeach()
 # The .hlsl sources are listed for IDE browsing only — Visual Studio would
 # otherwise hand them to its built-in FXC rule instead of our dxc command.
 set_source_files_properties(
-    shaders/triangle.hlsl shaders/scene.hlsl shaders/cull.hlsl shaders/shadow.hlsl
+    shaders/scene.hlsl shaders/cull.hlsl shaders/shadow.hlsl
     shaders/rt_primary.hlsl shaders/skin.hlsl shaders/proxy.hlsl shaders/sky.hlsl
     shaders/point_shadow.hlsl shaders/gbuffer.hlsl shaders/deferred.hlsl
     shaders/shading.hlsli shaders/lighting.hlsli shaders/rt_common.hlsli
     PROPERTIES VS_TOOL_OVERRIDE "None")
 
 add_custom_target(shaders ALL DEPENDS ${REND_SHADER_ARTIFACTS}
-    SOURCES shaders/triangle.hlsl shaders/scene.hlsl shaders/cull.hlsl shaders/shadow.hlsl
+    SOURCES shaders/scene.hlsl shaders/cull.hlsl shaders/shadow.hlsl
             shaders/rt_primary.hlsl shaders/skin.hlsl shaders/proxy.hlsl shaders/sky.hlsl
             shaders/point_shadow.hlsl shaders/gbuffer.hlsl shaders/deferred.hlsl
             shaders/shading.hlsli shaders/lighting.hlsli shaders/rt_common.hlsli)

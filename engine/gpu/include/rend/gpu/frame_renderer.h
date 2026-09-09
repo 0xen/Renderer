@@ -196,11 +196,11 @@ public:
 
     // Records and submits one frame. With a batch, the frame renders it
     // through the batch's own pipelines (G-buffer + lighting, or traced
-    // primary) and `pipeline` is unused; without one it draws the
-    // pipeline's own geometry (the fallback triangle) with no depth
-    // attachment — that pipeline's depthFormat must match. Out-of-date/
-    // suboptimal swapchains are recreated transparently.
-    Result<void> drawFrame(const Pipeline& pipeline, const DrawBatch* batch = nullptr);
+    // primary); without one only the clear color (plus any overlay) is
+    // presented — the app withholds the batch while a loading cover
+    // hides the scene. Out-of-date/suboptimal swapchains are recreated
+    // transparently.
+    Result<void> drawFrame(const DrawBatch* batch = nullptr);
 
     // Static recording (the milestone-7 experiment): command buffers are
     // recorded once per (frame slot, swapchain image) and reused every
@@ -279,8 +279,8 @@ private:
     Result<void> recreateSwapchain();
     Result<void> waitForFence(VkFence fence, const char* what) const;
     Result<void> record(VkCommandBuffer cmd, std::uint32_t imageIndex, std::uint32_t slot,
-                        const Pipeline& pipeline, const DrawBatch* batch, bool reusable) const;
-    Result<void> prerecordStatic(const Pipeline& pipeline, const DrawBatch* batch);
+                        const DrawBatch* batch, bool reusable) const;
+    Result<void> prerecordStatic(const DrawBatch* batch);
     void invalidateStatic();
     Result<void> recordOverlay(VkCommandBuffer cmd, std::uint32_t imageIndex) const;
 

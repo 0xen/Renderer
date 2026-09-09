@@ -2144,30 +2144,6 @@ int main(int argc, char** argv) {
 
     // Shaders are compiled offline (dxc) into data/shaders next to the exe.
     const auto shaderDir = executableDirectory() / "data" / "shaders";
-    auto vertexResult = gpu::Shader::createFromFile(*device, shaderDir / "triangle.vert.spv");
-    if (!vertexResult) {
-        log::error("{}", vertexResult.error().message);
-        return 1;
-    }
-    auto fragmentResult = gpu::Shader::createFromFile(*device, shaderDir / "triangle.frag.spv");
-    if (!fragmentResult) {
-        log::error("{}", fragmentResult.error().message);
-        return 1;
-    }
-    auto vertexShader = std::move(vertexResult).value();
-    auto fragmentShader = std::move(fragmentResult).value();
-
-    auto pipelineResult = gpu::Pipeline::createGraphics(*device,
-                                                        {
-                                                            .vertexShader = vertexShader.get(),
-                                                            .fragmentShader = fragmentShader.get(),
-                                                            .colorFormat = swapchain->imageFormat(),
-                                                        });
-    if (!pipelineResult) {
-        log::error("Pipeline creation failed: {}", pipelineResult.error().message);
-        return 1;
-    }
-    auto pipeline = std::move(pipelineResult).value();
 
     // Scene pass pipeline: interleaved vertex input from the geometry pool,
     // depth-tested, camera via push constant.
@@ -2464,7 +2440,7 @@ int main(int argc, char** argv) {
     }
 
     // With a scene, every frame is the indirect batch over the geometry
-    // pool; without one, the milestone-6 triangle stays as the fallback.
+    // pool; without one, frames present only the clear color + UI.
     const bool drawScene = gbufferPipeline && lightingPipeline && indirectBuffer &&
                            !geometry.empty();
     gpu::DrawBatch batch;
@@ -4261,13 +4237,11 @@ int main(int argc, char** argv) {
         }
 
         // Wait-mode loading holds the scene entirely off the frame (the
-        // fallback clear + the fullscreen ImGui cover render instead);
-        // streaming mode draws it from the first frame, white textures
-        // popping to real ones as they land.
+        // batch is withheld, so only the clear color and the fullscreen
+        // ImGui cover render); streaming mode draws it from the first
+        // frame, white textures popping to real ones as they land.
         const bool sceneVisible = drawScene && !waitForTextures;
-        // The pipeline argument only matters without a batch (the fallback
-        // triangle); scene frames bind the batch's own pipelines.
-        if (auto r = renderer->drawFrame(*pipeline, sceneVisible ? &batch : nullptr);
+        if (auto r = renderer->drawFrame(sceneVisible ? &batch : nullptr);
             !r) {
             log::error("Frame failed: {}", r.error().message);
             running = false;
@@ -4313,9 +4287,6 @@ int main(int argc, char** argv) {
     // then destroys. It also owns the surface, so it must precede the instance.
     swapchain.reset();
     renderer.reset();
-    pipeline.reset();
-    fragmentShader.reset();
-    vertexShader.reset();
     target.reset();
     backend->shutdown();
     return 0;

@@ -221,8 +221,8 @@ Result<void> FrameRenderer::recreateSwapchain() {
 }
 
 Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex,
-                                   std::uint32_t slot, const Pipeline& pipeline,
-                                   const DrawBatch* batch, bool reusable) const {
+                                   std::uint32_t slot, const DrawBatch* batch,
+                                   bool reusable) const {
     REND_PROFILE_ZONE("RecordScene");
     VkCommandBufferBeginInfo begin{};
     begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -770,12 +770,9 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
                 vkCmdDraw(cmd, 36, batch->drawCount, 0, 0);
             }
         }
-    } else {
-        // No batch: the fallback triangle with the caller's pipeline —
-        // the only remaining use of the pipeline argument.
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.handle());
-        vkCmdDraw(cmd, 3, 1, 0, 0);
     }
+    // No batch: nothing draws — the cleared swapchain image (plus the
+    // overlay pass) is the whole frame.
 
     vkCmdEndRendering(cmd);
 
@@ -874,7 +871,7 @@ void FrameRenderer::invalidateStatic() {
     staticValid_ = false;
 }
 
-Result<void> FrameRenderer::prerecordStatic(const Pipeline& pipeline, const DrawBatch* batch) {
+Result<void> FrameRenderer::prerecordStatic(const DrawBatch* batch) {
     REND_PROFILE_ZONE("PrerecordStatic");
     invalidateStatic();
 
@@ -896,7 +893,7 @@ Result<void> FrameRenderer::prerecordStatic(const Pipeline& pipeline, const Draw
     for (std::uint32_t slot = 0; slot < kFramesInFlight; ++slot) {
         for (std::uint32_t image = 0; image < imageCount; ++image) {
             if (auto r = record(staticBuffers_[std::size_t{slot} * imageCount + image], image, slot,
-                                pipeline, batch, /*reusable=*/true);
+                                batch, /*reusable=*/true);
                 !r) {
                 invalidateStatic();
                 return r.error();
@@ -937,7 +934,7 @@ Result<void> FrameRenderer::waitForFence(VkFence fence, const char* what) const 
     }
 }
 
-Result<void> FrameRenderer::drawFrame(const Pipeline& pipeline, const DrawBatch* batch) {
+Result<void> FrameRenderer::drawFrame(const DrawBatch* batch) {
     REND_PROFILE_ZONE("DrawFrame");
     if (resizeRequested_) {
         if (pendingWidth_ == 0 || pendingHeight_ == 0) {
@@ -978,7 +975,7 @@ Result<void> FrameRenderer::drawFrame(const Pipeline& pipeline, const DrawBatch*
     VkCommandBuffer cmd = VK_NULL_HANDLE;
     if (staticEnabled_) {
         if (!staticValid_) {
-            if (auto r = prerecordStatic(pipeline, batch); !r) {
+            if (auto r = prerecordStatic(batch); !r) {
                 return r.error();
             }
         }
@@ -987,7 +984,7 @@ Result<void> FrameRenderer::drawFrame(const Pipeline& pipeline, const DrawBatch*
         const auto recordStart = std::chrono::steady_clock::now();
         cmd = frame.commandBuffer;
         vkResetCommandBuffer(cmd, 0);
-        if (auto r = record(cmd, imageIndex, frameIndex_, pipeline, batch, /*reusable=*/false);
+        if (auto r = record(cmd, imageIndex, frameIndex_, batch, /*reusable=*/false);
             !r) {
             return r.error();
         }
