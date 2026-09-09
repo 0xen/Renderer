@@ -2,6 +2,7 @@
 
 #include "rend/core/result.h"
 #include "rend/gpu/acceleration_structure.h"
+#include "rend/gpu/pipeline.h" // kFormat* constants for kGBufferFormats
 
 #include <array>
 #include <cstdint>
@@ -260,6 +261,12 @@ public:
     // Null disables deferred targets. The number/order/formats here must
     // match the gbuffer pipeline's colorFormats and the lighting shader.
     static constexpr std::uint32_t kGBufferTargets = 4;
+    // Attachment order = descriptor binding order (28-31): albedo (sRGB),
+    // world normal (16F), material params (unorm), view depth (32F, the
+    // cleared 0 marks background). The gbuffer pipeline's colorFormats and
+    // the lighting shader's Loads follow this order.
+    static constexpr std::array<std::uint32_t, kGBufferTargets> kGBufferFormats{
+        kFormatR8G8B8A8Srgb, kFormatR16G16B16A16Sfloat, kFormatR8G8B8A8Unorm, kFormatR32Sfloat};
     Result<void> setDeferredTargets(DescriptorTable* table);
 
 private:

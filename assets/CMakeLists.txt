@@ -34,6 +34,11 @@ set(REND_SHADER_STAGES
     "sky.hlsl|VSMain|vs_6_0|sky.vert.spv"
     "sky.hlsl|PSMain|ps_6_0|sky.frag.spv"
     "point_shadow.hlsl|PSMain|ps_6_0|point_shadow.frag.spv"
+    "gbuffer.hlsl|PSMain|ps_6_0|gbuffer.frag.spv"
+    "deferred.hlsl|VSMain|vs_6_0|deferred.vert.spv"
+    "deferred.hlsl|PSMain|ps_6_0|deferred.frag.spv|-DRT_SHADOWS=0"
+    # ps_6_5: RayQuery needs shader model 6.5 (SPV_KHR_ray_query).
+    "deferred.hlsl|PSMain|ps_6_5|deferred_rt.frag.spv|-DRT_SHADOWS=1"
 )
 
 set(REND_SHADER_ARTIFACTS "")
@@ -67,6 +72,7 @@ foreach(stage IN LISTS REND_SHADER_STAGES)
         # #include paths relative to the source file itself.
         DEPENDS "${source_path}"
                 "${CMAKE_CURRENT_SOURCE_DIR}/shaders/shading.hlsli"
+                "${CMAKE_CURRENT_SOURCE_DIR}/shaders/lighting.hlsli"
                 "${CMAKE_CURRENT_SOURCE_DIR}/shaders/rt_common.hlsli"
         COMMENT "dxc ${source} [${profile} ${entrypoint}] -> ${artifact}"
         VERBATIM)
@@ -78,11 +84,13 @@ endforeach()
 set_source_files_properties(
     shaders/triangle.hlsl shaders/scene.hlsl shaders/cull.hlsl shaders/shadow.hlsl
     shaders/rt_primary.hlsl shaders/skin.hlsl shaders/proxy.hlsl shaders/sky.hlsl
-    shaders/point_shadow.hlsl shaders/shading.hlsli shaders/rt_common.hlsli
+    shaders/point_shadow.hlsl shaders/gbuffer.hlsl shaders/deferred.hlsl
+    shaders/shading.hlsli shaders/lighting.hlsli shaders/rt_common.hlsli
     PROPERTIES VS_TOOL_OVERRIDE "None")
 
 add_custom_target(shaders ALL DEPENDS ${REND_SHADER_ARTIFACTS}
     SOURCES shaders/triangle.hlsl shaders/scene.hlsl shaders/cull.hlsl shaders/shadow.hlsl
             shaders/rt_primary.hlsl shaders/skin.hlsl shaders/proxy.hlsl shaders/sky.hlsl
-            shaders/point_shadow.hlsl shaders/shading.hlsli shaders/rt_common.hlsli)
+            shaders/point_shadow.hlsl shaders/gbuffer.hlsl shaders/deferred.hlsl
+            shaders/shading.hlsli shaders/lighting.hlsli shaders/rt_common.hlsli)
 set_target_properties(shaders PROPERTIES FOLDER "assets")

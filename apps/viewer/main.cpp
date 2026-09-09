@@ -672,6 +672,9 @@ int main(int argc, char** argv) {
     // GPU occlusion culling (proxy-pass visibility, IndirectCount mode);
     // --noocclusion turns it off for A/B comparisons.
     bool occlusionCull = true;
+    // Deferred shading (G-buffer + fullscreen lighting, IndirectCount
+    // mode): --deferred opts in while the path is being brought up.
+    bool deferredShading = false;
     std::uint64_t benchFrames = 0; // non-zero: exit after N frames with a report
     // Streaming test harness: auto-spawn this model at random intervals
     // through the message queue.
@@ -706,6 +709,8 @@ int main(int argc, char** argv) {
             lodSelect = false;
         } else if (arg == "--noocclusion") {
             occlusionCull = false;
+        } else if (arg == "--deferred") {
+            deferredShading = true;
         } else if (arg == "--spawn-test" && i + 1 < argc) {
             spawnTestPath = argv[++i];
         } else if (arg == "--bench" && i + 1 < argc) {
@@ -2178,8 +2183,12 @@ int main(int argc, char** argv) {
     std::unique_ptr<gpu::Pipeline> occlusionPipeline;
     std::unique_ptr<gpu::Pipeline> shadowPipeline;
     std::unique_ptr<gpu::Pipeline> skinPipeline;
+    std::unique_ptr<gpu::Pipeline> gbufferPipeline;
+    std::unique_ptr<gpu::Pipeline> lightingPipeline;
     std::unique_ptr<gpu::Shader> sceneVert, sceneFrag, cullShader, shadowVert, shadowFrag,
-        skinShader, proxyVert, proxyFrag, skyVert, skyFrag;
+        skinShader, proxyVert, proxyFrag, skyVert, skyFrag, gbufferFrag, deferredVert,
+        deferredFrag;
+    bool sceneFragmentOverride = false;
     if (scene) {
         auto vertResult = gpu::Shader::createFromFile(*device, shaderDir / "scene.vert.spv");
         // Scene-shipped fragment override (scene-local looks like toon)
@@ -2194,6 +2203,7 @@ int main(int argc, char** argv) {
             if (!model.desc.fragmentShaderPath.empty()) {
                 if (std::filesystem::exists(model.desc.fragmentShaderPath)) {
                     fragmentPath = model.desc.fragmentShaderPath;
+                    sceneFragmentOverride = true; // forward-only contract
                     log::info("Scene fragment override: {}", fragmentPath.string());
                 } else {
                     log::warn("Scene fragment override missing, using built-in: {}",
@@ -2279,6 +2289,65 @@ int main(int argc, char** argv) {
         } else {
             log::warn("Sky shaders unavailable: {}",
                       (!skyVertResult ? skyVertResult : skyFragResult).error().message);
+        }
+
+        // Deferred shading pair (IndirectCount mode): the G-buffer pass
+        // reuses scene.vert with the attribute-MRT fragment shader; the
+        // lighting pass is a fullscreen triangle Loading bindings 28-31.
+        // Non-fatal — a failure just leaves forward shading. Scene
+        // fragment overrides are forward-only (they ARE forward shaders).
+        if (!sceneFragmentOverride) {
+            auto gbufferFragResult =
+                gpu::Shader::createFromFile(*device, shaderDir / "gbuffer.frag.spv");
+            auto deferredVertResult =
+                gpu::Shader::createFromFile(*device, shaderDir / "deferred.vert.spv");
+            auto deferredFragResult = gpu::Shader::createFromFile(
+                *device, shaderDir / (rtReady ? "deferred_rt.frag.spv" : "deferred.frag.spv"));
+            if (gbufferFragResult && deferredVertResult && deferredFragResult) {
+                gbufferFrag = std::move(gbufferFragResult).value();
+                deferredVert = std::move(deferredVertResult).value();
+                deferredFrag = std::move(deferredFragResult).value();
+                std::vector<std::uint32_t> gbufferFormats(
+                    gpu::FrameRenderer::kGBufferFormats.begin(),
+                    gpu::FrameRenderer::kGBufferFormats.end());
+                auto gbufferResult = gpu::Pipeline::createGraphics(
+                    *device, {
+                                 .vertexShader = sceneVert.get(),
+                                 .fragmentShader = gbufferFrag.get(),
+                                 .colorFormats = std::move(gbufferFormats),
+                                 .vertexStride = kVertexStride,
+                                 .vertexAttributes = {{0, gpu::kFormatR32G32B32Sfloat, 0},
+                                                      {1, gpu::kFormatR32G32B32Sfloat, 12},
+                                                      {2, gpu::kFormatR32G32Sfloat, 24}},
+                                 .depthFormat = gpu::kFormatD32Sfloat,
+                                 .pushConstantBytes = 2 * sizeof(std::uint32_t),
+                                 .descriptorLayout = descriptorTable->layout(),
+                             });
+                auto lightingResult = gpu::Pipeline::createGraphics(
+                    *device, {
+                                 .vertexShader = deferredVert.get(),
+                                 .fragmentShader = deferredFrag.get(),
+                                 .colorFormat = swapchain->imageFormat(),
+                                 .depthFormat = gpu::kFormatD32Sfloat,
+                                 .pushConstantBytes = 2 * sizeof(std::uint32_t),
+                                 .descriptorLayout = descriptorTable->layout(),
+                                 .disableDepthTest = true,
+                             });
+                if (gbufferResult && lightingResult) {
+                    gbufferPipeline = std::move(gbufferResult).value();
+                    lightingPipeline = std::move(lightingResult).value();
+                } else {
+                    log::warn("Deferred pipelines unavailable: {}",
+                              (!gbufferResult ? gbufferResult : lightingResult).error().message);
+                }
+            } else {
+                log::warn("Deferred shaders unavailable: {}",
+                          (!gbufferFragResult   ? gbufferFragResult
+                           : !deferredVertResult ? deferredVertResult
+                                                 : deferredFragResult)
+                              .error()
+                              .message);
+            }
         }
 
         // The compaction pass (IndirectCount mode only). A failure here is
@@ -2478,6 +2547,16 @@ int main(int argc, char** argv) {
                 std::uint64_t{templateCapacity} * sizeof(std::uint32_t);
             batch.cullFlags = (frustumCull ? 1u : 0u) | (lodSelect ? 2u : 0u) |
                               (occlusionCull && occlusionPipeline ? 4u : 0u);
+            // Deferred shading rides the same culled opaque stream; both
+            // pipelines present = record() takes the G-buffer + lighting
+            // path instead of the forward opaque draw.
+            if (deferredShading && gbufferPipeline && lightingPipeline) {
+                batch.gbufferPipeline = gbufferPipeline.get();
+                batch.lightingPipeline = lightingPipeline.get();
+                log::info("Deferred shading active (G-buffer + fullscreen lighting)");
+            } else if (deferredShading) {
+                log::warn("Deferred shading requested but unavailable; forward shading");
+            }
         } else {
             batch.indirect = indirectBuffer->handle();
         }

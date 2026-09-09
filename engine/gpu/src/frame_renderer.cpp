@@ -10,6 +10,7 @@
 
 #include <volk.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cstring>
 
@@ -22,13 +23,6 @@ namespace {
 // the process stays killable) instead of silently hanging.
 constexpr std::uint64_t kWaitTimeoutNs = 2'000'000'000ull;
 constexpr int kMaxStalledWaits = 5;
-
-// G-buffer target formats, in attachment/binding order (bindings 28-31):
-// albedo (sRGB), world normal (16F), material params (unorm), view depth
-// (32F, 0 = background). The gbuffer pipeline's colorFormats and the
-// lighting shader's Load()s follow this order.
-constexpr std::array<std::uint32_t, 4> kGBufferFormats{
-    kFormatR8G8B8A8Srgb, kFormatR16G16B16A16Sfloat, kFormatR8G8B8A8Unorm, kFormatR32Sfloat};
 
 // Barrier helper: the swapchain image's previous contents are always
 // discarded (loadOp CLEAR), so the source layout is UNDEFINED every frame.
@@ -146,7 +140,6 @@ Result<void> FrameRenderer::createDepthBuffer() {
 }
 
 Result<void> FrameRenderer::createGBuffer() {
-    static_assert(kGBufferFormats.size() == kGBufferTargets);
     for (std::uint32_t i = 0; i < kGBufferTargets; ++i) {
         auto result = Image::create(*device_, {
                                                   .width = swapchain_->width(),
@@ -242,6 +235,12 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
     // cascades, no compaction, no indirect stream — one fullscreen triangle
     // whose fragments walk the TLAS instead.
     const bool rtDraw = batch && batch->rtPrimary && batch->rtPrimaryPipeline;
+    // Deferred shading: the opaque stream rasterizes surface attributes
+    // into the G-buffer first, and the composite pass on the swapchain
+    // opens with a fullscreen lighting triangle instead of the opaque
+    // draw. Baked into the recording — invalidate after toggling.
+    const bool deferred = batch && !rtDraw && batch->gbufferPipeline &&
+                          batch->lightingPipeline && gbuffer_[0] != nullptr;
 
     if (batch && batch->skinPipeline && !batch->skinDispatches.empty()) {
         // Pose animated vertices into this slot's pool regions. Order
@@ -536,6 +535,110 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
         }
     }
 
+    if (deferred) {
+        // G-buffer pass: rasterize the opaque stream's surface attributes
+        // into the four screen-sized targets plus depth. Target contents
+        // are cleared, so old layouts are UNDEFINED; the barriers order
+        // against the previous frame's lighting-pass reads.
+        std::array<VkImageMemoryBarrier2, kGBufferTargets> toGBufferWrite{};
+        for (std::uint32_t i = 0; i < kGBufferTargets; ++i) {
+            toGBufferWrite[i] = imageBarrier(
+                gbuffer_[i]->handle(), VK_IMAGE_LAYOUT_UNDEFINED,
+                VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+                0, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+        }
+        // Depth is cleared here and consumed by the composite pass's
+        // depth-tested draws (sky/transparent/proxy); the barrier orders
+        // against the previous frame's depth accesses.
+        VkImageMemoryBarrier2 toDepthWrite = imageBarrier(
+            depth_->handle(), VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+            VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
+            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+            VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
+            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+                VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT);
+        toDepthWrite.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+
+        std::array<VkImageMemoryBarrier2, kGBufferTargets + 1> gbufferBarriers{};
+        std::copy(toGBufferWrite.begin(), toGBufferWrite.end(), gbufferBarriers.begin());
+        gbufferBarriers.back() = toDepthWrite;
+        VkDependencyInfo gbufferDependency{};
+        gbufferDependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        gbufferDependency.imageMemoryBarrierCount =
+            static_cast<std::uint32_t>(gbufferBarriers.size());
+        gbufferDependency.pImageMemoryBarriers = gbufferBarriers.data();
+        vkCmdPipelineBarrier2(cmd, &gbufferDependency);
+
+        std::array<VkRenderingAttachmentInfo, kGBufferTargets> gbufferColors{};
+        for (std::uint32_t i = 0; i < kGBufferTargets; ++i) {
+            gbufferColors[i].sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+            gbufferColors[i].imageView = gbuffer_[i]->view();
+            gbufferColors[i].imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            gbufferColors[i].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+            gbufferColors[i].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+            // All-zero clears: the zeroed view-depth target is the
+            // lighting pass's background sentinel.
+            gbufferColors[i].clearValue.color = {{0.0f, 0.0f, 0.0f, 0.0f}};
+        }
+        VkRenderingAttachmentInfo gbufferDepth{};
+        gbufferDepth.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+        gbufferDepth.imageView = depth_->view();
+        gbufferDepth.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+        gbufferDepth.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        gbufferDepth.storeOp = VK_ATTACHMENT_STORE_OP_STORE; // composite pass loads it
+        gbufferDepth.clearValue.depthStencil = {1.0f, 0};
+
+        const VkExtent2D gbufferExtent{swapchain_->width(), swapchain_->height()};
+        VkRenderingInfo gbufferRendering{};
+        gbufferRendering.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+        gbufferRendering.renderArea = {{0, 0}, gbufferExtent};
+        gbufferRendering.layerCount = 1;
+        gbufferRendering.colorAttachmentCount = static_cast<std::uint32_t>(gbufferColors.size());
+        gbufferRendering.pColorAttachments = gbufferColors.data();
+        gbufferRendering.pDepthAttachment = &gbufferDepth;
+        vkCmdBeginRendering(cmd, &gbufferRendering);
+
+        const VkViewport gbufferViewport{0.0f,
+                                         0.0f,
+                                         static_cast<float>(gbufferExtent.width),
+                                         static_cast<float>(gbufferExtent.height),
+                                         0.0f,
+                                         1.0f};
+        const VkRect2D gbufferScissor{{0, 0}, gbufferExtent};
+        vkCmdSetViewport(cmd, 0, 1, &gbufferViewport);
+        vkCmdSetScissor(cmd, 0, 1, &gbufferScissor);
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, batch->gbufferPipeline->handle());
+        bindAndDraw(*batch->gbufferPipeline, 0, 1);
+        vkCmdEndRendering(cmd);
+
+        // Written targets become sampleable by the lighting triangle, and
+        // the stored depth becomes testable by the composite pass's
+        // depth-tested draws (sky/transparent/proxy).
+        std::array<VkImageMemoryBarrier2, kGBufferTargets + 1> toRead{};
+        for (std::uint32_t i = 0; i < kGBufferTargets; ++i) {
+            toRead[i] = imageBarrier(gbuffer_[i]->handle(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                     VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                     VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                                     VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+                                     VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+                                     VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
+        }
+        VkImageMemoryBarrier2 depthToTest = imageBarrier(
+            depth_->handle(), VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+            VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
+            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+            VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
+            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT);
+        depthToTest.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+        toRead.back() = depthToTest;
+        VkDependencyInfo toReadDependency{};
+        toReadDependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        toReadDependency.imageMemoryBarrierCount = static_cast<std::uint32_t>(toRead.size());
+        toReadDependency.pImageMemoryBarriers = toRead.data();
+        vkCmdPipelineBarrier2(cmd, &toReadDependency);
+    }
+
     VkImage image = swapchain_->images()[imageIndex];
 
     VkImageMemoryBarrier2 toColor =
@@ -549,10 +652,12 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
     dependency.pImageMemoryBarriers = &toColor;
     vkCmdPipelineBarrier2(cmd, &dependency);
 
-    if (batch && !rtDraw) {
+    if (batch && !rtDraw && !deferred) {
         // Depth contents are cleared each frame, so the previous frame's
         // layout is irrelevant (UNDEFINED); the barrier orders against the
-        // prior frame's depth accesses.
+        // prior frame's depth accesses. (Deferred already cleared, wrote
+        // and barriered depth in the G-buffer pass — an UNDEFINED
+        // transition here would discard it.)
         VkImageMemoryBarrier2 toDepth = imageBarrier(
             depth_->handle(), VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
             VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
@@ -577,7 +682,9 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
     depth.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
     depth.imageView = depth_ ? depth_->view() : VK_NULL_HANDLE;
     depth.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-    depth.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    // Deferred loads the G-buffer pass's stored depth (the sky/transparent/
+    // proxy draws test against it); forward clears as before.
+    depth.loadOp = deferred ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_CLEAR;
     depth.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     depth.clearValue.depthStencil = {1.0f, 0};
 
@@ -616,10 +723,29 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
                            sizeof(push), push);
         vkCmdDraw(cmd, 3, 1, 0, 0);
     } else {
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.handle());
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                          deferred ? batch->lightingPipeline->handle() : pipeline.handle());
         if (batch) {
-            // The whole scene: geometry pool bound once, opaques first.
-            bindAndDraw(pipeline, 0, 1);
+            if (deferred) {
+                // Deferred lighting: one fullscreen triangle Loads the
+                // G-buffer (bindings 28-31) and shades every covered
+                // pixel; the opaque stream was already rasterized in the
+                // G-buffer pass. Background pixels discard, keeping the
+                // baked clear color for the sky pass to overdraw.
+                if (batch->descriptors != VK_NULL_HANDLE) {
+                    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                            batch->lightingPipeline->layout(), 0, 1,
+                                            &batch->descriptors, 0, nullptr);
+                }
+                const std::uint32_t lightingPush[2] = {slot, 0};
+                vkCmdPushConstants(cmd, batch->lightingPipeline->layout(),
+                                   VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                                   sizeof(lightingPush), lightingPush);
+                vkCmdDraw(cmd, 3, 1, 0, 0);
+            } else {
+                // The whole scene: geometry pool bound once, opaques first.
+                bindAndDraw(pipeline, 0, 1);
+            }
             // Sky pass: fullscreen triangle at the far plane, depth test
             // only — paints the per-slot skyColor over background pixels
             // before the transparents blend on top of it.
