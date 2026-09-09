@@ -144,6 +144,17 @@ Result<std::unique_ptr<Pipeline>> Pipeline::createGraphics(const Device& device,
     multisample.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
     multisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
 
+    // MRT (colorFormats non-empty) wins over the single colorFormat;
+    // blend/write-mask state is identical across attachments.
+    std::vector<VkFormat> colorFormats;
+    if (!desc.colorFormats.empty()) {
+        for (std::uint32_t format : desc.colorFormats) {
+            colorFormats.push_back(static_cast<VkFormat>(format));
+        }
+    } else if (desc.colorFormat != 0) {
+        colorFormats.push_back(static_cast<VkFormat>(desc.colorFormat));
+    }
+
     VkPipelineColorBlendAttachmentState blendAttachment{};
     blendAttachment.blendEnable = desc.alphaBlend ? VK_TRUE : VK_FALSE;
     blendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
@@ -156,11 +167,13 @@ Result<std::unique_ptr<Pipeline>> Pipeline::createGraphics(const Device& device,
         desc.occlusionProxy ? 0
                             : VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
                                   VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    const std::vector<VkPipelineColorBlendAttachmentState> blendAttachments(
+        colorFormats.empty() ? 1 : colorFormats.size(), blendAttachment);
 
     VkPipelineColorBlendStateCreateInfo blend{};
     blend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-    blend.attachmentCount = 1;
-    blend.pAttachments = &blendAttachment;
+    blend.attachmentCount = static_cast<std::uint32_t>(blendAttachments.size());
+    blend.pAttachments = blendAttachments.data();
 
     const std::array<VkDynamicState, 2> dynamicStates{VK_DYNAMIC_STATE_VIEWPORT,
                                                       VK_DYNAMIC_STATE_SCISSOR};
@@ -174,25 +187,26 @@ Result<std::unique_ptr<Pipeline>> Pipeline::createGraphics(const Device& device,
     // settled alongside the pipeline XML.
     VkPipelineDepthStencilStateCreateInfo depthStencil{};
     depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-    depthStencil.depthTestEnable = VK_TRUE;
+    depthStencil.depthTestEnable = desc.disableDepthTest ? VK_FALSE : VK_TRUE;
     // Blended surfaces and occlusion proxies test against the opaque
     // depth but never write it.
     depthStencil.depthWriteEnable =
-        (desc.alphaBlend || desc.occlusionProxy || desc.background) ? VK_FALSE : VK_TRUE;
+        (desc.alphaBlend || desc.occlusionProxy || desc.background || desc.disableDepthTest)
+            ? VK_FALSE
+            : VK_TRUE;
     // LESS_OR_EQUAL for proxies: a flat object's zero-extent box is
     // coplanar with its own rendered surface and must still pass.
     depthStencil.depthCompareOp = (desc.occlusionProxy || desc.background)
                                       ? VK_COMPARE_OP_LESS_OR_EQUAL
                                       : VK_COMPARE_OP_LESS;
 
-    // colorFormat 0 = depth-only pipeline (shadow passes): no color
-    // attachment, no blend state.
-    const VkFormat colorFormat = static_cast<VkFormat>(desc.colorFormat);
+    // No color formats at all = depth-only pipeline (shadow passes): no
+    // color attachment, no blend state.
     VkPipelineRenderingCreateInfo rendering{};
     rendering.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
-    if (desc.colorFormat != 0) {
-        rendering.colorAttachmentCount = 1;
-        rendering.pColorAttachmentFormats = &colorFormat;
+    if (!colorFormats.empty()) {
+        rendering.colorAttachmentCount = static_cast<std::uint32_t>(colorFormats.size());
+        rendering.pColorAttachmentFormats = colorFormats.data();
     } else {
         blend.attachmentCount = 0;
         blend.pAttachments = nullptr;
@@ -229,8 +243,9 @@ Result<std::unique_ptr<Pipeline>> Pipeline::createGraphics(const Device& device,
     pipeline->device_ = &device;
     pipeline->layout_ = layout;
     pipeline->pipeline_ = handle;
-    log::info("Graphics pipeline created (dynamic rendering, color format {})",
-              static_cast<int>(colorFormat));
+    log::info("Graphics pipeline created (dynamic rendering, {} color attachment(s), format {})",
+              colorFormats.size(),
+              colorFormats.empty() ? 0 : static_cast<int>(colorFormats.front()));
     return pipeline;
 }
 

@@ -54,6 +54,12 @@ class Device;
 //   23 — instance rows again, writable (compute; same buffer as 20 — the
 //        cull pass compacts partially visible draws' surviving rows into
 //        per-slot scratch regions above the canonical rows)
+//   24 — transparent draw stream SSBO (compute; the blend pass's list)
+//   25 — mesh LOD tables SSBO (compute; one global region)
+//   26 — occlusion visibility SSBO (fragment + compute; per-slot regions)
+//   27 — point-light shadow cubes [16] (fragment; R32F distance)
+//   28-31 — deferred G-buffer targets (fragment; albedo / world normal /
+//        material params / view depth, rewritten on swapchain recreate)
 class DescriptorTable {
 public:
     static Result<std::unique_ptr<DescriptorTable>> create(const Device& device,
@@ -77,6 +83,10 @@ public:
     // Binding 27: one point light's shadow-distance cube (index = the
     // light's slot, 0..15). Not update-after-bind — idle around writes.
     void writePointShadowMap(std::uint32_t index, VkImageView view);
+    // Any SAMPLED_IMAGE binding/array element (SHADER_READ_ONLY layout);
+    // used for the G-buffer targets 28-31. Not update-after-bind — idle
+    // around writes.
+    void writeSampledImage(std::uint32_t binding, std::uint32_t index, VkImageView view);
     // Binding 10 (RayQuery devices only): the scene TLAS.
     void writeAccelerationStructure(VkAccelerationStructureKHR tlas);
 

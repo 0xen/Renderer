@@ -2,6 +2,7 @@
 
 #include "rend/core/log.h"
 #include "rend/core/profile.h"
+#include "rend/gpu/descriptor_table.h"
 #include "rend/gpu/device.h"
 #include "rend/gpu/image.h"
 #include "rend/gpu/pipeline.h"
@@ -21,6 +22,13 @@ namespace {
 // the process stays killable) instead of silently hanging.
 constexpr std::uint64_t kWaitTimeoutNs = 2'000'000'000ull;
 constexpr int kMaxStalledWaits = 5;
+
+// G-buffer target formats, in attachment/binding order (bindings 28-31):
+// albedo (sRGB), world normal (16F), material params (unorm), view depth
+// (32F, 0 = background). The gbuffer pipeline's colorFormats and the
+// lighting shader's Load()s follow this order.
+constexpr std::array<std::uint32_t, 4> kGBufferFormats{
+    kFormatR8G8B8A8Srgb, kFormatR16G16B16A16Sfloat, kFormatR8G8B8A8Unorm, kFormatR32Sfloat};
 
 // Barrier helper: the swapchain image's previous contents are always
 // discarded (loadOp CLEAR), so the source layout is UNDEFINED every frame.
@@ -137,6 +145,34 @@ Result<void> FrameRenderer::createDepthBuffer() {
     return {};
 }
 
+Result<void> FrameRenderer::createGBuffer() {
+    static_assert(kGBufferFormats.size() == kGBufferTargets);
+    for (std::uint32_t i = 0; i < kGBufferTargets; ++i) {
+        auto result = Image::create(*device_, {
+                                                  .width = swapchain_->width(),
+                                                  .height = swapchain_->height(),
+                                                  .format = kGBufferFormats[i],
+                                                  .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                                                           VK_IMAGE_USAGE_SAMPLED_BIT,
+                                              });
+        if (!result) {
+            return Error{std::format("G-buffer target {}: {}", i, result.error().message)};
+        }
+        gbuffer_[i] = std::move(result).value();
+        deferredTable_->writeSampledImage(28 + i, 0, gbuffer_[i]->view());
+    }
+    return {};
+}
+
+Result<void> FrameRenderer::setDeferredTargets(DescriptorTable* table) {
+    deferredTable_ = table;
+    if (table == nullptr) {
+        gbuffer_ = {};
+        return {};
+    }
+    return createGBuffer();
+}
+
 void FrameRenderer::destroyImageSemaphores() {
     for (VkSemaphore semaphore : renderFinished_) {
         if (semaphore != VK_NULL_HANDLE) {
@@ -180,6 +216,13 @@ Result<void> FrameRenderer::recreateSwapchain() {
     // Depth tracks the swapchain extent (device idle here, see above).
     if (auto r = createDepthBuffer(); !r) {
         return r.error();
+    }
+    // The G-buffer tracks it too; the device-idle window also makes the
+    // non-update-after-bind descriptor rewrites (bindings 28-31) safe.
+    if (deferredTable_ != nullptr) {
+        if (auto r = createGBuffer(); !r) {
+            return r.error();
+        }
     }
     return {};
 }

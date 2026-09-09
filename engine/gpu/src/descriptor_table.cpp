@@ -162,6 +162,18 @@ Result<std::unique_ptr<DescriptorTable>> DescriptorTable::create(const Device& d
                         .descriptorCount = 16, // kMaxPointLights
                         .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT});
     bindingFlags.push_back(VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT);
+    // Deferred G-buffer targets (bindings 28-31): albedo, world normal,
+    // material params, view depth. Written whenever the screen-sized
+    // images are (re)created; the lighting pass Loads them by pixel. Not
+    // update-after-bind — rewrites happen only while the device is idle
+    // (swapchain recreate).
+    for (std::uint32_t binding = 28; binding <= 31; ++binding) {
+        bindings.push_back({.binding = binding,
+                            .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
+                            .descriptorCount = 1,
+                            .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT});
+        bindingFlags.push_back(VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT);
+    }
 
     VkDescriptorSetLayoutBindingFlagsCreateInfo flagsInfo{};
     flagsInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
@@ -182,7 +194,7 @@ Result<std::unique_ptr<DescriptorTable>> DescriptorTable::create(const Device& d
 
     std::vector<VkDescriptorPoolSize> poolSizes{
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 21},
-        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, maxTextures + 21},
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, maxTextures + 25},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_SAMPLER, 2}};
     if (rayQuery) {
         poolSizes.push_back({VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1});
@@ -324,6 +336,22 @@ void DescriptorTable::writePointShadowMap(std::uint32_t index, VkImageView view)
     write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     write.dstSet = set_;
     write.dstBinding = 27;
+    write.dstArrayElement = index;
+    write.descriptorCount = 1;
+    write.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+    write.pImageInfo = &info;
+    vkUpdateDescriptorSets(device_->handle(), 1, &write, 0, nullptr);
+}
+
+void DescriptorTable::writeSampledImage(std::uint32_t binding, std::uint32_t index,
+                                        VkImageView view) {
+    VkDescriptorImageInfo info{};
+    info.imageView = view;
+    info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    VkWriteDescriptorSet write{};
+    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write.dstSet = set_;
+    write.dstBinding = binding;
     write.dstArrayElement = index;
     write.descriptorCount = 1;
     write.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;

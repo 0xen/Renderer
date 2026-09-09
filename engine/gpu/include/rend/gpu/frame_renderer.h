@@ -18,6 +18,7 @@ typedef struct VkDescriptorSet_T* VkDescriptorSet;
 
 namespace rend::gpu {
 
+class DescriptorTable;
 class Device;
 class Image;
 class Pipeline;
@@ -146,6 +147,17 @@ struct DrawBatch {
     // gets recorded — invalidate static recordings after flipping it.
     const Pipeline* rtPrimaryPipeline = nullptr;
     bool rtPrimary = false;
+    // Deferred shading (IndirectCount mode, needs setDeferredTargets):
+    // when BOTH pipelines are set, the opaque stream is rasterized into
+    // the G-buffer targets first (gbufferPipeline: scene VS + attribute
+    // MRT fragment shader), then the composite pass on the swapchain
+    // starts with one fullscreen lighting triangle (lightingPipeline,
+    // depth test off) that reads bindings 28-31 before the sky /
+    // transparent / proxy draws run as usual. Null = forward shading
+    // (today's single pass). Toggling changes what gets recorded —
+    // invalidate static recordings after flipping.
+    const Pipeline* gbufferPipeline = nullptr;
+    const Pipeline* lightingPipeline = nullptr;
     // GPU skinning (optional): compute dispatches that pose animated
     // vertices into per-slot pool regions before any draw pass reads them.
     // push holds the shader's PushConstants with the slot element patched
@@ -240,6 +252,16 @@ public:
 
     void setClearColor(float r, float g, float b, float a = 1.0f) { clearColor_ = {r, g, b, a}; }
 
+    // Deferred G-buffer targets: creates the four screen-sized images
+    // (albedo / world normal / material / view depth) and writes them to
+    // the table's bindings 28-31; both are redone on every swapchain
+    // recreate (the device is idle there, and the bindings are not
+    // update-after-bind). Call once at startup before the first frame.
+    // Null disables deferred targets. The number/order/formats here must
+    // match the gbuffer pipeline's colorFormats and the lighting shader.
+    static constexpr std::uint32_t kGBufferTargets = 4;
+    Result<void> setDeferredTargets(DescriptorTable* table);
+
 private:
     FrameRenderer() = default;
 
@@ -247,6 +269,7 @@ private:
     Result<void> createImageSemaphores();
     void destroyImageSemaphores();
     Result<void> createDepthBuffer();
+    Result<void> createGBuffer();
     Result<void> recreateSwapchain();
     Result<void> waitForFence(VkFence fence, const char* what) const;
     Result<void> record(VkCommandBuffer cmd, std::uint32_t imageIndex, std::uint32_t slot,
@@ -273,6 +296,12 @@ private:
     // Depth buffer at swapchain extent; recreated with it. One is enough
     // for both frames in flight: rendering is serialized by the barriers.
     std::unique_ptr<Image> depth_;
+    // Deferred G-buffer targets at swapchain extent (albedo / normal /
+    // material / view depth); recreated with it and rewritten into the
+    // table's bindings 28-31. Single-instance like depth_ — rendering is
+    // serialized by the barriers. Empty when deferred targets are off.
+    std::array<std::unique_ptr<Image>, kGBufferTargets> gbuffer_{};
+    DescriptorTable* deferredTable_ = nullptr;
 
     // Static-mode recordings, indexed [slot * imageCount + imageIndex];
     // empty while invalid. A (slot, image) pair is never in flight twice,

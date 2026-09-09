@@ -2429,6 +2429,15 @@ int main(int argc, char** argv) {
     }
     auto renderer = std::move(rendererResult).value();
 
+    // Deferred G-buffer targets (bindings 28-31), kept at swapchain extent
+    // by the resize path. Non-fatal: deferred shading just stays
+    // unavailable.
+    if (descriptorTable) {
+        if (auto r = renderer->setDeferredTargets(descriptorTable.get()); !r) {
+            log::warn("Deferred targets unavailable: {}", r.error().message);
+        }
+    }
+
     // With a scene, every frame is the indirect batch over the geometry
     // pool; without one, the milestone-6 triangle stays as the fallback.
     const bool drawScene = scenePipeline && indirectBuffer && !geometry.empty();

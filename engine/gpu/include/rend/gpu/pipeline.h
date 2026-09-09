@@ -17,6 +17,9 @@ class Shader;
 
 // VkFormat values callers need without including Vulkan headers; the
 // pipeline XML's neutral format vocabulary maps onto these.
+inline constexpr std::uint32_t kFormatR8G8B8A8Unorm = 37;
+inline constexpr std::uint32_t kFormatR8G8B8A8Srgb = 43;
+inline constexpr std::uint32_t kFormatR16G16B16A16Sfloat = 97;
 inline constexpr std::uint32_t kFormatR32Sfloat = 100;
 inline constexpr std::uint32_t kFormatR32G32Sfloat = 103;
 inline constexpr std::uint32_t kFormatR32G32B32Sfloat = 106;
@@ -36,6 +39,10 @@ struct GraphicsPipelineDesc {
     // VkFormat of the single color attachment, taken from the swapchain.
     // Dynamic rendering needs the format, not a render pass object.
     std::uint32_t colorFormat = 0;
+    // Multiple render targets (the deferred G-buffer pass): when non-empty
+    // this list wins over colorFormat and declares one attachment per
+    // entry. Blending/write-mask state is replicated across attachments.
+    std::vector<std::uint32_t> colorFormats;
     // Single interleaved vertex binding; stride 0 = no vertex input.
     std::uint32_t vertexStride = 0;
     std::vector<VertexAttribute> vertexAttributes;
@@ -59,6 +66,10 @@ struct GraphicsPipelineDesc {
     // a far-plane fullscreen triangle passes exactly where the cleared
     // depth (1.0) survived the opaques — no depth write, color writes on.
     bool background = false;
+    // Depth test AND write fully off while the pass still has a depth
+    // attachment (depthFormat must match it): the deferred lighting
+    // triangle shades every pixel regardless of stored depth.
+    bool disableDepthTest = false;
 };
 
 struct ComputePipelineDesc {
