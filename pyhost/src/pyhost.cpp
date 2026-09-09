@@ -154,6 +154,18 @@ PYBIND11_EMBEDDED_MODULE(rend, m) {
         "Set the background/sky color the frame paints behind the scene.");
 
     m.def(
+        "set_time_of_day",
+        [](float t) {
+            renderer::Command cmd;
+            cmd.type = renderer::Command::Type::SetTimeOfDay;
+            cmd.timeOfDay.t = t;
+            pushCommand(cmd);
+        },
+        py::arg("t"),
+        "Drive the procedural skybox: day phase in [0,1) (0 sunrise, 0.25 "
+        "noon, 0.5 sunset). Negative disables it (flat sky color).");
+
+    m.def(
         "set_ambient",
         [](std::array<float, 3> color) {
             renderer::Command cmd;

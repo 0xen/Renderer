@@ -48,6 +48,13 @@ struct SetSkyColorCmd {
     float color[3] = {};
 };
 
+// Skybox day phase in [0,1) (0 sunrise, 0.25 noon, 0.5 sunset): enables
+// the sky pass's procedural cube and drives its palette. Negative
+// disables the skybox and falls back to the flat SetSkyColor color.
+struct SetTimeOfDayCmd {
+    float t = -1.0f;
+};
+
 struct SetAmbientCmd {
     float color[3] = {};
 };
@@ -70,6 +77,7 @@ struct Command {
         UnloadModel,
         SetSun,
         SetSkyColor,
+        SetTimeOfDay,
         SetAmbient,
         SetPointLight,
     };
@@ -80,6 +88,7 @@ struct Command {
         UnloadModelCmd unload;
         SetSunCmd sun;
         SetSkyColorCmd sky;
+        SetTimeOfDayCmd timeOfDay;
         SetAmbientCmd ambient;
         SetPointLightCmd pointLight;
     };

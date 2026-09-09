@@ -457,7 +457,8 @@ struct LightData {
     // Dynamic sky/ambient + point lights; the defaults reproduce the old
     // hardcoded look (probe-face regions rely on them).
     std::array<float, 4> skyColor{0.02f, 0.02f, 0.04f, 0.0f}; // rgb bg, w = light count
-    std::array<float, 4> ambientColor{0.30f, 0.32f, 0.36f, 0.0f};
+    // ambientColor.w = skybox day phase in [0,1); negative = flat skyColor.
+    std::array<float, 4> ambientColor{0.30f, 0.32f, 0.36f, -1.0f};
     std::array<PointLight, kMaxPointLights> pointLights{};
 };
 static_assert(sizeof(LightData) == 928);
@@ -2473,6 +2474,9 @@ int main(int argc, char** argv) {
     std::array<float, 3> skyColor{0.02f, 0.02f, 0.04f};
     std::array<float, 3> ambientColor{0.30f, 0.32f, 0.36f};
     std::array<PointLight, kMaxPointLights> pointLights{};
+    // Skybox day phase in [0,1) shading the sky pass's procedural cube;
+    // negative (the default) keeps the flat skyColor background.
+    float timeOfDay = -1.0f;
     // Reflection technique for reflective-tagged objects in the raster
     // path; defaults to the best offer (traced where available, so nothing
     // visually regresses vs. the per-object RT milestone).
@@ -3378,6 +3382,9 @@ int main(int argc, char** argv) {
             case renderer::Command::Type::SetSkyColor:
                 skyColor = {cmd.sky.color[0], cmd.sky.color[1], cmd.sky.color[2]};
                 break;
+            case renderer::Command::Type::SetTimeOfDay:
+                timeOfDay = cmd.timeOfDay.t;
+                break;
             case renderer::Command::Type::SetAmbient:
                 ambientColor = {cmd.ambient.color[0], cmd.ambient.color[1],
                                 cmd.ambient.color[2]};
@@ -3910,7 +3917,8 @@ int main(int argc, char** argv) {
             }
             lightData.skyColor = {skyColor[0], skyColor[1], skyColor[2],
                                   static_cast<float>(activeLights)};
-            lightData.ambientColor = {ambientColor[0], ambientColor[1], ambientColor[2], 0.0f};
+            lightData.ambientColor = {ambientColor[0], ambientColor[1], ambientColor[2],
+                                      timeOfDay};
             lightData.pointLights = pointLights;
             std::memcpy(static_cast<std::byte*>(lightBuffer->mapped()) +
                             renderer->frameSlot() * sizeof(LightData),

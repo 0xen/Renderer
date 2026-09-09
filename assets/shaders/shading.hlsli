@@ -69,7 +69,7 @@ struct LightData {
     // skyColor over background pixels every frame; ambientColor replaces
     // the old hardcoded hemisphere constant (its default matches it).
     float4 skyColor;     // rgb = background color, w = active point lights
-    float4 ambientColor; // rgb = hemispherical ambient tint, w unused
+    float4 ambientColor; // rgb = ambient tint, w = skybox day phase (<0 = flat sky)
     PointLight pointLights[kMaxPointLights];
 };
 
