@@ -673,8 +673,10 @@ int main(int argc, char** argv) {
     // --noocclusion turns it off for A/B comparisons.
     bool occlusionCull = true;
     // Deferred shading (G-buffer + fullscreen lighting, IndirectCount
-    // mode): --deferred opts in while the path is being brought up.
-    bool deferredShading = false;
+    // mode), the default main path; --forward keeps forward shading for
+    // A/B comparisons. Scenes with a fragment override are forward-only
+    // regardless.
+    bool deferredShading = true;
     std::uint64_t benchFrames = 0; // non-zero: exit after N frames with a report
     // Streaming test harness: auto-spawn this model at random intervals
     // through the message queue.
@@ -710,7 +712,9 @@ int main(int argc, char** argv) {
         } else if (arg == "--noocclusion") {
             occlusionCull = false;
         } else if (arg == "--deferred") {
-            deferredShading = true;
+            deferredShading = true; // the default; kept for symmetry
+        } else if (arg == "--forward") {
+            deferredShading = false;
         } else if (arg == "--spawn-test" && i + 1 < argc) {
             spawnTestPath = argv[++i];
         } else if (arg == "--bench" && i + 1 < argc) {
@@ -810,7 +814,7 @@ int main(int argc, char** argv) {
         }
     } else {
         log::info("No scene file given "
-                  "(usage: viewer [--debug] [--novsync] [--static] [--bench N] "
+                  "(usage: viewer [--debug] [--novsync] [--static] [--forward] [--bench N] "
                   "[--draw-mode count|indirect|direct] [--spawn-test model.gltf] <scene.xml>)");
     }
 
@@ -2554,8 +2558,10 @@ int main(int argc, char** argv) {
                 batch.gbufferPipeline = gbufferPipeline.get();
                 batch.lightingPipeline = lightingPipeline.get();
                 log::info("Deferred shading active (G-buffer + fullscreen lighting)");
-            } else if (deferredShading) {
-                log::warn("Deferred shading requested but unavailable; forward shading");
+            } else {
+                log::info("Forward shading ({})", deferredShading
+                                                      ? "deferred unavailable for this scene"
+                                                      : "--forward");
             }
         } else {
             batch.indirect = indirectBuffer->handle();
@@ -4280,6 +4286,18 @@ int main(int argc, char** argv) {
                                           (occlusionCull ? 4u : 0u);
                         renderer->invalidateStaticRecordings();
                         log::info("Occlusion culling {}", occlusionCull ? "on" : "off");
+                    }
+                    if (gbufferPipeline && lightingPipeline &&
+                        ImGui::Checkbox("Deferred shading", &deferredShading)) {
+                        // Pipeline identity is baked into the recordings;
+                        // the flip costs one invalidate stall, like the
+                        // culling toggles above.
+                        batch.gbufferPipeline =
+                            deferredShading ? gbufferPipeline.get() : nullptr;
+                        batch.lightingPipeline =
+                            deferredShading ? lightingPipeline.get() : nullptr;
+                        renderer->invalidateStaticRecordings();
+                        log::info("Deferred shading {}", deferredShading ? "on" : "off");
                     }
                     ImGui::Text("Draws: %u in view / %u live / %u table", lastDrawCounts[1],
                                 lastDrawCounts[0], batch.drawCount);
