@@ -169,14 +169,17 @@ struct DrawBatch {
     };
     const Pipeline* skinPipeline = nullptr;
     std::vector<SkinDispatch> skinDispatches;
-    // Acceleration-structure refit (optional, needs skin dispatches): after
-    // the skin pass poses this slot's vertices, the whole-scene BLAS is
-    // updated in place from refitGeometries[slot] — the build-time geometry
-    // list with animated entries' vertex data pointing at that slot's posed
-    // region — and the TLAS follows so traced passes see the pose. Both
-    // structures must have been built with allowUpdate.
+    // Acceleration-structure upkeep before the passes. refitBlas (needs
+    // skin dispatches): after the skin pass poses this slot's vertices,
+    // the whole-scene BLAS is updated in place from refitGeometries[slot]
+    // — the build-time geometry list with animated entries' vertex data
+    // pointing at that slot's posed region (built with allowUpdate).
+    // tlasRebuild: a DYNAMIC TLAS re-built in place every frame from the
+    // slot's host-visible instance region (buildTopLevelDynamic), so
+    // runtime-spawned instances and their transforms reach traced passes
+    // without touching recordings or descriptors.
     const AccelerationStructure* refitBlas = nullptr;
-    const AccelerationStructure* refitTlas = nullptr;
+    const AccelerationStructure* tlasRebuild = nullptr;
     std::vector<std::vector<AccelerationStructure::TriangleGeometry>> refitGeometries;
 };
 

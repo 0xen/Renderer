@@ -87,6 +87,15 @@ Result<std::unique_ptr<DescriptorTable>> DescriptorTable::create(const Device& d
                                 .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT});
             bindingFlags.push_back(VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT);
         }
+        // Hit->object remap (binding 32): runtime-model TLAS instances
+        // carry a customIndex base into this table so traced hits find
+        // their scattered object rows (the scene instance's sentinel
+        // customIndex bypasses it).
+        bindings.push_back({.binding = 32,
+                            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                            .descriptorCount = 1,
+                            .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT});
+        bindingFlags.push_back(VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT);
     }
     // GPU skinning (bindings 13-17, compute): the geometry pool as a
     // writable destination plus the skin/morph/joint inputs. Always in the
@@ -193,7 +202,7 @@ Result<std::unique_ptr<DescriptorTable>> DescriptorTable::create(const Device& d
     }
 
     std::vector<VkDescriptorPoolSize> poolSizes{
-        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 21},
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 22},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, maxTextures + 25},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_SAMPLER, 2}};
     if (rayQuery) {

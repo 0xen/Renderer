@@ -15,9 +15,23 @@
 // z = per-slot vertex stride for animated meshes (their y points at the
 // posed per-slot regions the BLAS is refitted from; 0 = static), w unused.
 [[vk::binding(12, 0)]] StructuredBuffer<uint4> geometryInfo;
+// Runtime-model hit remap: a runtime TLAS instance's customIndex is a base
+// into this table; base + GeometryIndex = the mesh's object row (runtime
+// rows recycle scattered slots, so the mapping can't be arithmetic).
+[[vk::binding(32, 0)]] StructuredBuffer<uint> rtObjectRemap;
 
 static const uint kVertexStrideBytes = 32u;
 static const uint kMaxTransparencySteps = 4u;
+// The world-baked scene instance's customIndex sentinel: geometry index IS
+// the object index there. Must match kRtSceneCustomIndex in main.cpp.
+static const uint kRtSceneInstance = 0xFFFFFFu;
+
+// Object row for a traced hit: the scene BLAS maps 1:1 by geometry index,
+// runtime BLASes go through their instance's remap block.
+uint hitObjectIndex(uint instanceId, uint geometryIndex) {
+    return instanceId == kRtSceneInstance ? geometryIndex
+                                          : rtObjectRemap[instanceId + geometryIndex];
+}
 
 float3 vertexPosition(uint vertex) {
     return asfloat(geometryBytes.Load3(vertex * kVertexStrideBytes));
@@ -51,7 +65,8 @@ void resolveCandidates(inout RayQuery<RAY_FLAG_NONE> q) {
         if (q.CandidateType() != CANDIDATE_NON_OPAQUE_TRIANGLE) {
             continue;
         }
-        const uint objectIndex = q.CandidateGeometryIndex();
+        const uint objectIndex =
+            hitObjectIndex(q.CandidateInstanceID(), q.CandidateGeometryIndex());
         const ObjectData object = objects[objectIndex];
         if ((object.flags & kFlagTransparent) != 0) {
             q.CommitNonOpaqueTriangleHit();
@@ -136,9 +151,7 @@ float3 shadePointLightsTraced(float3 albedo, float metallic, float roughness, fl
 // is manual): the triangle's uv-per-world-unit density, in log2 space.
 // Final mip = base + 0.5*log2(texel count) + log2(cone width), stretched
 // at grazing incidence. Keeps distant surfaces from mip-0 moire/grain.
-float triangleLodBase(uint3 tri) {
-    const float3 e1 = vertexPosition(tri.y) - vertexPosition(tri.x);
-    const float3 e2 = vertexPosition(tri.z) - vertexPosition(tri.x);
+float triangleLodBase(float3 e1, float3 e2, uint3 tri) {
     const float2 d1 = vertexUv(tri.y) - vertexUv(tri.x);
     const float2 d2 = vertexUv(tri.z) - vertexUv(tri.x);
     const float worldArea = max(length(cross(e1, e2)), 1.0e-12f);
@@ -154,12 +167,11 @@ float textureLod(uint textureIndex, float lodBase, float coneWidth, float ndotd)
 
 // Tangent-space normal map for a traced hit: no screen derivatives here,
 // so the tangent frame comes from the triangle's edges and uv deltas.
-float3 applyNormalMapTraced(uint normalIndex, float3 n, uint3 tri, float2 uv, float lod) {
+float3 applyNormalMapTraced(uint normalIndex, float3 n, float3 e1, float3 e2, uint3 tri,
+                            float2 uv, float lod) {
     if (normalIndex == 0) {
         return n;
     }
-    const float3 e1 = vertexPosition(tri.y) - vertexPosition(tri.x);
-    const float3 e2 = vertexPosition(tri.z) - vertexPosition(tri.x);
     const float2 duv1 = vertexUv(tri.y) - vertexUv(tri.x);
     const float2 duv2 = vertexUv(tri.z) - vertexUv(tri.x);
     const float det = duv1.x * duv2.y - duv2.x * duv1.y;
@@ -199,14 +211,22 @@ struct TracedHit {
     float roughness;
 };
 
-TracedHit shadeCommittedHit(uint objectIndex, uint primitive, float2 bary, float3 origin,
-                            float3 dir, float rayT, float travelled, float conePerUnit,
-                            LightData light) {
+TracedHit shadeCommittedHit(uint objectIndex, float3x4 objectToWorld, uint primitive,
+                            float2 bary, float3 origin, float3 dir, float rayT,
+                            float travelled, float conePerUnit, LightData light) {
     const ObjectData object = objects[objectIndex];
     const uint3 tri = triangleIndices(geometryInfo[objectIndex], primitive);
     const float w0 = 1.0f - bary.x - bary.y;
-    float3 n = normalize(vertexNormal(tri.x) * w0 + vertexNormal(tri.y) * bary.x +
-                         vertexNormal(tri.z) * bary.y);
+    // Vertices are object-space for runtime instances (identity transform
+    // for the world-baked scene instance): edges feed the LOD cone /
+    // tangent frame in world units, normals rotate by the upper 3x3
+    // (placements are rotation + uniform scale, so no inverse-transpose).
+    const float3 p0 = mul(objectToWorld, float4(vertexPosition(tri.x), 1.0f));
+    const float3 e1 = mul(objectToWorld, float4(vertexPosition(tri.y), 1.0f)) - p0;
+    const float3 e2 = mul(objectToWorld, float4(vertexPosition(tri.z), 1.0f)) - p0;
+    float3 n = normalize(mul((float3x3)objectToWorld,
+                             vertexNormal(tri.x) * w0 + vertexNormal(tri.y) * bary.x +
+                                 vertexNormal(tri.z) * bary.y));
     if (dot(n, dir) > 0.0f) {
         n = -n; // shade the side the ray sees (geometry is unculled)
     }
@@ -219,8 +239,8 @@ TracedHit shadeCommittedHit(uint objectIndex, uint primitive, float2 bary, float
     // Manual mip selection from the pixel's ray cone at this distance.
     const float coneWidth = max(travelled * conePerUnit, 1.0e-6f);
     const float ndotd = abs(dot(n, dir));
-    const float lodBase = triangleLodBase(tri);
-    n = applyNormalMapTraced(object.normalIndex, n, tri, uv,
+    const float lodBase = triangleLodBase(e1, e2, tri);
+    n = applyNormalMapTraced(object.normalIndex, n, e1, e2, tri, uv,
                              textureLod(object.normalIndex, lodBase, coneWidth, ndotd));
     float metallic = object.metallicFactor;
     float roughness = object.roughnessFactor;
@@ -274,7 +294,8 @@ float3 traceReflection(float3 origin, float3 dir, float travelled, float conePer
             break;
         }
         const TracedHit hit = shadeCommittedHit(
-            q.CommittedGeometryIndex(), q.CommittedPrimitiveIndex(),
+            hitObjectIndex(q.CommittedInstanceID(), q.CommittedGeometryIndex()),
+            q.CommittedObjectToWorld3x4(), q.CommittedPrimitiveIndex(),
             q.CommittedTriangleBarycentrics(), origin, dir, q.CommittedRayT(),
             travelled + q.CommittedRayT(), conePerUnit, light);
         travelled += q.CommittedRayT();

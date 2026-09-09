@@ -284,13 +284,15 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
         vkCmdPipelineBarrier2(cmd, &skinDependency);
     }
 
-    if (batch && batch->refitBlas && batch->refitTlas && slot < batch->refitGeometries.size() &&
-        !batch->refitGeometries[slot].empty()) {
-        // Refit the BLAS from this slot's posed vertices, then the TLAS so
-        // its instance AABBs follow. The entry barrier makes the skin
-        // writes visible to the build AND — queue-scoped, so it reaches
-        // across submissions — orders it after the previous frame in
-        // flight's ray queries reading the same structures.
+    const bool blasRefit = batch && batch->refitBlas && slot < batch->refitGeometries.size() &&
+                           !batch->refitGeometries[slot].empty();
+    if (blasRefit || (batch && batch->tlasRebuild)) {
+        // Refit the BLAS from this slot's posed vertices (animated scenes)
+        // and/or re-build the dynamic TLAS from this slot's instance
+        // region (runtime models + their transforms). The entry barrier
+        // makes the skin writes visible to the build AND — queue-scoped,
+        // so it reaches across submissions — orders it after the previous
+        // frame in flight's ray queries reading the same structures.
         VkDependencyInfo dependency{};
         dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
         dependency.memoryBarrierCount = 1;
@@ -307,19 +309,24 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
         dependency.pMemoryBarriers = &toBuild;
         vkCmdPipelineBarrier2(cmd, &dependency);
 
-        batch->refitBlas->recordRefit(cmd, batch->refitGeometries[slot]);
+        if (blasRefit) {
+            batch->refitBlas->recordRefit(cmd, batch->refitGeometries[slot]);
 
-        VkMemoryBarrier2 blasToTlas{};
-        blasToTlas.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
-        blasToTlas.srcStageMask = VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR;
-        blasToTlas.srcAccessMask = VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
-        blasToTlas.dstStageMask = VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR;
-        blasToTlas.dstAccessMask = VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR |
-                                   VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
-        dependency.pMemoryBarriers = &blasToTlas;
-        vkCmdPipelineBarrier2(cmd, &dependency);
+            // The TLAS rebuild reads the refitted BLAS AABBs.
+            VkMemoryBarrier2 blasToTlas{};
+            blasToTlas.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+            blasToTlas.srcStageMask = VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR;
+            blasToTlas.srcAccessMask = VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
+            blasToTlas.dstStageMask = VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR;
+            blasToTlas.dstAccessMask = VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR |
+                                       VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
+            dependency.pMemoryBarriers = &blasToTlas;
+            vkCmdPipelineBarrier2(cmd, &dependency);
+        }
 
-        batch->refitTlas->recordRefit(cmd);
+        if (batch->tlasRebuild) {
+            batch->tlasRebuild->recordRebuild(cmd, slot);
+        }
 
         VkMemoryBarrier2 toTrace{};
         toTrace.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;

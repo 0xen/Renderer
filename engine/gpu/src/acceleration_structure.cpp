@@ -8,6 +8,7 @@
 #include <volk.h>
 
 #include <algorithm>
+#include <cstddef>
 #include <cstring>
 #include <format>
 #include <vector>
@@ -88,7 +89,32 @@ struct Built {
     VkAccelerationStructureKHR handle = VK_NULL_HANDLE;
     std::unique_ptr<Buffer> storage;
     std::unique_ptr<Buffer> updateScratch;
+    std::unique_ptr<Buffer> buildScratch; // only when keepBuildScratch
 };
+
+VkDeviceAddress asDeviceAddress(const Device& device, VkAccelerationStructureKHR handle) {
+    VkAccelerationStructureDeviceAddressInfoKHR info{};
+    info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
+    info.accelerationStructure = handle;
+    return vkGetAccelerationStructureDeviceAddressKHR(device.handle(), &info);
+}
+
+// Caller Instance -> Vulkan instance record. A null BLAS makes the entry
+// inactive (address 0) — the dynamic TLAS keeps unused capacity that way.
+VkAccelerationStructureInstanceKHR fillInstance(const AccelerationStructure::Instance& in) {
+    VkAccelerationStructureInstanceKHR inst{};
+    // Column-major 4x4 -> Vulkan's row-major 3x4 (translation in [r][3]).
+    for (int r = 0; r < 3; ++r) {
+        for (int c = 0; c < 4; ++c) {
+            inst.transform.matrix[r][c] = in.transform[c * 4 + r];
+        }
+    }
+    inst.instanceCustomIndex = in.customIndex;
+    inst.mask = in.blas ? 0xFF : 0;
+    inst.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
+    inst.accelerationStructureReference = in.blas ? in.blas->deviceAddress() : 0;
+    return inst;
+}
 
 // Converts caller geometry ranges into the Vulkan build structures —
 // shared by the load-time build and per-frame refits (which pass the same
@@ -127,7 +153,8 @@ Result<Built> buildCommon(
     const Device& device, VkAccelerationStructureTypeKHR type,
     VkAccelerationStructureBuildGeometryInfoKHR& build,
     const std::vector<VkAccelerationStructureBuildRangeInfoKHR>& ranges,
-    const std::vector<std::uint32_t>& primitiveCounts, bool allowUpdate) {
+    const std::vector<std::uint32_t>& primitiveCounts, bool allowUpdate,
+    bool keepBuildScratch = false) {
     build.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
     build.type = type;
     build.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR |
@@ -194,7 +221,11 @@ Result<Built> buildCommon(
         vkDestroyAccelerationStructureKHR(device.handle(), handle, nullptr);
         return r.error();
     }
-    return Built{handle, std::move(storageResult).value(), std::move(updateScratch)};
+    Built built{handle, std::move(storageResult).value(), std::move(updateScratch)};
+    if (keepBuildScratch) {
+        built.buildScratch = std::move(scratchResult).value();
+    }
+    return built;
 }
 
 } // namespace
@@ -226,6 +257,7 @@ Result<std::unique_ptr<AccelerationStructure>> AccelerationStructure::buildBotto
     as->as_ = result.value().handle;
     as->storage_ = std::move(result.value().storage);
     as->updateScratch_ = std::move(result.value().updateScratch);
+    as->deviceAddress_ = asDeviceAddress(device, as->as_);
     log::info("BLAS built: {} geometries{}", geos.size(), allowUpdate ? " (updatable)" : "");
     return as;
 }
@@ -239,20 +271,7 @@ Result<std::unique_ptr<AccelerationStructure>> AccelerationStructure::buildTopLe
     // Instance array in a host-visible buffer the build reads directly.
     std::vector<VkAccelerationStructureInstanceKHR> data(instances.size());
     for (std::size_t i = 0; i < instances.size(); ++i) {
-        auto& inst = data[i];
-        inst = {};
-        inst.transform.matrix[0][0] = 1.0f;
-        inst.transform.matrix[1][1] = 1.0f;
-        inst.transform.matrix[2][2] = 1.0f;
-        inst.instanceCustomIndex = instances[i].customIndex;
-        inst.mask = 0xFF;
-        inst.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
-
-        VkAccelerationStructureDeviceAddressInfoKHR addressInfo{};
-        addressInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
-        addressInfo.accelerationStructure = instances[i].blas->handle();
-        inst.accelerationStructureReference =
-            vkGetAccelerationStructureDeviceAddressKHR(device.handle(), &addressInfo);
+        data[i] = fillInstance(instances[i]);
     }
     auto instanceBufferResult = Buffer::create(
         device, {
@@ -293,6 +312,7 @@ Result<std::unique_ptr<AccelerationStructure>> AccelerationStructure::buildTopLe
     as->as_ = result.value().handle;
     as->storage_ = std::move(result.value().storage);
     as->updateScratch_ = std::move(result.value().updateScratch);
+    as->deviceAddress_ = asDeviceAddress(device, as->as_);
     // Refits reread the instances, so an updatable TLAS keeps the buffer.
     if (allowUpdate) {
         as->instances_ = std::move(instanceBuffer);
@@ -300,6 +320,119 @@ Result<std::unique_ptr<AccelerationStructure>> AccelerationStructure::buildTopLe
     }
     log::info("TLAS built: {} instances{}", data.size(), allowUpdate ? " (updatable)" : "");
     return as;
+}
+
+Result<std::unique_ptr<AccelerationStructure>> AccelerationStructure::buildTopLevelDynamic(
+    const Device& device, std::span<const Instance> initial, std::uint32_t capacity,
+    std::uint32_t slotCount) {
+    REND_PROFILE_ZONE("BuildTLAS");
+    if (capacity == 0 || slotCount == 0 || initial.size() > capacity) {
+        return Error{"dynamic TLAS needs 0 < initial <= capacity and slots > 0"};
+    }
+    // Per-slot instance regions, seeded identically: every slot starts as
+    // `initial` + inactive rows, so the first recorded rebuild of either
+    // slot reproduces the synchronous build below.
+    auto instanceBufferResult = Buffer::create(
+        device, {
+                    .size = std::uint64_t{capacity} * slotCount *
+                            sizeof(VkAccelerationStructureInstanceKHR),
+                    .usage = kUsageAccelBuildInput | kUsageShaderDeviceAddress,
+                    .location = MemoryLocation::HostVisible,
+                });
+    if (!instanceBufferResult) {
+        return Error{std::format("TLAS instances: {}", instanceBufferResult.error().message)};
+    }
+    auto& instanceBuffer = instanceBufferResult.value();
+    std::vector<VkAccelerationStructureInstanceKHR> data(capacity);
+    for (std::size_t i = 0; i < initial.size(); ++i) {
+        data[i] = fillInstance(initial[i]);
+    }
+    for (std::uint32_t slot = 0; slot < slotCount; ++slot) {
+        std::memcpy(static_cast<std::byte*>(instanceBuffer->mapped()) +
+                        std::uint64_t{slot} * capacity *
+                            sizeof(VkAccelerationStructureInstanceKHR),
+                    data.data(), data.size() * sizeof(VkAccelerationStructureInstanceKHR));
+    }
+
+    VkAccelerationStructureGeometryKHR geo{};
+    geo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
+    geo.geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR;
+    geo.geometry.instances.sType =
+        VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR;
+    geo.geometry.instances.data.deviceAddress = bufferAddress(device, instanceBuffer->handle());
+
+    // Size and build for the FULL capacity — the per-frame rebuild records
+    // the same primitive count forever, inactive rows costing ~nothing.
+    std::vector<VkAccelerationStructureBuildRangeInfoKHR> ranges(1);
+    ranges[0].primitiveCount = capacity;
+    const std::vector<std::uint32_t> primitiveCounts{capacity};
+
+    VkAccelerationStructureBuildGeometryInfoKHR build{};
+    build.geometryCount = 1;
+    build.pGeometries = &geo;
+    auto result = buildCommon(device, VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR, build, ranges,
+                              primitiveCounts, /*allowUpdate=*/false, /*keepBuildScratch=*/true);
+    if (!result) {
+        return result.error();
+    }
+    auto as = std::unique_ptr<AccelerationStructure>(new AccelerationStructure());
+    as->device_ = &device;
+    as->as_ = result.value().handle;
+    as->storage_ = std::move(result.value().storage);
+    as->buildScratch_ = std::move(result.value().buildScratch);
+    as->instances_ = std::move(instanceBuffer);
+    as->deviceAddress_ = asDeviceAddress(device, as->as_);
+    as->capacity_ = capacity;
+    as->slotCount_ = slotCount;
+    log::info("Dynamic TLAS built: {} initial instances, capacity {} x {} slots",
+              initial.size(), capacity, slotCount);
+    return as;
+}
+
+void AccelerationStructure::writeInstances(std::uint32_t slot,
+                                           std::span<const Instance> instances) {
+    if (slot >= slotCount_ || instances.size() > capacity_) {
+        log::warn("writeInstances: slot {} / count {} out of range ({} slots, capacity {})",
+                  slot, instances.size(), slotCount_, capacity_);
+        return;
+    }
+    auto* region = reinterpret_cast<VkAccelerationStructureInstanceKHR*>(
+        static_cast<std::byte*>(instances_->mapped()) +
+        std::uint64_t{slot} * capacity_ * sizeof(VkAccelerationStructureInstanceKHR));
+    std::size_t i = 0;
+    for (; i < instances.size(); ++i) {
+        region[i] = fillInstance(instances[i]);
+    }
+    // The rebuild always reads all `capacity_` rows: clear the tail so a
+    // shrink can't leave a stale live instance behind.
+    std::memset(region + i, 0,
+                (capacity_ - i) * sizeof(VkAccelerationStructureInstanceKHR));
+}
+
+void AccelerationStructure::recordRebuild(VkCommandBuffer cmd, std::uint32_t slot) const {
+    VkAccelerationStructureGeometryKHR geo{};
+    geo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
+    geo.geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR;
+    geo.geometry.instances.sType =
+        VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR;
+    geo.geometry.instances.data.deviceAddress =
+        bufferAddress(*device_, instances_->handle()) +
+        std::uint64_t{slot} * capacity_ * sizeof(VkAccelerationStructureInstanceKHR);
+
+    VkAccelerationStructureBuildGeometryInfoKHR build{};
+    build.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
+    build.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
+    build.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
+    build.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
+    build.dstAccelerationStructure = as_;
+    build.geometryCount = 1;
+    build.pGeometries = &geo;
+    build.scratchData.deviceAddress = bufferAddress(*device_, buildScratch_->handle());
+
+    VkAccelerationStructureBuildRangeInfoKHR range{};
+    range.primitiveCount = capacity_;
+    const VkAccelerationStructureBuildRangeInfoKHR* rangePtr = &range;
+    vkCmdBuildAccelerationStructuresKHR(cmd, 1, &build, &rangePtr);
 }
 
 void AccelerationStructure::recordRefit(VkCommandBuffer cmd,

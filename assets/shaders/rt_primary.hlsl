@@ -61,7 +61,8 @@ float4 PSMain(VSOutput input) : SV_Target0 {
         }
 
         const TracedHit hit = shadeCommittedHit(
-            q.CommittedGeometryIndex(), q.CommittedPrimitiveIndex(),
+            hitObjectIndex(q.CommittedInstanceID(), q.CommittedGeometryIndex()),
+            q.CommittedObjectToWorld3x4(), q.CommittedPrimitiveIndex(),
             q.CommittedTriangleBarycentrics(), origin, dir, q.CommittedRayT(),
             travelled + q.CommittedRayT(), cam.position.w, light);
         travelled += q.CommittedRayT();

@@ -202,6 +202,17 @@ struct GeometryInfo {
 // Interleaved vertex layout of the scene pass: position, normal, uv.
 constexpr std::uint32_t kVertexStride = 8 * sizeof(float);
 
+// Traced passes and runtime models: the TLAS is dynamic (fixed capacity,
+// rebuilt in place from a per-slot instance region every frame), so
+// runtime model instances and their transforms reach every traced path
+// with zero descriptor/recording churn. The world-baked scene BLAS rides
+// instance 0 with a sentinel customIndex (geometry index == object index
+// there); runtime instances carry a base into the remap table (binding
+// 32) because their object rows recycle scattered slots. Sentinel must
+// match kRtSceneInstance in rt_common.hlsli.
+constexpr std::uint32_t kRtSceneCustomIndex = 0xFFFFFFu;
+constexpr std::uint32_t kRtInstanceCapacity = 1 + 256; // scene + runtime instances
+
 constexpr std::uint32_t kShadowMapSize = 2048;
 constexpr std::uint32_t kShadowCascades = 4;
 constexpr float kPi = 3.14159265358979323846f;
@@ -849,6 +860,7 @@ int main(int argc, char** argv) {
     std::unique_ptr<gpu::Buffer> countBuffer;
     std::unique_ptr<gpu::Buffer> cameraBuffer; // one CameraData per frame slot, CPU-written
     std::unique_ptr<gpu::Buffer> geometryInfoBuffer; // per-object triangle lookup (RT primary)
+    std::unique_ptr<gpu::Buffer> rtRemapBuffer; // runtime hit->object rows (binding 32)
     // Animation: static inputs (staged) + per-slot CPU-written state.
     std::unique_ptr<gpu::Buffer> skinVertexBuffer;  // packed joints+weights per skinned vertex
     std::unique_ptr<gpu::Buffer> morphDeltaBuffer;  // pos+normal deltas per vertex/target
@@ -1598,7 +1610,11 @@ int main(int argc, char** argv) {
             }
             auto infoResult = gpu::Buffer::create(
                 *device, {
-                             .size = geometryInfo.size() * sizeof(GeometryInfo),
+                             // Same runtime headroom as the object buffer:
+                             // integrateResource stages rows for runtime
+                             // meshes in place (recycled or appended).
+                             .size = (geometryInfo.size() + kRuntimeObjectCapacity) *
+                                     sizeof(GeometryInfo),
                              .usage = gpu::kUsageStorage | gpu::kUsageTransferDst,
                              .location = gpu::MemoryLocation::DeviceLocal,
                              .sharedWithTransferQueue = true,
@@ -1614,6 +1630,21 @@ int main(int argc, char** argv) {
                 log::error("Geometry info staging failed: {}", staged.error().message);
                 return 1;
             }
+            // Hit->object remap for runtime models (binding 32): one uint
+            // per runtime mesh row, allocated in contiguous per-resource
+            // blocks that TLAS instances point at via customIndex.
+            auto remapResult = gpu::Buffer::create(
+                *device, {
+                             .size = kRuntimeObjectCapacity * sizeof(std::uint32_t),
+                             .usage = gpu::kUsageStorage | gpu::kUsageTransferDst,
+                             .location = gpu::MemoryLocation::DeviceLocal,
+                             .sharedWithTransferQueue = true,
+                         });
+            if (!remapResult) {
+                log::error("RT remap buffer creation failed: {}", remapResult.error().message);
+                return 1;
+            }
+            rtRemapBuffer = std::move(remapResult).value();
         }
 
         // Animation state: playback per animated model plus the GPU-side
@@ -1731,9 +1762,14 @@ int main(int argc, char** argv) {
                 gpu::AccelerationStructure::buildBottomLevel(*device, triangles, animatedBvh);
             if (blasResult) {
                 blas = std::move(blasResult).value();
-                const gpu::AccelerationStructure::Instance blasInstance{.blas = blas.get()};
-                auto tlasResult = gpu::AccelerationStructure::buildTopLevel(
-                    *device, {&blasInstance, 1}, animatedBvh);
+                // Dynamic TLAS: instance 0 = the world-baked scene BLAS
+                // (sentinel customIndex), the rest is capacity for runtime
+                // model instances written per frame + rebuilt in place.
+                const gpu::AccelerationStructure::Instance blasInstance{
+                    .blas = blas.get(), .customIndex = kRtSceneCustomIndex};
+                auto tlasResult = gpu::AccelerationStructure::buildTopLevelDynamic(
+                    *device, {&blasInstance, 1}, kRtInstanceCapacity,
+                    gpu::FrameRenderer::kFramesInFlight);
                 if (tlasResult) {
                     tlas = std::move(tlasResult).value();
                     rtReady = true;
@@ -1832,6 +1868,8 @@ int main(int argc, char** argv) {
                                                 geometryPool->buffer().size());
             descriptorTable->writeStorageBuffer(12, geometryInfoBuffer->handle(),
                                                 geometryInfoBuffer->size());
+            descriptorTable->writeStorageBuffer(32, rtRemapBuffer->handle(),
+                                                rtRemapBuffer->size());
         }
 
         auto uploaderResult = gpu::TextureUploader::create(*device);
@@ -2537,10 +2575,16 @@ int main(int argc, char** argv) {
                 // the animation instead of the bind pose.
                 if (rtReady && !refitGeometries.empty()) {
                     batch.refitBlas = blas.get();
-                    batch.refitTlas = tlas.get();
                     batch.refitGeometries = refitGeometries;
                 }
             }
+        }
+        if (rtReady) {
+            // Rebuild the dynamic TLAS in place each frame from the slot's
+            // instance region: runtime model spawns/moves/unloads reach
+            // every traced path without touching recordings (and animated
+            // scenes' refitted BLAS AABBs are re-read for free).
+            batch.tlasRebuild = tlas.get();
         }
 
         const char* modeName = batch.mode == gpu::DrawSubmitMode::IndirectCount
@@ -2713,11 +2757,23 @@ int main(int argc, char** argv) {
         std::uint32_t instanceCapacity = 0;
         std::vector<ResourceInstance> instances;
         std::vector<QueuedInstance> queued; // arrivals while still loading
+        // RT state (rtReady only): a local-space BLAS over the meshes plus
+        // this resource's block in the hit->object remap table. remapCount
+        // 0 = raster-only (build failed / remap exhausted) — instances
+        // simply never enter the TLAS.
+        std::unique_ptr<gpu::AccelerationStructure> rtBlas;
+        std::uint32_t remapBase = 0;
+        std::uint32_t remapCount = 0;
     };
     std::unordered_map<std::string, GeometryResource> resourcesByPath;
     // Live instance handles in spawn order (the test harness unloads the
     // oldest and moves random picks).
     std::vector<renderer::ModelHandle> liveHandles;
+    // Per-frame dynamic-TLAS instance list (entry 0 = the scene BLAS),
+    // rebuilt from resourcesByPath and written into the current slot's
+    // instance region each frame.
+    std::vector<gpu::AccelerationStructure::Instance> rtInstances;
+    bool rtInstancesOverflowWarned = false;
     // Slots whose template region must be resynced from the canonical
     // `draws` (instance add/remove edits instanceCounts; each slot syncs
     // when it is the current one — its region is not in flight then).
@@ -2733,6 +2789,12 @@ int main(int argc, char** argv) {
         std::vector<std::uint32_t> transformIndices;
         std::uint32_t instanceRowBase = 0;
         std::uint32_t instanceRowCount = 0; // 0 = no block to free
+        // Retiring RT state: the BLAS destructs when the reclaim pops
+        // (in-flight TLAS instance regions may still reference it until
+        // then), the remap block returns to its free list.
+        std::unique_ptr<gpu::AccelerationStructure> rtBlas;
+        std::uint32_t remapBase = 0;
+        std::uint32_t remapCount = 0;
         std::uint64_t retireAtDrain = 0;
     };
     std::deque<PendingReclaim> pendingReclaims;
@@ -2808,6 +2870,59 @@ int main(int argc, char** argv) {
             if (last.base + last.count == instanceRowHighWater) {
                 instanceRowHighWater = last.base;
                 freeInstanceRanges.pop_back();
+            }
+        }
+    };
+    // RT remap blocks (binding 32): same first-fit/coalescing shape as the
+    // instance rows, over kRuntimeObjectCapacity entries. Blocks must be
+    // contiguous — a TLAS instance's customIndex + GeometryIndex lands
+    // inside its resource's block.
+    std::vector<RowRange> freeRemapRanges;
+    std::uint32_t remapHighWater = 0;
+    auto allocateRemapBlock = [&](std::uint32_t count) -> std::optional<std::uint32_t> {
+        for (auto it = freeRemapRanges.begin(); it != freeRemapRanges.end(); ++it) {
+            if (it->count >= count) {
+                const std::uint32_t base = it->base;
+                it->base += count;
+                it->count -= count;
+                if (it->count == 0) {
+                    freeRemapRanges.erase(it);
+                }
+                return base;
+            }
+        }
+        if (remapHighWater + count <= kRuntimeObjectCapacity) {
+            const std::uint32_t base = remapHighWater;
+            remapHighWater += count;
+            return base;
+        }
+        return std::nullopt;
+    };
+    auto freeRemapBlock = [&](std::uint32_t base, std::uint32_t count) {
+        if (count == 0) {
+            return;
+        }
+        auto it = std::lower_bound(
+            freeRemapRanges.begin(), freeRemapRanges.end(), base,
+            [](const RowRange& range, std::uint32_t b) { return range.base < b; });
+        it = freeRemapRanges.insert(it, {base, count});
+        if (auto next = std::next(it);
+            next != freeRemapRanges.end() && it->base + it->count == next->base) {
+            it->count += next->count;
+            freeRemapRanges.erase(next);
+        }
+        if (it != freeRemapRanges.begin()) {
+            auto prev = std::prev(it);
+            if (prev->base + prev->count == it->base) {
+                prev->count += it->count;
+                freeRemapRanges.erase(it);
+            }
+        }
+        if (!freeRemapRanges.empty()) {
+            const RowRange& last = freeRemapRanges.back();
+            if (last.base + last.count == remapHighWater) {
+                remapHighWater = last.base;
+                freeRemapRanges.pop_back();
             }
         }
     };
@@ -2960,6 +3075,9 @@ int main(int argc, char** argv) {
             reclaim.objectIndices = std::move(resource.meshObjectIndices);
             reclaim.instanceRowBase = resource.instanceBase;
             reclaim.instanceRowCount = meshCount * resource.instanceCapacity;
+            reclaim.rtBlas = std::move(resource.rtBlas);
+            reclaim.remapBase = resource.remapBase;
+            reclaim.remapCount = resource.remapCount;
         }
         reclaim.retireAtDrain = drainFrame + gpu::FrameRenderer::kFramesInFlight;
         pendingReclaims.push_back(std::move(reclaim));
@@ -3357,6 +3475,83 @@ int main(int argc, char** argv) {
         resource.resident = true;
         batch.drawCount = static_cast<std::uint32_t>(draws.size());
         batch.cpuDraws = draws.data();
+        // RT: stage this resource's geometryInfo rows (hit-triangle fetch)
+        // and its remap block (customIndex + GeometryIndex -> object row),
+        // then build a local-space BLAS over the meshes — instances start
+        // entering the dynamic TLAS on the next frame's instance write.
+        // Any failure leaves the resource raster-only (warn, no event).
+        if (rtReady) {
+            const auto meshCount =
+                static_cast<std::uint32_t>(resource.meshObjectIndices.size());
+            const auto remapBase = allocateRemapBlock(meshCount);
+            if (!remapBase) {
+                log::warn("RT remap table exhausted; '{}' is raster-only in traced passes",
+                          load.cmd.path);
+            } else {
+                std::vector<GeometryInfo> infos; // alive until the flush below
+                infos.reserve(meshCount);
+                bool rtOk = true;
+                for (std::uint32_t index : resource.meshObjectIndices) {
+                    infos.push_back({
+                        .firstIndex = static_cast<std::uint32_t>(geometry[index].indices.offset /
+                                                                 sizeof(std::uint32_t)),
+                        .vertexOffset = static_cast<std::uint32_t>(
+                            geometry[index].vertices.offset / kVertexStride),
+                    });
+                    if (auto staged = transfer->stage(*geometryInfoBuffer,
+                                                      index * sizeof(GeometryInfo),
+                                                      &infos.back(), sizeof(GeometryInfo));
+                        !staged) {
+                        rtOk = false;
+                        break;
+                    }
+                }
+                if (rtOk) {
+                    if (auto staged = transfer->stage(
+                            *rtRemapBuffer, *remapBase * sizeof(std::uint32_t),
+                            resource.meshObjectIndices.data(),
+                            meshCount * sizeof(std::uint32_t));
+                        !staged) {
+                        rtOk = false;
+                    }
+                }
+                if (rtOk) {
+                    if (auto flushed = transfer->flush(); !flushed) {
+                        log::warn("RT info upload failed: {}", flushed.error().message);
+                        rtOk = false;
+                    }
+                }
+                if (rtOk) {
+                    std::vector<gpu::AccelerationStructure::TriangleGeometry> triangles;
+                    triangles.reserve(meshCount);
+                    for (std::uint32_t index : resource.meshObjectIndices) {
+                        triangles.push_back({
+                            .buffer = &geometryPool->buffer(),
+                            .vertexOffset = geometry[index].vertices.offset,
+                            .vertexStride = kVertexStride,
+                            .vertexCount = static_cast<std::uint32_t>(
+                                geometry[index].vertices.size / kVertexStride),
+                            .indexOffset = geometry[index].indices.offset,
+                            .indexCount = geometry[index].indexCount,
+                            .opaque = (objectData[index].flags &
+                                       (kObjectAlphaMasked | kObjectTransparent)) == 0,
+                        });
+                    }
+                    auto blasResult =
+                        gpu::AccelerationStructure::buildBottomLevel(*device, triangles);
+                    if (blasResult) {
+                        resource.rtBlas = std::move(blasResult).value();
+                        resource.remapBase = *remapBase;
+                        resource.remapCount = meshCount;
+                    } else {
+                        log::warn("Runtime BLAS build failed: {}", blasResult.error().message);
+                    }
+                }
+                if (!resource.rtBlas) {
+                    freeRemapBlock(*remapBase, meshCount); // nothing referenced it
+                }
+            }
+        }
         // Every instance queued behind the load lands now; each failure is
         // its own event, a success elsewhere in the queue still stands.
         std::vector<QueuedInstance> queued = std::move(resource.queued);
@@ -3398,6 +3593,9 @@ int main(int argc, char** argv) {
             reclaim.instanceRowCount =
                 static_cast<std::uint32_t>(reclaim.objectIndices.size()) *
                 resource.instanceCapacity;
+            reclaim.rtBlas = std::move(resource.rtBlas);
+            reclaim.remapBase = resource.remapBase;
+            reclaim.remapCount = resource.remapCount;
             reclaim.retireAtDrain = drainFrame + gpu::FrameRenderer::kFramesInFlight;
             pendingReclaims.push_back(std::move(reclaim));
             resourcesByPath.erase(resourceIt);
@@ -3457,6 +3655,9 @@ int main(int argc, char** argv) {
                                         reclaim.transformIndices.begin(),
                                         reclaim.transformIndices.end());
             freeInstanceRows(reclaim.instanceRowBase, reclaim.instanceRowCount);
+            // The retiring BLAS destructs with the reclaim below; its
+            // remap block returns to circulation now.
+            freeRemapBlock(reclaim.remapBase, reclaim.remapCount);
             log::trace("Reclaimed {} pool slices, {} instance rows; pool {:.1f} MiB in {} "
                        "allocations",
                        reclaim.slices.size(), reclaim.instanceRowCount,
@@ -3901,6 +4102,37 @@ int main(int argc, char** argv) {
                 }
             }
             processMessages(renderer->frameSlot());
+            // Publish this frame's TLAS instances into the slot's region:
+            // the scene BLAS plus one entry per runtime model instance,
+            // transforms straight from the canonical array — the recorded
+            // per-frame rebuild makes spawns/moves/unloads reach every
+            // traced path with no descriptor or recording churn.
+            if (rtReady && tlas) {
+                rtInstances.clear();
+                rtInstances.push_back(
+                    {.blas = blas.get(), .customIndex = kRtSceneCustomIndex});
+                for (const auto& [resourcePath, resource] : resourcesByPath) {
+                    if (!resource.rtBlas) {
+                        continue;
+                    }
+                    for (const ResourceInstance& modelInstance : resource.instances) {
+                        if (rtInstances.size() >= kRtInstanceCapacity) {
+                            if (!rtInstancesOverflowWarned) {
+                                log::warn("TLAS instance capacity ({}) exceeded; extra runtime "
+                                          "instances are raster-only in traced passes",
+                                          kRtInstanceCapacity);
+                                rtInstancesOverflowWarned = true;
+                            }
+                            break;
+                        }
+                        rtInstances.push_back(
+                            {.blas = resource.rtBlas.get(),
+                             .customIndex = resource.remapBase,
+                             .transform = objectTransforms[modelInstance.transformIndex]});
+                    }
+                }
+                tlas->writeInstances(renderer->frameSlot(), rtInstances);
+            }
             // Publish this frame's object transforms into the slot's region
             // (scene rows stay identity; runtime models carry placement).
             if (transformBuffer && !objectTransforms.empty()) {
