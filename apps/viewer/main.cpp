@@ -698,6 +698,11 @@ int main(int argc, char** argv) {
     // GPU occlusion culling (proxy-pass visibility, IndirectCount mode);
     // --noocclusion turns it off for A/B comparisons.
     bool occlusionCull = true;
+    // Debug overlay rendering the occlusion-proxy AABB boxes as
+    // translucent color (Settings checkbox). Toggling swaps the batch's
+    // debug pipeline and costs one invalidateStaticRecordings — no
+    // per-frame CPU work.
+    bool showOcclusionBoxes = false;
     std::uint64_t benchFrames = 0; // non-zero: exit after N frames with a report
     // Streaming test harness: auto-spawn this model at random intervals
     // through the message queue.
@@ -2204,13 +2209,14 @@ int main(int argc, char** argv) {
     std::unique_ptr<gpu::Pipeline> skyPipeline;
     std::unique_ptr<gpu::Pipeline> cullPipeline;
     std::unique_ptr<gpu::Pipeline> occlusionPipeline;
+    std::unique_ptr<gpu::Pipeline> occlusionDebugPipeline;
     std::unique_ptr<gpu::Pipeline> shadowPipeline;
     std::unique_ptr<gpu::Pipeline> skinPipeline;
     std::unique_ptr<gpu::Pipeline> gbufferPipeline;
     std::unique_ptr<gpu::Pipeline> lightingPipeline;
     std::unique_ptr<gpu::Shader> sceneVert, sceneFrag, cullShader, shadowVert, shadowFrag,
-        skinShader, proxyVert, proxyFrag, skyVert, skyFrag, gbufferFrag, deferredVert,
-        deferredFrag;
+        skinShader, proxyVert, proxyFrag, proxyDebugFrag, skyVert, skyFrag, gbufferFrag,
+        deferredVert, deferredFrag;
     if (scene) {
         auto vertResult = gpu::Shader::createFromFile(*device, shaderDir / "scene.vert.spv");
         // scene.hlsl's forward fragment shader survives ONLY for the
@@ -2380,6 +2386,34 @@ int main(int argc, char** argv) {
                          });
             if (proxyResult) {
                 occlusionPipeline = std::move(proxyResult).value();
+                // Debug-overlay variant: same VS/boxes, translucent color
+                // instead of visibility stores (Settings -> "Show
+                // occlusion boxes"). Optional like everything here.
+                auto debugFragResult =
+                    gpu::Shader::createFromFile(*device, shaderDir / "proxy_debug.frag.spv");
+                if (debugFragResult) {
+                    proxyDebugFrag = std::move(debugFragResult).value();
+                    auto debugResult = gpu::Pipeline::createGraphics(
+                        *device, {
+                                     .vertexShader = proxyVert.get(),
+                                     .fragmentShader = proxyDebugFrag.get(),
+                                     .colorFormat = swapchain->imageFormat(),
+                                     .depthFormat = gpu::kFormatD32Sfloat,
+                                     .pushConstantBytes =
+                                         2 * sizeof(std::uint32_t), // {slot, capacity}
+                                     .descriptorLayout = descriptorTable->layout(),
+                                     .occlusionDebug = true,
+                                 });
+                    if (debugResult) {
+                        occlusionDebugPipeline = std::move(debugResult).value();
+                    } else {
+                        log::warn("Occlusion debug pipeline unavailable: {}",
+                                  debugResult.error().message);
+                    }
+                } else {
+                    log::warn("Occlusion debug shader unavailable: {}",
+                              debugFragResult.error().message);
+                }
             } else {
                 log::warn("Occlusion proxy pipeline unavailable: {}",
                           proxyResult.error().message);
@@ -2528,6 +2562,8 @@ int main(int argc, char** argv) {
             batch.transparentPipeline = transparentPipeline.get();
             batch.cullPipeline = cullPipeline.get();
             batch.occlusionPipeline = occlusionPipeline.get();
+            batch.occlusionDebugPipeline =
+                showOcclusionBoxes ? occlusionDebugPipeline.get() : nullptr;
             batch.occlusionVisibility = visibilityBuffer->handle();
             batch.occlusionRegionStride =
                 std::uint64_t{templateCapacity} * sizeof(std::uint32_t);
@@ -4455,6 +4491,16 @@ int main(int argc, char** argv) {
                                           (occlusionCull ? 4u : 0u);
                         renderer->invalidateStaticRecordings();
                         log::info("Occlusion culling {}", occlusionCull ? "on" : "off");
+                    }
+                    if (occlusionDebugPipeline &&
+                        ImGui::Checkbox("Show occlusion boxes", &showOcclusionBoxes)) {
+                        // Pipeline presence is baked into static
+                        // recordings: one rebuild per flip, zero
+                        // per-frame CPU cost afterwards.
+                        batch.occlusionDebugPipeline =
+                            showOcclusionBoxes ? occlusionDebugPipeline.get() : nullptr;
+                        renderer->invalidateStaticRecordings();
+                        log::info("Occlusion box overlay {}", showOcclusionBoxes ? "on" : "off");
                     }
                     ImGui::Text("Draws: %u in view / %u live / %u table", lastDrawCounts[1],
                                 lastDrawCounts[0], batch.drawCount);

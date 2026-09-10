@@ -62,6 +62,12 @@ struct GraphicsPipelineDesc {
     // passes), no depth write, color writes fully masked — the pass
     // exists purely for its fragment shader's visibility-buffer stores.
     bool occlusionProxy = false;
+    // Occlusion-proxy DEBUG state (the "show occlusion boxes" overlay):
+    // identical depth state to occlusionProxy (LESS_OR_EQUAL test, no
+    // write) so the visible fragments match the real proxy pass exactly,
+    // but color writes ON with alpha blending — the boxes render as
+    // translucent tints instead of being masked out.
+    bool occlusionDebug = false;
     // Background state (the sky pass): depth TEST only at LESS_OR_EQUAL —
     // a far-plane fullscreen triangle passes exactly where the cleared
     // depth (1.0) survived the opaques — no depth write, color writes on.

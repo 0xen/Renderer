@@ -29,6 +29,7 @@ set(REND_SHADER_STAGES
     "shadow.hlsl|PSMain|ps_6_0|shadow.frag.spv"
     "proxy.hlsl|VSMain|vs_6_0|proxy.vert.spv"
     "proxy.hlsl|PSMain|ps_6_0|proxy.frag.spv"
+    "proxy.hlsl|PSDebug|ps_6_0|proxy_debug.frag.spv"
     "sky.hlsl|VSMain|vs_6_0|sky.vert.spv"
     "sky.hlsl|PSMain|ps_6_0|sky.frag.spv"
     "point_shadow.hlsl|PSMain|ps_6_0|point_shadow.frag.spv"

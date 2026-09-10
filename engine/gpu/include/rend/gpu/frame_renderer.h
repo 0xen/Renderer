@@ -126,6 +126,12 @@ struct DrawBatch {
     const Pipeline* occlusionPipeline = nullptr;
     VkBuffer occlusionVisibility = nullptr;
     std::uint64_t occlusionRegionStride = 0; // bytes per frame-slot region
+    // Debug overlay drawing the SAME proxy boxes as translucent color
+    // (occlusionDebug pipeline state, proxy VS + debug PS). Drawn after
+    // the proxy pass regardless of cullFlags bit 2 so the boxes can be
+    // inspected with occlusion culling itself toggled off. Baked into
+    // static recordings — invalidate after changing. Null = no overlay.
+    const Pipeline* occlusionDebugPipeline = nullptr;
     // LOD screen-size scale pushed with the dispatch: pixels per world
     // unit at unit distance over the target error in pixels. 0 keeps
     // every entry at full detail. Depends only on the viewport height and

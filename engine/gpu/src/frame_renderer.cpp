@@ -776,6 +776,28 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
                                    0, sizeof(proxyPush), proxyPush);
                 vkCmdDraw(cmd, 36, batch->drawCount, 0, 0);
             }
+            // Occlusion-box debug overlay: the same instanced AABB cubes
+            // as translucent color (identical depth state, so the tinted
+            // fragments are exactly the proxy pass's survivors). Not
+            // gated on cullFlags bit 2 — the boxes are inspectable with
+            // occlusion culling toggled off.
+            if (batch->occlusionDebugPipeline != nullptr &&
+                batch->mode == DrawSubmitMode::IndirectCount) {
+                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                  batch->occlusionDebugPipeline->handle());
+                if (batch->descriptors != VK_NULL_HANDLE) {
+                    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                            batch->occlusionDebugPipeline->layout(), 0, 1,
+                                            &batch->descriptors, 0, nullptr);
+                }
+                const std::uint32_t debugPush[2] = {
+                    slot, static_cast<std::uint32_t>(batch->indirectRegionStride /
+                                                     sizeof(DrawIndexedIndirect))};
+                vkCmdPushConstants(cmd, batch->occlusionDebugPipeline->layout(),
+                                   VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                                   0, sizeof(debugPush), debugPush);
+                vkCmdDraw(cmd, 36, batch->drawCount, 0, 0);
+            }
         }
     }
     // No batch: nothing draws — the cleared swapchain image (plus the

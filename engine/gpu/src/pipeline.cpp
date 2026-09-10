@@ -156,7 +156,7 @@ Result<std::unique_ptr<Pipeline>> Pipeline::createGraphics(const Device& device,
     }
 
     VkPipelineColorBlendAttachmentState blendAttachment{};
-    blendAttachment.blendEnable = desc.alphaBlend ? VK_TRUE : VK_FALSE;
+    blendAttachment.blendEnable = (desc.alphaBlend || desc.occlusionDebug) ? VK_TRUE : VK_FALSE;
     blendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
     blendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
     blendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
@@ -191,14 +191,16 @@ Result<std::unique_ptr<Pipeline>> Pipeline::createGraphics(const Device& device,
     // Blended surfaces and occlusion proxies test against the opaque
     // depth but never write it.
     depthStencil.depthWriteEnable =
-        (desc.alphaBlend || desc.occlusionProxy || desc.background || desc.disableDepthTest)
+        (desc.alphaBlend || desc.occlusionProxy || desc.occlusionDebug || desc.background ||
+         desc.disableDepthTest)
             ? VK_FALSE
             : VK_TRUE;
     // LESS_OR_EQUAL for proxies: a flat object's zero-extent box is
     // coplanar with its own rendered surface and must still pass.
-    depthStencil.depthCompareOp = (desc.occlusionProxy || desc.background)
-                                      ? VK_COMPARE_OP_LESS_OR_EQUAL
-                                      : VK_COMPARE_OP_LESS;
+    depthStencil.depthCompareOp =
+        (desc.occlusionProxy || desc.occlusionDebug || desc.background)
+            ? VK_COMPARE_OP_LESS_OR_EQUAL
+            : VK_COMPARE_OP_LESS;
 
     // No color formats at all = depth-only pipeline (shadow passes): no
     // color attachment, no blend state.
