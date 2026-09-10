@@ -126,6 +126,18 @@ struct DrawBatch {
     const Pipeline* occlusionPipeline = nullptr;
     VkBuffer occlusionVisibility = nullptr;
     std::uint64_t occlusionRegionStride = 0; // bytes per frame-slot region
+    // Incremental GPU OBB refinement (IndirectCount mode): a small
+    // dispatch baked just before the cull dispatch that claims the next
+    // obbRefineGroups entries from a GPU-side counter (binding 33's
+    // header) and fits each a PCA-oriented bounding box from its pooled
+    // vertices, flipping the row's ready flag only when it beats the
+    // AABB's volume. Self-terminating: once the counter passes drawCount
+    // every dispatch exits immediately — the scene renders with AABBs
+    // from frame 0 and the boxes tighten over the first seconds with no
+    // recording or CPU involvement. Null = no refinement (binding 33
+    // rows stay unready; consumers keep the AABBs forever).
+    const Pipeline* obbRefinePipeline = nullptr;
+    std::uint32_t obbRefineGroups = 8; // entries refined per frame
     // Debug overlay drawing the SAME proxy boxes as translucent color
     // (occlusionDebug pipeline state, proxy VS + debug PS). Drawn after
     // the proxy pass regardless of cullFlags bit 2 so the boxes can be

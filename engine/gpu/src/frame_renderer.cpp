@@ -246,8 +246,11 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
         // writes visible to every consumer of the pool this frame.
         VkMemoryBarrier2 toSkin{};
         toSkin.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
-        toSkin.srcStageMask =
-            VK_PIPELINE_STAGE_2_VERTEX_ATTRIBUTE_INPUT_BIT | VK_PIPELINE_STAGE_2_INDEX_INPUT_BIT;
+        // COMPUTE in the source: the previous frame's OBB refine dispatch
+        // reads the pool too (WAR — execution ordering is enough).
+        toSkin.srcStageMask = VK_PIPELINE_STAGE_2_VERTEX_ATTRIBUTE_INPUT_BIT |
+                              VK_PIPELINE_STAGE_2_INDEX_INPUT_BIT |
+                              VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
         toSkin.srcAccessMask = 0;
         toSkin.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
         toSkin.dstAccessMask =
@@ -276,8 +279,12 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
         fromSkin.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
         fromSkin.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
         fromSkin.srcAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
+        // COMPUTE in the destination: this frame's OBB refine dispatch
+        // reads the pool (disjoint regions from the posed writes, but the
+        // hazard tracking is buffer-wide).
         fromSkin.dstStageMask = VK_PIPELINE_STAGE_2_VERTEX_ATTRIBUTE_INPUT_BIT |
-                                VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+                                VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT |
+                                VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
         fromSkin.dstAccessMask =
             VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
         skinDependency.pMemoryBarriers = &fromSkin;
@@ -371,21 +378,62 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
 
         // The fills must land before the dispatch reads/increments, and —
         // with occlusion — the previous frame's proxy-pass fragment
-        // stores into the other slot's region must be visible too.
+        // stores into the other slot's region must be visible too. With
+        // OBB refinement the previous frame's refine writes (COMPUTE) and
+        // proxy-VS OBB reads (VERTEX, WAR) join the source scope: this
+        // frame's refine dispatch re-reads the counter and overwrites
+        // rows the previous frame's consumers looked at.
+        const bool obbRefine = batch->obbRefinePipeline != nullptr;
         VkMemoryBarrier2 fillToCompute{};
         fillToCompute.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
         fillToCompute.srcStageMask = VK_PIPELINE_STAGE_2_CLEAR_BIT |
                                      (occlusion ? VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT
+                                                : VkPipelineStageFlags2{0}) |
+                                     (obbRefine ? VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT |
+                                                      VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT
                                                 : VkPipelineStageFlags2{0});
         fillToCompute.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT |
-                                      (occlusion ? VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT
-                                                 : VkAccessFlags2{0});
+                                      (occlusion || obbRefine
+                                           ? VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT
+                                           : VkAccessFlags2{0});
         fillToCompute.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
         fillToCompute.dstAccessMask =
             VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
         cullDependency.memoryBarrierCount = 1;
         cullDependency.pMemoryBarriers = &fillToCompute;
         vkCmdPipelineBarrier2(cmd, &cullDependency);
+
+        if (obbRefine) {
+            // Self-terminating OBB refinement: claims the next
+            // obbRefineGroups entries from binding 33's counter and fits
+            // their oriented boxes; exits immediately once every entry
+            // has been claimed. Baked like everything here — the counter
+            // is the only state, so no recording ever changes.
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
+                              batch->obbRefinePipeline->handle());
+            if (batch->descriptors != VK_NULL_HANDLE) {
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
+                                        batch->obbRefinePipeline->layout(), 0, 1,
+                                        &batch->descriptors, 0, nullptr);
+            }
+            const std::uint32_t obbPush[3] = {
+                batch->drawCount, slot,
+                static_cast<std::uint32_t>(batch->indirectRegionStride /
+                                           sizeof(DrawIndexedIndirect))};
+            vkCmdPushConstants(cmd, batch->obbRefinePipeline->layout(),
+                               VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(obbPush), obbPush);
+            vkCmdDispatch(cmd, batch->obbRefineGroups, 1, 1);
+
+            // The cull dispatch reads the rows the refine pass just wrote.
+            VkMemoryBarrier2 refineToCull{};
+            refineToCull.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+            refineToCull.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+            refineToCull.srcAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
+            refineToCull.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+            refineToCull.dstAccessMask = VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
+            cullDependency.pMemoryBarriers = &refineToCull;
+            vkCmdPipelineBarrier2(cmd, &cullDependency);
+        }
 
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, batch->cullPipeline->handle());
         if (batch->descriptors != VK_NULL_HANDLE) {

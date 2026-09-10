@@ -95,10 +95,19 @@ struct InstanceRow {
 // transparent draw stream. Must match ObjectBounds in cull.hlsl.
 constexpr float kBoundsAlwaysVisible = 1.0f;
 constexpr float kBoundsTransparent = 2.0f;
+// Bit 2 (obb.hlsl): the entry's pooled vertices never change after load,
+// so the GPU OBB refinement may fit an oriented box from them. Set for
+// world-baked, non-animated scene meshes only.
+constexpr float kBoundsObbEligible = 4.0f;
 struct ObjectBounds {
     std::array<float, 4> bmin{1e30f, 1e30f, 1e30f, 0.0f};
     std::array<float, 4> bmax{-1e30f, -1e30f, -1e30f, 0.0f};
 };
+// Refined-OBB table (binding 33, obb.hlsl/cull.hlsl/proxy.hlsl): 16-byte
+// header (claim counter) + one 64-byte row per draw entry {center+ready,
+// 3x axis+half-extent}. Written only by the GPU; zero-seeded at load.
+constexpr std::uint64_t kObbHeaderBytes = 16;
+constexpr std::uint64_t kObbRowBytes = 64;
 constexpr math::Mat4 kIdentityMat4 = {1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
                                       0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f};
 
@@ -698,6 +707,10 @@ int main(int argc, char** argv) {
     // GPU occlusion culling (proxy-pass visibility, IndirectCount mode);
     // --noocclusion turns it off for A/B comparisons.
     bool occlusionCull = true;
+    // Incremental GPU OBB refinement (a few entries per frame refine
+    // their AABB into a PCA-fitted oriented box, fully on the GPU);
+    // --noobb keeps the plain AABBs for A/B comparisons.
+    bool obbRefine = true;
     // Debug overlay rendering the occlusion-proxy AABB boxes as
     // translucent color (Settings checkbox). Toggling swaps the batch's
     // debug pipeline and costs one invalidateStaticRecordings — no
@@ -737,6 +750,8 @@ int main(int argc, char** argv) {
             lodSelect = false;
         } else if (arg == "--noocclusion") {
             occlusionCull = false;
+        } else if (arg == "--noobb") {
+            obbRefine = false;
         } else if (arg == "--spawn-test" && i + 1 < argc) {
             spawnTestPath = argv[++i];
         } else if (arg == "--bench" && i + 1 < argc) {
@@ -976,6 +991,9 @@ int main(int argc, char** argv) {
     // marks and the next frame's cull dispatch reads. GPU-only after the
     // all-ones seed (frame 0 must draw everything).
     std::unique_ptr<gpu::Buffer> visibilityBuffer;
+    // Refined-OBB table (binding 33): GPU-written oriented boxes the cull
+    // and proxy passes prefer over the AABBs once each row is ready.
+    std::unique_ptr<gpu::Buffer> obbBuffer;
     const auto importers = assetio::ImporterRegistry::withBuiltins();
     // Capability offer from the gpu layer: which shadow techniques this
     // device can run. The UI is built from this list, never from
@@ -1093,6 +1111,10 @@ int main(int argc, char** argv) {
                     // Animated: the pose may leave the bind-pose bounds —
                     // never frustum-cull these.
                     meshBounds.bmin[3] += kBoundsAlwaysVisible;
+                } else {
+                    // Static world-baked vertices: the GPU OBB refinement
+                    // may fit a tighter oriented box from the pool.
+                    meshBounds.bmin[3] += kBoundsObbEligible;
                 }
                 if ((object.flags & kObjectTransparent) != 0) {
                     // Routed to the blend pass's stream by the cull shader.
@@ -1561,6 +1583,31 @@ int main(int argc, char** argv) {
             }
         }
 
+        // Refined-OBB table: header (claim counter) + one row per entry,
+        // device-local and GPU-written only. Zero-seeded: counter 0, every
+        // row unready — consumers keep the AABBs until the baked refine
+        // dispatch fits a tighter box. ONE global region (rows converge
+        // to load-time constants; the recorded barriers order access).
+        auto obbResult = gpu::Buffer::create(
+            *device, {
+                         .size = kObbHeaderBytes + std::uint64_t{templateCapacity} * kObbRowBytes,
+                         .usage = gpu::kUsageStorage | gpu::kUsageTransferDst,
+                         .location = gpu::MemoryLocation::DeviceLocal,
+                     });
+        if (!obbResult) {
+            log::error("OBB buffer creation failed: {}", obbResult.error().message);
+            return 1;
+        }
+        obbBuffer = std::move(obbResult).value();
+        {
+            const std::vector<std::uint8_t> zeros(obbBuffer->size(), 0);
+            if (auto staged = transfer->stage(*obbBuffer, 0, zeros.data(), zeros.size());
+                !staged) {
+                log::error("OBB buffer seeding failed: {}", staged.error().message);
+                return 1;
+            }
+        }
+
         // Light data, same per-slot scheme (and capture regions) as the camera.
         auto lightResult = gpu::Buffer::create(
             *device, {
@@ -1844,6 +1891,7 @@ int main(int argc, char** argv) {
                                             transparentBuffer->size());
         descriptorTable->writeStorageBuffer(22, boundsBuffer->handle(), boundsBuffer->size());
         descriptorTable->writeStorageBuffer(25, meshLodBuffer->handle(), meshLodBuffer->size());
+        descriptorTable->writeStorageBuffer(33, obbBuffer->handle(), obbBuffer->size());
         descriptorTable->writeStorageBuffer(26, visibilityBuffer->handle(),
                                             visibilityBuffer->size());
         // The rows buffer again, writable for the cull pass's scratch
@@ -1857,9 +1905,12 @@ int main(int argc, char** argv) {
         descriptorTable->writeStorageBuffer(5, countBuffer->handle(), countBuffer->size());
         descriptorTable->writeStorageBuffer(6, cameraBuffer->handle(), cameraBuffer->size());
         descriptorTable->writeStorageBuffer(7, lightBuffer->handle(), lightBuffer->size());
+        // The pool's compute view (binding 13) is always bound: the skin
+        // pass writes posed vertices through it AND the OBB refine pass
+        // reads static vertices from it — static scenes need it too.
+        descriptorTable->writeStorageBuffer(13, geometryPool->buffer().handle(),
+                                            geometryPool->buffer().size());
         if (!animatedMeshes.empty()) {
-            descriptorTable->writeStorageBuffer(13, geometryPool->buffer().handle(),
-                                                geometryPool->buffer().size());
             if (skinVertexBuffer) {
                 descriptorTable->writeStorageBuffer(14, skinVertexBuffer->handle(),
                                                     skinVertexBuffer->size());
@@ -2208,15 +2259,16 @@ int main(int argc, char** argv) {
     std::unique_ptr<gpu::Pipeline> transparentPipeline;
     std::unique_ptr<gpu::Pipeline> skyPipeline;
     std::unique_ptr<gpu::Pipeline> cullPipeline;
+    std::unique_ptr<gpu::Pipeline> obbPipeline;
     std::unique_ptr<gpu::Pipeline> occlusionPipeline;
     std::unique_ptr<gpu::Pipeline> occlusionDebugPipeline;
     std::unique_ptr<gpu::Pipeline> shadowPipeline;
     std::unique_ptr<gpu::Pipeline> skinPipeline;
     std::unique_ptr<gpu::Pipeline> gbufferPipeline;
     std::unique_ptr<gpu::Pipeline> lightingPipeline;
-    std::unique_ptr<gpu::Shader> sceneVert, sceneFrag, cullShader, shadowVert, shadowFrag,
-        skinShader, proxyVert, proxyFrag, proxyDebugFrag, skyVert, skyFrag, gbufferFrag,
-        deferredVert, deferredFrag;
+    std::unique_ptr<gpu::Shader> sceneVert, sceneFrag, cullShader, obbShader, shadowVert,
+        shadowFrag, skinShader, proxyVert, proxyFrag, proxyDebugFrag, skyVert, skyFrag,
+        gbufferFrag, deferredVert, deferredFrag;
     if (scene) {
         auto vertResult = gpu::Shader::createFromFile(*device, shaderDir / "scene.vert.spv");
         // scene.hlsl's forward fragment shader survives ONLY for the
@@ -2360,6 +2412,34 @@ int main(int argc, char** argv) {
             }
         } else {
             log::warn("Cull shader unavailable: {}", cullShaderResult.error().message);
+        }
+
+        // Incremental OBB refinement (IndirectCount mode): a baked
+        // self-terminating dispatch tightening a few entries' boxes per
+        // frame, fully on the GPU. Optional like the cull pipeline —
+        // failure (or --noobb) just keeps the plain AABBs forever.
+        if (obbRefine && cullPipeline) {
+            auto obbShaderResult =
+                gpu::Shader::createFromFile(*device, shaderDir / "obb.comp.spv");
+            if (obbShaderResult) {
+                obbShader = std::move(obbShaderResult).value();
+                auto obbResult2 = gpu::Pipeline::createCompute(
+                    *device, {
+                                 .shader = obbShader.get(),
+                                 .descriptorLayout = descriptorTable->layout(),
+                                 // {drawCount, slot, capacity}
+                                 .pushConstantBytes = 3 * sizeof(std::uint32_t),
+                             });
+                if (obbResult2) {
+                    obbPipeline = std::move(obbResult2).value();
+                } else {
+                    log::warn("OBB refine pipeline unavailable: {}",
+                              obbResult2.error().message);
+                }
+            } else {
+                log::warn("OBB refine shader unavailable: {}",
+                          obbShaderResult.error().message);
+            }
         }
 
         // Occlusion proxy pipeline (IndirectCount mode only): AABB cubes
@@ -2561,6 +2641,7 @@ int main(int argc, char** argv) {
             batch.transparentIndirect = transparentBuffer->handle();
             batch.transparentPipeline = transparentPipeline.get();
             batch.cullPipeline = cullPipeline.get();
+            batch.obbRefinePipeline = obbPipeline.get();
             batch.occlusionPipeline = occlusionPipeline.get();
             batch.occlusionDebugPipeline =
                 showOcclusionBoxes ? occlusionDebugPipeline.get() : nullptr;

@@ -139,6 +139,48 @@ struct MeshLodTable {
 // refills it; seeded all-1 at load so frame 0 draws everything.
 [[vk::binding(26, 0)]] RWStructuredBuffer<uint> visibility;
 
+// GPU-refined oriented bounding boxes (must match obb.hlsl / proxy.hlsl /
+// the viewer): row e at 16 + e*64 = float4 center (w = ready flag) + three
+// float4 {unit axis, half extent}. The refine dispatch runs just before
+// this one; a ready row is a strictly tighter box than the entry's world
+// AABB (the refine pass keeps whichever is smaller), so every test below
+// prefers it and falls back to the AABB until it exists. ONE global
+// region — rows are load-time constants once written.
+static const uint kObbHeaderBytes = 16u;
+static const uint kObbRowBytes = 64u;
+[[vk::binding(33, 0)]] ByteAddressBuffer obbs;
+
+struct Obb {
+    float3 center;
+    float3 axis0;
+    float3 axis1;
+    float3 axis2;
+    float3 extent; // half extents along the three axes
+    bool ready;
+};
+
+Obb loadObb(uint entry) {
+    const uint row = kObbHeaderBytes + entry * kObbRowBytes;
+    const float4 c = asfloat(obbs.Load4(row));
+    const float4 x = asfloat(obbs.Load4(row + 16));
+    const float4 y = asfloat(obbs.Load4(row + 32));
+    const float4 z = asfloat(obbs.Load4(row + 48));
+    Obb o;
+    o.center = c.xyz;
+    o.axis0 = x.xyz;
+    o.axis1 = y.xyz;
+    o.axis2 = z.xyz;
+    o.extent = float3(x.w, y.w, z.w);
+    o.ready = c.w != 0.0f;
+    return o;
+}
+
+// Coordinates of a world point in the box's frame.
+float3 obbLocal(Obb o, float3 p) {
+    const float3 d = p - o.center;
+    return float3(dot(d, o.axis0), dot(d, o.axis1), dot(d, o.axis2));
+}
+
 // AABB vs the camera frustum, planes pulled from the slot's viewProj
 // (Gribb-Hartmann; clip = M * v, Vulkan z in [0, w]). Each plane points
 // inward; the AABB is outside iff its most-positive vertex (p-vertex)
@@ -159,6 +201,27 @@ bool inFrustum(float3 bmin, float3 bmax, float4x4 m) {
                                 plane.y >= 0.0f ? bmax.y : bmin.y,
                                 plane.z >= 0.0f ? bmax.z : bmin.z);
         if (dot(plane.xyz, p) + plane.w < 0.0f) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// OBB vs the frustum: same planes, projected-radius form — exact for a
+// box vs a plane, so still conservative overall (the box may cross two
+// planes' corners without truly intersecting the frustum, same as the
+// AABB test).
+bool obbInFrustum(Obb o, float4x4 m) {
+    const float4 planes[6] = {
+        m[3] + m[0], m[3] - m[0], m[3] + m[1], m[3] - m[1], m[2], m[3] - m[2],
+    };
+    [unroll]
+    for (uint i = 0; i < 6; ++i) {
+        const float4 plane = planes[i];
+        const float r = o.extent.x * abs(dot(plane.xyz, o.axis0)) +
+                        o.extent.y * abs(dot(plane.xyz, o.axis1)) +
+                        o.extent.z * abs(dot(plane.xyz, o.axis2));
+        if (dot(plane.xyz, o.center) + plane.w + r < 0.0f) {
             return false;
         }
     }
@@ -196,11 +259,19 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
 
     const ObjectBounds b = bounds[base + id.x];
     const uint boundFlags = (uint)b.bmin.w;
+    // Refined OBB, if the load-time refinement got to this entry yet
+    // (world-mode only — instanced entries already test tight local boxes
+    // through their transforms).
+    Obb obb = (Obb)0;
+    if (b.bmax.w == 0.0f) {
+        obb = loadObb(id.x);
+    }
     if ((push.flags & kCullFrustum) != 0 && (boundFlags & kBoundsAlwaysVisible) == 0) {
         const float4x4 viewProj = cameras[push.slot].viewProj;
         if (b.bmax.w == 0.0f) {
             // World-space bounds: one test covers the whole entry.
-            if (!inFrustum(b.bmin.xyz, b.bmax.xyz, viewProj)) {
+            if (obb.ready ? !obbInFrustum(obb, viewProj)
+                          : !inFrustum(b.bmin.xyz, b.bmax.xyz, viewProj)) {
                 return; // outside the view — shadows above still drew it
             }
         } else {
@@ -242,8 +313,12 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     if ((push.flags & kCullOcclusion) != 0 && (boundFlags & kBoundsAlwaysVisible) == 0 &&
         b.bmax.w == 0.0f) {
         const float3 camPos = cameras[push.slot].position.xyz;
-        const bool cameraInside = all(camPos >= b.bmin.xyz - 0.5f) &&
-                                  all(camPos <= b.bmax.xyz + 0.5f);
+        // The inside test must match the box the proxy pass rasterizes —
+        // OBB once refined, AABB until then.
+        const bool cameraInside =
+            obb.ready ? all(abs(obbLocal(obb, camPos)) <= obb.extent + 0.5f)
+                      : (all(camPos >= b.bmin.xyz - 0.5f) &&
+                         all(camPos <= b.bmax.xyz + 0.5f));
         // kFramesInFlight == 2: the other slot's region is last frame's.
         if (!cameraInside && visibility[(push.slot ^ 1) * push.capacity + id.x] == 0) {
             InterlockedAdd(counts[push.slot * kCountStride + 6], 1);
@@ -264,8 +339,17 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
         const MeshLodTable lodTable = meshLods[id.x];
         if (lodTable.lodCount > 1) {
             const float3 camPos = cameras[push.slot].position.xyz;
-            const float3 nearest = clamp(camPos, b.bmin.xyz, b.bmax.xyz);
-            const float dist = length(camPos - nearest);
+            float dist;
+            if (obb.ready) {
+                // Distance to the OBB surface: clamp in box space (the
+                // orthonormal frame preserves lengths). Tighter box =
+                // truer distance = the LOD error metric applied honestly.
+                const float3 l = obbLocal(obb, camPos);
+                dist = length(max(abs(l) - obb.extent, 0.0f));
+            } else {
+                const float3 nearest = clamp(camPos, b.bmin.xyz, b.bmax.xyz);
+                dist = length(camPos - nearest);
+            }
             uint lod = 0;
             for (uint i = 1; i < lodTable.lodCount; ++i) {
                 if (lodTable.lods[i].error * push.lodFactor <= dist) {

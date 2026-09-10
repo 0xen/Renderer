@@ -38,6 +38,15 @@ struct ProxyPush {
 [[vk::binding(6, 0)]] StructuredBuffer<CameraData> cameras;
 [[vk::binding(22, 0)]] StructuredBuffer<ObjectBounds> bounds;
 [[vk::binding(26, 0)]] RWStructuredBuffer<uint> visibility;
+// GPU-refined oriented bounding boxes (must match obb.hlsl / cull.hlsl /
+// the viewer): row e at 16 + e*64 = float4 center (w = ready flag) +
+// three float4 {unit axis, half extent}. Once an entry's row is ready the
+// proxy (and the debug overlay pairing this VS) rasterizes the tighter
+// oriented box instead of the world AABB — the cull dispatch's
+// camera-inside bypass switches with it, keeping test and box matched.
+static const uint kObbHeaderBytes = 16u;
+static const uint kObbRowBytes = 64u;
+[[vk::binding(33, 0)]] ByteAddressBuffer obbs;
 
 struct VSOutput {
     float4 position : SV_Position;
@@ -85,9 +94,21 @@ VSOutput VSMain(uint vertexId : SV_VertexID, uint instanceId : SV_InstanceID) {
         return output;
     }
     const uint3 corner = kCubeCorner[vertexId];
-    const float3 world = float3(corner.x != 0 ? b.bmax.x : b.bmin.x,
-                                corner.y != 0 ? b.bmax.y : b.bmin.y,
-                                corner.z != 0 ? b.bmax.z : b.bmin.z);
+    float3 world;
+    const uint row = kObbHeaderBytes + instanceId * kObbRowBytes;
+    const float4 obbCenter = asfloat(obbs.Load4(row));
+    if (obbCenter.w != 0.0f) {
+        const float4 ax = asfloat(obbs.Load4(row + 16));
+        const float4 ay = asfloat(obbs.Load4(row + 32));
+        const float4 az = asfloat(obbs.Load4(row + 48));
+        const float3 s = float3(corner) * 2.0f - 1.0f;
+        world = obbCenter.xyz + ax.xyz * (ax.w * s.x) + ay.xyz * (ay.w * s.y) +
+                az.xyz * (az.w * s.z);
+    } else {
+        world = float3(corner.x != 0 ? b.bmax.x : b.bmin.x,
+                       corner.y != 0 ? b.bmax.y : b.bmin.y,
+                       corner.z != 0 ? b.bmax.z : b.bmin.z);
+    }
     output.position = mul(cameras[push.slot].viewProj, float4(world, 1.0f));
     output.corner = float3(corner);
     return output;
