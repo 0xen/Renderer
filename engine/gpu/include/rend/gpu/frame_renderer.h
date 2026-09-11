@@ -126,6 +126,17 @@ struct DrawBatch {
     const Pipeline* occlusionPipeline = nullptr;
     VkBuffer occlusionVisibility = nullptr;
     std::uint64_t occlusionRegionStride = 0; // bytes per frame-slot region
+    // Per-INSTANCE proxy pass (runtime instanced models): drawn right
+    // after the per-entry pass with the same push constants —
+    // 36 verts x occlusionInstanceRows canonical rows; live local-mode
+    // rows rasterize their transformed local box and mark the visibility
+    // region's instance slots (entry capacity + row), which the next
+    // frame's cull reads in its per-instance test. The visibility region
+    // stride must cover entry capacity + occlusionInstanceRows slots.
+    // Null pipeline or 0 rows = instanced entries are never occlusion-
+    // culled (pre-existing behavior).
+    const Pipeline* occlusionInstancePipeline = nullptr;
+    std::uint32_t occlusionInstanceRows = 0;
     // Incremental GPU OBB refinement (IndirectCount mode): a small
     // dispatch baked just before the cull dispatch that claims the next
     // obbRefineGroups entries from a GPU-side counter (binding 33's
@@ -143,7 +154,9 @@ struct DrawBatch {
     // the proxy pass regardless of cullFlags bit 2 so the boxes can be
     // inspected with occlusion culling itself toggled off. Baked into
     // static recordings — invalidate after changing. Null = no overlay.
+    // The instance variant draws the per-instance boxes the same way.
     const Pipeline* occlusionDebugPipeline = nullptr;
+    const Pipeline* occlusionInstanceDebugPipeline = nullptr;
     // LOD screen-size scale pushed with the dispatch: pixels per world
     // unit at unit distance over the target error in pixels. 0 keeps
     // every entry at full detail. Depends only on the viewport height and

@@ -823,6 +823,25 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
                                    VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                                    0, sizeof(proxyPush), proxyPush);
                 vkCmdDraw(cmd, 36, batch->drawCount, 0, 0);
+                // Per-instance proxy pass: one box per canonical instance
+                // row (dead/scene rows emit degenerate geometry). Same
+                // push constants and PS; marks the region's per-instance
+                // visibility slots.
+                if (batch->occlusionInstancePipeline != nullptr &&
+                    batch->occlusionInstanceRows > 0) {
+                    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                      batch->occlusionInstancePipeline->handle());
+                    if (batch->descriptors != VK_NULL_HANDLE) {
+                        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                                batch->occlusionInstancePipeline->layout(), 0,
+                                                1, &batch->descriptors, 0, nullptr);
+                    }
+                    vkCmdPushConstants(cmd, batch->occlusionInstancePipeline->layout(),
+                                       VK_SHADER_STAGE_VERTEX_BIT |
+                                           VK_SHADER_STAGE_FRAGMENT_BIT,
+                                       0, sizeof(proxyPush), proxyPush);
+                    vkCmdDraw(cmd, 36, batch->occlusionInstanceRows, 0, 0);
+                }
             }
             // Occlusion-box debug overlay: the same instanced AABB cubes
             // as translucent color (identical depth state, so the tinted
@@ -845,6 +864,23 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
                                    VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                                    0, sizeof(debugPush), debugPush);
                 vkCmdDraw(cmd, 36, batch->drawCount, 0, 0);
+                // The instanced models' boxes, same overlay styling.
+                if (batch->occlusionInstanceDebugPipeline != nullptr &&
+                    batch->occlusionInstanceRows > 0) {
+                    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                      batch->occlusionInstanceDebugPipeline->handle());
+                    if (batch->descriptors != VK_NULL_HANDLE) {
+                        vkCmdBindDescriptorSets(
+                            cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            batch->occlusionInstanceDebugPipeline->layout(), 0, 1,
+                            &batch->descriptors, 0, nullptr);
+                    }
+                    vkCmdPushConstants(cmd, batch->occlusionInstanceDebugPipeline->layout(),
+                                       VK_SHADER_STAGE_VERTEX_BIT |
+                                           VK_SHADER_STAGE_FRAGMENT_BIT,
+                                       0, sizeof(debugPush), debugPush);
+                    vkCmdDraw(cmd, 36, batch->occlusionInstanceRows, 0, 0);
+                }
             }
         }
     }

@@ -29,15 +29,34 @@ struct ObjectBounds {
     float4 bmax;
 };
 
+// Must match InstanceRow in cull.hlsl / shading.hlsli / the viewer.
+struct InstanceRow {
+    uint objectIndex;
+    uint transformIndex;
+};
+
 struct ProxyPush {
     uint slot;     // frame-in-flight index selecting the buffer regions
-    uint capacity; // entries per slot region (bounds + visibility)
+    uint capacity; // entries per slot region (bounds + templates)
 };
 [[vk::push_constant]] ProxyPush push;
 
+// Must match kTransformCapacity / kInstanceRowCapacity in the viewer.
+// A visibility region holds capacity entry slots followed by
+// kInstanceRowCapacity per-instance slots (region stride = the sum).
+static const uint kTransformCapacity = 4096;
+static const uint kInstanceRowCapacity = 4096;
+
 [[vk::binding(6, 0)]] StructuredBuffer<CameraData> cameras;
+[[vk::binding(19, 0)]] StructuredBuffer<column_major float4x4> objectTransforms;
+[[vk::binding(20, 0)]] StructuredBuffer<InstanceRow> instanceRows;
 [[vk::binding(22, 0)]] StructuredBuffer<ObjectBounds> bounds;
 [[vk::binding(26, 0)]] RWStructuredBuffer<uint> visibility;
+// Canonical-row -> draw-entry map (the viewer maintains it beside the
+// instance rows): 0xffffffff = the row is dead or belongs to a scene
+// entry (covered by the per-entry pass). Lets VSInstances find a row's
+// local bounds without any per-frame CPU work.
+[[vk::binding(34, 0)]] StructuredBuffer<uint> rowEntries;
 // GPU-refined oriented bounding boxes (must match obb.hlsl / cull.hlsl /
 // the viewer): row e at 16 + e*64 = float4 center (w = ready flag) +
 // three float4 {unit axis, half extent}. Once an entry's row is ready the
@@ -114,12 +133,47 @@ VSOutput VSMain(uint vertexId : SV_VertexID, uint instanceId : SV_InstanceID) {
     return output;
 }
 
+// Per-INSTANCE proxy pass (runtime instanced models): one instance per
+// CANONICAL row. Live local-mode rows push their entry's local AABB
+// through the row's transform — the rasterized parallelepiped IS the
+// instance's oriented box — and mark the visibility region's per-
+// instance slot (capacity + row), which the next frame's cull reads in
+// its per-instance test. Dead rows and scene (world-mode) rows emit
+// degenerate positions; the same PSMain/PSDebug pair the entry pass.
+VSOutput VSInstances(uint vertexId : SV_VertexID, uint instanceId : SV_InstanceID) {
+    VSOutput output;
+    output.entry = push.capacity + instanceId; // per-instance visibility slot
+    output.corner = float3(0.0f, 0.0f, 0.0f);
+    output.position = float4(0.0f, 0.0f, 0.0f, 0.0f);
+    const uint entry = rowEntries[instanceId];
+    if (entry == 0xffffffffu) {
+        return output; // dead row or scene entry — the entry pass covers it
+    }
+    const ObjectBounds b = bounds[push.slot * push.capacity + entry];
+    if (b.bmax.w == 0.0f || b.bmin.x > b.bmax.x) {
+        return output;
+    }
+    const uint3 corner = kCubeCorner[vertexId];
+    const float3 local = float3(corner.x != 0 ? b.bmax.x : b.bmin.x,
+                                corner.y != 0 ? b.bmax.y : b.bmin.y,
+                                corner.z != 0 ? b.bmax.z : b.bmin.z);
+    const float4x4 world = objectTransforms[push.slot * kTransformCapacity +
+                                            instanceRows[instanceId].transformIndex];
+    const float3 pos = mul(world, float4(local, 1.0f)).xyz;
+    output.position = mul(cameras[push.slot].viewProj, float4(pos, 1.0f));
+    output.corner = float3(corner);
+    return output;
+}
+
 [earlydepthstencil]
 void PSMain(VSOutput input) {
     // Plain store, not an atomic: many lanes writing the same 1 is fine.
-    // The corner term is a degenerate touch (always 0) keeping the input
-    // location alive — see the VSOutput comment.
-    visibility[push.slot * push.capacity + input.entry] =
+    // Region stride = capacity entry slots + kInstanceRowCapacity
+    // per-instance slots; the entry VS passes an entry id, VSInstances
+    // passes capacity + row, so one store serves both passes. The corner
+    // term is a degenerate touch (always 0) keeping the input location
+    // alive — see the VSOutput comment.
+    visibility[push.slot * (push.capacity + kInstanceRowCapacity) + input.entry] =
         1u | (uint)(input.corner.x * 1e-20f);
 }
 

@@ -131,12 +131,14 @@ struct MeshLodTable {
 };
 [[vk::binding(25, 0)]] StructuredBuffer<MeshLodTable> meshLods;
 
-// Occlusion visibility (per-slot regions of push.capacity entries): the
-// proxy pass at the END of the previous frame drew every entry's world
-// AABB against the finished scene depth (test only, [earlydepthstencil])
-// and marked survivors 1 — so region [slot ^ 1] holds "had any pixel in
-// front of last frame's depth". Zeroed each frame before the proxy pass
-// refills it; seeded all-1 at load so frame 0 draws everything.
+// Occlusion visibility (per-slot regions of push.capacity ENTRY slots
+// followed by kInstanceRowCapacity per-INSTANCE slots): the proxy passes
+// at the END of the previous frame drew every world entry's box AND
+// every live canonical instance row's transformed local box against the
+// finished scene depth (test only, [earlydepthstencil]) and marked
+// survivors 1 — so region [slot ^ 1] holds "had any pixel in front of
+// last frame's depth". Zeroed each frame before the proxy passes refill
+// it; seeded all-1 at load so frame 0 draws everything.
 [[vk::binding(26, 0)]] RWStructuredBuffer<uint> visibility;
 
 // GPU-refined oriented bounding boxes (must match obb.hlsl / proxy.hlsl /
@@ -230,8 +232,13 @@ bool obbInFrustum(Obb o, float4x4 m) {
 
 // One instance's visibility: the entry's local AABB through the
 // instance's world matrix (center/extent form — exact for the box), then
-// the frustum test.
-bool instanceVisible(ObjectBounds b, uint rowIndex, float4x4 viewProj) {
+// the frustum test and — per instance — the occlusion test against the
+// previous frame's per-instance proxy pass (visibility slot capacity +
+// canonical row; the camera sitting inside the slightly expanded box
+// bypasses it, same near-clip false-negative case as world entries).
+// countOcclusion: bump the occluded stat only from the counting loop —
+// the copy loop re-evaluates the same instances.
+bool instanceVisible(ObjectBounds b, uint rowIndex, float4x4 viewProj, bool countOcclusion) {
     const InstanceRow row = instanceRows[rowIndex];
     const float4x4 world =
         objectTransforms[push.slot * kTransformCapacity + row.transformIndex];
@@ -240,7 +247,24 @@ bool instanceVisible(ObjectBounds b, uint rowIndex, float4x4 viewProj) {
     const float3 wc = mul(world, float4(center, 1.0f)).xyz;
     const float3 we = float3(dot(abs(world[0].xyz), extent), dot(abs(world[1].xyz), extent),
                              dot(abs(world[2].xyz), extent));
-    return inFrustum(wc - we, wc + we, viewProj);
+    if ((push.flags & kCullFrustum) != 0 && !inFrustum(wc - we, wc + we, viewProj)) {
+        return false;
+    }
+    if ((push.flags & kCullOcclusion) != 0) {
+        const float3 camPos = cameras[push.slot].position.xyz;
+        const bool cameraInside =
+            all(camPos >= wc - we - 0.5f) && all(camPos <= wc + we + 0.5f);
+        // kFramesInFlight == 2: the other slot's region is last frame's.
+        if (!cameraInside &&
+            visibility[(push.slot ^ 1) * (push.capacity + kInstanceRowCapacity) +
+                       push.capacity + rowIndex] == 0) {
+            if (countOcclusion) {
+                InterlockedAdd(counts[push.slot * kCountStride + 6], 1);
+            }
+            return false;
+        }
+    }
+    return true;
 }
 
 [numthreads(64, 1, 1)]
@@ -266,21 +290,25 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
     if (b.bmax.w == 0.0f) {
         obb = loadObb(id.x);
     }
-    if ((push.flags & kCullFrustum) != 0 && (boundFlags & kBoundsAlwaysVisible) == 0) {
+    if ((boundFlags & kBoundsAlwaysVisible) == 0) {
         const float4x4 viewProj = cameras[push.slot].viewProj;
         if (b.bmax.w == 0.0f) {
-            // World-space bounds: one test covers the whole entry.
-            if (obb.ready ? !obbInFrustum(obb, viewProj)
-                          : !inFrustum(b.bmin.xyz, b.bmax.xyz, viewProj)) {
+            // World-space bounds: one frustum test covers the whole entry
+            // (occlusion for world entries is the separate block below).
+            if ((push.flags & kCullFrustum) != 0 &&
+                (obb.ready ? !obbInFrustum(obb, viewProj)
+                           : !inFrustum(b.bmin.xyz, b.bmax.xyz, viewProj))) {
                 return; // outside the view — shadows above still drew it
             }
-        } else {
-            // Local bounds: test each instance. Count survivors first;
-            // fully visible entries keep their canonical rows, partial
-            // ones compact the survivors into this slot's scratch rows.
+        } else if ((push.flags & (kCullFrustum | kCullOcclusion)) != 0) {
+            // Local bounds: frustum AND occlusion test each instance
+            // (instanceVisible gates each test on its flag). Count
+            // survivors first; fully visible entries keep their canonical
+            // rows, partial ones compact the survivors into this slot's
+            // scratch rows.
             uint visible = 0;
             for (uint k = 0; k < cmd.instanceCount; ++k) {
-                visible += instanceVisible(b, cmd.firstInstance + k, viewProj) ? 1u : 0u;
+                visible += instanceVisible(b, cmd.firstInstance + k, viewProj, true) ? 1u : 0u;
             }
             if (visible == 0) {
                 return;
@@ -291,7 +319,7 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
                 const uint scratch = (1 + push.slot) * kInstanceRowCapacity + rowBase;
                 uint written = 0;
                 for (uint k = 0; k < cmd.instanceCount; ++k) {
-                    if (instanceVisible(b, cmd.firstInstance + k, viewProj)) {
+                    if (instanceVisible(b, cmd.firstInstance + k, viewProj, false)) {
                         instanceRows[scratch + written] =
                             instanceRows[cmd.firstInstance + k];
                         ++written;
@@ -320,7 +348,8 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
                       : (all(camPos >= b.bmin.xyz - 0.5f) &&
                          all(camPos <= b.bmax.xyz + 0.5f));
         // kFramesInFlight == 2: the other slot's region is last frame's.
-        if (!cameraInside && visibility[(push.slot ^ 1) * push.capacity + id.x] == 0) {
+        if (!cameraInside &&
+            visibility[(push.slot ^ 1) * (push.capacity + kInstanceRowCapacity) + id.x] == 0) {
             InterlockedAdd(counts[push.slot * kCountStride + 6], 1);
             return;
         }

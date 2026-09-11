@@ -994,6 +994,9 @@ int main(int argc, char** argv) {
     // Refined-OBB table (binding 33): GPU-written oriented boxes the cull
     // and proxy passes prefer over the AABBs once each row is ready.
     std::unique_ptr<gpu::Buffer> obbBuffer;
+    // Canonical-row -> draw-entry map (binding 34): the per-instance
+    // occlusion proxy pass resolves rows to local bounds through it.
+    std::unique_ptr<gpu::Buffer> rowEntryBuffer;
     const auto importers = assetio::ImporterRegistry::withBuiltins();
     // Capability offer from the gpu layer: which shadow techniques this
     // device can run. The UI is built from this list, never from
@@ -1556,12 +1559,17 @@ int main(int argc, char** argv) {
                           (1024.0 * 1024.0));
         }
 
-        // Occlusion visibility: device-local (the proxy pass hammers it
+        // Occlusion visibility: device-local (the proxy passes hammer it
         // with fragment stores), seeded all-ones so the first frames draw
-        // everything until real proxy results exist.
+        // everything until real proxy results exist. Each slot region =
+        // templateCapacity ENTRY slots + kInstanceRowCapacity per-
+        // INSTANCE slots (runtime instanced models — cull.hlsl and
+        // proxy.hlsl hardcode the same split).
+        const std::uint64_t visibilitySlots =
+            std::uint64_t{templateCapacity} + kInstanceRowCapacity;
         auto visibilityResult = gpu::Buffer::create(
             *device, {
-                         .size = std::uint64_t{templateCapacity} * sizeof(std::uint32_t) *
+                         .size = visibilitySlots * sizeof(std::uint32_t) *
                                  gpu::FrameRenderer::kFramesInFlight,
                          .usage = gpu::kUsageStorage | gpu::kUsageTransferDst,
                          .location = gpu::MemoryLocation::DeviceLocal,
@@ -1574,7 +1582,7 @@ int main(int argc, char** argv) {
         visibilityBuffer = std::move(visibilityResult).value();
         {
             const std::vector<std::uint32_t> seed(
-                std::size_t{templateCapacity} * gpu::FrameRenderer::kFramesInFlight, 1u);
+                visibilitySlots * gpu::FrameRenderer::kFramesInFlight, 1u);
             if (auto staged = transfer->stage(*visibilityBuffer, 0, seed.data(),
                                               seed.size() * sizeof(std::uint32_t));
                 !staged) {
@@ -1582,6 +1590,24 @@ int main(int argc, char** argv) {
                 return 1;
             }
         }
+
+        // Canonical-row -> entry map for the per-instance proxy pass:
+        // host-visible (rewritten on add/remove/reclaim, same benign
+        // in-flight races as the instance rows themselves), all-dead
+        // until runtime models land.
+        auto rowEntryResult = gpu::Buffer::create(
+            *device, {
+                         .size = std::uint64_t{kInstanceRowCapacity} * sizeof(std::uint32_t),
+                         .usage = gpu::kUsageStorage,
+                         .location = gpu::MemoryLocation::HostVisible,
+                     });
+        if (!rowEntryResult) {
+            log::error("Row-entry buffer creation failed: {}", rowEntryResult.error().message);
+            return 1;
+        }
+        rowEntryBuffer = std::move(rowEntryResult).value();
+        std::memset(rowEntryBuffer->mapped(), 0xff,
+                    std::size_t{kInstanceRowCapacity} * sizeof(std::uint32_t));
 
         // Refined-OBB table: header (claim counter) + one row per entry,
         // device-local and GPU-written only. Zero-seeded: counter 0, every
@@ -1892,6 +1918,8 @@ int main(int argc, char** argv) {
         descriptorTable->writeStorageBuffer(22, boundsBuffer->handle(), boundsBuffer->size());
         descriptorTable->writeStorageBuffer(25, meshLodBuffer->handle(), meshLodBuffer->size());
         descriptorTable->writeStorageBuffer(33, obbBuffer->handle(), obbBuffer->size());
+        descriptorTable->writeStorageBuffer(34, rowEntryBuffer->handle(),
+                                            rowEntryBuffer->size());
         descriptorTable->writeStorageBuffer(26, visibilityBuffer->handle(),
                                             visibilityBuffer->size());
         // The rows buffer again, writable for the cull pass's scratch
@@ -2261,13 +2289,16 @@ int main(int argc, char** argv) {
     std::unique_ptr<gpu::Pipeline> cullPipeline;
     std::unique_ptr<gpu::Pipeline> obbPipeline;
     std::unique_ptr<gpu::Pipeline> occlusionPipeline;
+    std::unique_ptr<gpu::Pipeline> occlusionInstancePipeline;
     std::unique_ptr<gpu::Pipeline> occlusionDebugPipeline;
+    std::unique_ptr<gpu::Pipeline> occlusionInstanceDebugPipeline;
     std::unique_ptr<gpu::Pipeline> shadowPipeline;
     std::unique_ptr<gpu::Pipeline> skinPipeline;
     std::unique_ptr<gpu::Pipeline> gbufferPipeline;
     std::unique_ptr<gpu::Pipeline> lightingPipeline;
     std::unique_ptr<gpu::Shader> sceneVert, sceneFrag, cullShader, obbShader, shadowVert,
-        shadowFrag, skinShader, proxyVert, proxyFrag, proxyDebugFrag, skyVert, skyFrag,
+        shadowFrag, skinShader, proxyVert, proxyInstVert, proxyFrag, proxyDebugFrag, skyVert,
+        skyFrag,
         gbufferFrag, deferredVert, deferredFrag;
     if (scene) {
         auto vertResult = gpu::Shader::createFromFile(*device, shaderDir / "scene.vert.spv");
@@ -2466,6 +2497,34 @@ int main(int argc, char** argv) {
                          });
             if (proxyResult) {
                 occlusionPipeline = std::move(proxyResult).value();
+                // Per-instance variant (runtime instanced models): same
+                // PS, VS resolves canonical rows through binding 34 and
+                // transforms local boxes. Optional like everything here.
+                auto instVertResult = gpu::Shader::createFromFile(
+                    *device, shaderDir / "proxy_instances.vert.spv");
+                if (instVertResult) {
+                    proxyInstVert = std::move(instVertResult).value();
+                    auto instResult = gpu::Pipeline::createGraphics(
+                        *device, {
+                                     .vertexShader = proxyInstVert.get(),
+                                     .fragmentShader = proxyFrag.get(),
+                                     .colorFormat = swapchain->imageFormat(),
+                                     .depthFormat = gpu::kFormatD32Sfloat,
+                                     .pushConstantBytes =
+                                         2 * sizeof(std::uint32_t), // {slot, capacity}
+                                     .descriptorLayout = descriptorTable->layout(),
+                                     .occlusionProxy = true,
+                                 });
+                    if (instResult) {
+                        occlusionInstancePipeline = std::move(instResult).value();
+                    } else {
+                        log::warn("Occlusion instance pipeline unavailable: {}",
+                                  instResult.error().message);
+                    }
+                } else {
+                    log::warn("Occlusion instance shader unavailable: {}",
+                              instVertResult.error().message);
+                }
                 // Debug-overlay variant: same VS/boxes, translucent color
                 // instead of visibility stores (Settings -> "Show
                 // occlusion boxes"). Optional like everything here.
@@ -2489,6 +2548,25 @@ int main(int argc, char** argv) {
                     } else {
                         log::warn("Occlusion debug pipeline unavailable: {}",
                                   debugResult.error().message);
+                    }
+                    if (proxyInstVert) {
+                        auto instDebugResult = gpu::Pipeline::createGraphics(
+                            *device,
+                            {
+                                .vertexShader = proxyInstVert.get(),
+                                .fragmentShader = proxyDebugFrag.get(),
+                                .colorFormat = swapchain->imageFormat(),
+                                .depthFormat = gpu::kFormatD32Sfloat,
+                                .pushConstantBytes = 2 * sizeof(std::uint32_t),
+                                .descriptorLayout = descriptorTable->layout(),
+                                .occlusionDebug = true,
+                            });
+                        if (instDebugResult) {
+                            occlusionInstanceDebugPipeline = std::move(instDebugResult).value();
+                        } else {
+                            log::warn("Occlusion instance debug pipeline unavailable: {}",
+                                      instDebugResult.error().message);
+                        }
                     }
                 } else {
                     log::warn("Occlusion debug shader unavailable: {}",
@@ -2643,11 +2721,18 @@ int main(int argc, char** argv) {
             batch.cullPipeline = cullPipeline.get();
             batch.obbRefinePipeline = obbPipeline.get();
             batch.occlusionPipeline = occlusionPipeline.get();
+            batch.occlusionInstancePipeline = occlusionInstancePipeline.get();
+            batch.occlusionInstanceRows = kInstanceRowCapacity;
             batch.occlusionDebugPipeline =
                 showOcclusionBoxes ? occlusionDebugPipeline.get() : nullptr;
+            batch.occlusionInstanceDebugPipeline =
+                showOcclusionBoxes ? occlusionInstanceDebugPipeline.get() : nullptr;
             batch.occlusionVisibility = visibilityBuffer->handle();
+            // Region = entry slots + per-instance slots (matches the
+            // hardcoded split in cull.hlsl / proxy.hlsl).
             batch.occlusionRegionStride =
-                std::uint64_t{templateCapacity} * sizeof(std::uint32_t);
+                (std::uint64_t{templateCapacity} + kInstanceRowCapacity) *
+                sizeof(std::uint32_t);
             batch.cullFlags = (frustumCull ? 1u : 0u) | (lodSelect ? 2u : 0u) |
                               (occlusionCull && occlusionPipeline ? 4u : 0u);
         } else {
@@ -2977,10 +3062,24 @@ int main(int argc, char** argv) {
         }
         return std::nullopt;
     };
+    // Mark canonical rows dead in the row->entry map (binding 34): the
+    // per-instance proxy pass skips them. 0xffffffff = dead.
+    auto markRowEntriesDead = [&](std::uint32_t base, std::uint32_t count) {
+        auto* mapped = static_cast<std::uint32_t*>(rowEntryBuffer->mapped());
+        for (std::uint32_t i = 0; i < count; ++i) {
+            mapped[base + i] = 0xffffffffu;
+        }
+    };
     auto freeInstanceRows = [&](std::uint32_t base, std::uint32_t count) {
         if (count == 0) {
             return;
         }
+        // Cleared at RETIREMENT, not at relocation/unload — in-flight
+        // templates may draw the old rows for kFramesInFlight more
+        // frames, and the per-instance proxy must keep marking their
+        // visibility bits or those instances would occlusion-drop for a
+        // frame (visible flicker on every capacity growth).
+        markRowEntriesDead(base, count);
         auto it = std::lower_bound(
             freeInstanceRanges.begin(), freeInstanceRanges.end(), base,
             [](const RowRange& range, std::uint32_t b) { return range.base < b; });
@@ -3063,6 +3162,9 @@ int main(int argc, char** argv) {
         std::memcpy(static_cast<std::byte*>(instanceRowBuffer->mapped()) +
                         index * sizeof(InstanceRow),
                     &row, sizeof(InstanceRow));
+        // Runtime rows' objectIndex IS the draw entry — keep the
+        // row->entry map (per-instance proxy pass) in lockstep.
+        static_cast<std::uint32_t*>(rowEntryBuffer->mapped())[index] = row.objectIndex;
     };
     auto placementMatrix = [&](const float position[3], float yawDegrees, float scale) {
         const float yaw = yawDegrees * kPi / 180.0f;
@@ -3194,6 +3296,15 @@ int main(int argc, char** argv) {
         for (std::uint32_t m = 0; m < meshCount; ++m) {
             draws[resource.meshObjectIndices[m]].instanceCount =
                 static_cast<std::uint32_t>(resource.instances.size());
+            // The vacated tail row's transformIndex will eventually be
+            // recycled by another model — stop the per-instance proxy
+            // from drawing a ghost box on it. In-flight templates still
+            // drawing the old count lose the (duplicate) tail copy's
+            // visibility bit a frame early — benign, same window as the
+            // swap-remove duplicate itself.
+            markRowEntriesDead(resource.instanceBase + m * resource.instanceCapacity +
+                                   static_cast<std::uint32_t>(last),
+                               1);
         }
         templatesDirty.fill(true);
         if (batch.mode == gpu::DrawSubmitMode::Direct) {
@@ -4580,6 +4691,8 @@ int main(int argc, char** argv) {
                         // per-frame CPU cost afterwards.
                         batch.occlusionDebugPipeline =
                             showOcclusionBoxes ? occlusionDebugPipeline.get() : nullptr;
+                        batch.occlusionInstanceDebugPipeline =
+                            showOcclusionBoxes ? occlusionInstanceDebugPipeline.get() : nullptr;
                         renderer->invalidateStaticRecordings();
                         log::info("Occlusion box overlay {}", showOcclusionBoxes ? "on" : "off");
                     }

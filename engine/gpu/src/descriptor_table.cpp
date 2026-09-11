@@ -164,6 +164,14 @@ Result<std::unique_ptr<DescriptorTable>> DescriptorTable::create(const Device& d
                         .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT |
                                       VK_SHADER_STAGE_VERTEX_BIT});
     bindingFlags.push_back(VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT);
+    // Canonical-row -> draw-entry map (binding 34): the per-instance
+    // proxy pass's vertex shader resolves each canonical instance row to
+    // its entry's local bounds through it (0xffffffff = dead row).
+    bindings.push_back({.binding = 34,
+                        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                        .descriptorCount = 1,
+                        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT});
+    bindingFlags.push_back(VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT);
     // Reflection probe cubemap (binding 18): written after the load-time
     // capture; shaders only sample it when the light buffer selects the
     // probe tier, so it may stay unwritten (partially bound).
@@ -211,7 +219,7 @@ Result<std::unique_ptr<DescriptorTable>> DescriptorTable::create(const Device& d
     }
 
     std::vector<VkDescriptorPoolSize> poolSizes{
-        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 23},
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 24},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, maxTextures + 25},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_SAMPLER, 2}};
     if (rayQuery) {
