@@ -716,6 +716,10 @@ int main(int argc, char** argv) {
     // debug pipeline and costs one invalidateStaticRecordings — no
     // per-frame CPU work.
     bool showOcclusionBoxes = false;
+    // Live fog density (Settings slider): rides the per-slot light buffer
+    // like the sun sliders, so changing it never touches the static
+    // recordings. Seeded from the scene's authored value after load.
+    float fogDensity = 0.0f;
     std::uint64_t benchFrames = 0; // non-zero: exit after N frames with a report
     // Streaming test harness: auto-spawn this model at random intervals
     // through the message queue.
@@ -796,6 +800,7 @@ int main(int argc, char** argv) {
             return 1;
         }
         scene = std::move(sceneResult).value();
+        fogDensity = scene->fog.density;
         const auto ms =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() -
                                                                   start)
@@ -4625,7 +4630,7 @@ int main(int argc, char** argv) {
                 const assetio::FogDesc& fog = scene->fog;
                 lightData.fogBoxMin = {fog.position[0] - fog.size[0] * 0.5f,
                                        fog.position[1] - fog.size[1] * 0.5f,
-                                       fog.position[2] - fog.size[2] * 0.5f, fog.density};
+                                       fog.position[2] - fog.size[2] * 0.5f, fogDensity};
                 lightData.fogBoxMax = {fog.position[0] + fog.size[0] * 0.5f,
                                        fog.position[1] + fog.size[1] * 0.5f,
                                        fog.position[2] + fog.size[2] * 0.5f, fog.anisotropy};
@@ -4694,7 +4699,9 @@ int main(int argc, char** argv) {
                 // Below the debug panel, which grew GPU-memory and culling
                 // sections (screenshots 055/039 caught earlier overlaps of
                 // exactly this kind — keep this below the panel's bottom).
-                ImGui::SetNextWindowPos(ImVec2(8.0f, 420.0f), ImGuiCond_FirstUseEver);
+                // 396: the fog-density row would otherwise push "Advanced"
+                // past the bottom edge of the default window height.
+                ImGui::SetNextWindowPos(ImVec2(8.0f, 396.0f), ImGuiCond_FirstUseEver);
                 ImGui::Begin("Settings", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
                 // One shadow choice, built from the device's offer list.
                 // Ray traced additionally needs the BVH the viewer built.
@@ -4794,6 +4801,11 @@ int main(int argc, char** argv) {
                                 (shownDrawCounts[4] + shownDrawCounts[5]) / 3,
                                 shownDrawCounts[5] / 3);
                     ImGui::Text("Occluded: %u", shownDrawCounts[6]);
+                }
+                if (scene && scene->fog.enabled) {
+                    // Per-slot light-buffer data like the sun sliders:
+                    // live in every primary-ray mode, no invalidation.
+                    ImGui::SliderFloat("Fog density", &fogDensity, 0.0f, 0.15f, "%.3f");
                 }
                 if (ImGui::TreeNode("Advanced")) {
                     ImGui::SliderFloat("Azimuth", &sun.azimuthDeg, -180.0f, 180.0f, "%.0f deg");
