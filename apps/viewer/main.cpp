@@ -2835,6 +2835,12 @@ int main(int argc, char** argv) {
     // by the occlusion test. Stats only — read after the slot's fence,
     // kFramesInFlight frames late.
     std::uint32_t lastDrawCounts[7] = {0, 0, 0, 0, 0, 0, 0};
+    // Settings-panel copies of the counters above, refreshed 4x per
+    // second (matching the debug panel's readout cadence) — per-frame
+    // stat text flickers unreadably. Graphs and bench reports keep the
+    // live values.
+    std::uint32_t shownDrawCounts[7] = {0, 0, 0, 0, 0, 0, 0};
+    float statsRefreshTimer = 1.0f; // expired: first frame fills
 
     // Stats window: wall time + renderer CPU counters, reported per mode.
     constexpr std::uint64_t kReportInterval = 600;
@@ -4573,6 +4579,11 @@ int main(int argc, char** argv) {
 
         if (ui && viewWidth > 0 && viewHeight > 0) {
             REND_PROFILE_ZONE("BuildUi");
+            statsRefreshTimer += deltaSeconds;
+            if (statsRefreshTimer >= 0.25f) {
+                statsRefreshTimer = 0.0f;
+                std::memcpy(shownDrawCounts, lastDrawCounts, sizeof(shownDrawCounts));
+            }
             const bool vsyncBefore = vsync;
             viewer::Ui::LoadingStatus loadingStatus{
                 .hideScene = waitForTextures,
@@ -4696,17 +4707,17 @@ int main(int argc, char** argv) {
                         renderer->invalidateStaticRecordings();
                         log::info("Occlusion box overlay {}", showOcclusionBoxes ? "on" : "off");
                     }
-                    ImGui::Text("Draws: %u in view / %u live / %u table", lastDrawCounts[1],
-                                lastDrawCounts[0], batch.drawCount);
-                    ImGui::Text("Transparent draws: %u", lastDrawCounts[3]);
-                    ImGui::Text("Partial instance rows: %u", lastDrawCounts[2]);
+                    ImGui::Text("Draws: %u in view / %u live / %u table", shownDrawCounts[1],
+                                shownDrawCounts[0], batch.drawCount);
+                    ImGui::Text("Transparent draws: %u", shownDrawCounts[3]);
+                    ImGui::Text("Partial instance rows: %u", shownDrawCounts[2]);
                     // Free stat: the cull pass already counts emitted
                     // indices; this readback rides the existing fenced
                     // count-buffer memcpy, so it costs no GPU time at all.
                     ImGui::Text("Triangles: %u (%u transparent)",
-                                (lastDrawCounts[4] + lastDrawCounts[5]) / 3,
-                                lastDrawCounts[5] / 3);
-                    ImGui::Text("Occluded: %u", lastDrawCounts[6]);
+                                (shownDrawCounts[4] + shownDrawCounts[5]) / 3,
+                                shownDrawCounts[5] / 3);
+                    ImGui::Text("Occluded: %u", shownDrawCounts[6]);
                 }
                 if (ImGui::TreeNode("Advanced")) {
                     ImGui::SliderFloat("Azimuth", &sun.azimuthDeg, -180.0f, 180.0f, "%.0f deg");

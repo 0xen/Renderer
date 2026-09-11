@@ -75,6 +75,18 @@ private:
     Ui() = default;
 
     float smoothedFrameSeconds_ = 0.0f;
+    // The numeric readouts refresh at 4 Hz (kTextRefreshSeconds) so they
+    // are readable instead of flickering every frame; these hold the
+    // values displayed between refreshes. The history GRAPHS stay
+    // per-frame — their whole point is raw variation.
+    static constexpr float kTextRefreshSeconds = 0.25f;
+    float textRefreshTimer_ = kTextRefreshSeconds; // expired: first frame fills
+    float shownFrameSeconds_ = 0.0f;
+    double shownMemoryMiB_ = 0.0;
+    std::uint32_t shownMemoryCount_ = 0;
+    double shownDeviceMiB_ = 0.0, shownHostMiB_ = 0.0, shownImageMiB_ = 0.0;
+    std::uint32_t shownDeviceCount_ = 0, shownHostCount_ = 0, shownImageCount_ = 0;
+    CullStats shownCull_{};
     // Instantaneous FPS ring buffer feeding the debug panel's graph.
     std::array<float, 180> fpsHistory_{};
     std::size_t fpsHistoryOffset_ = 0;

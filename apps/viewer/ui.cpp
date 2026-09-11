@@ -159,17 +159,27 @@ void Ui::buildFrame(std::uint32_t width, std::uint32_t height, float deltaSecond
 
     // Debug panel, top-left corner: smoothed FPS (readable instead of
     // flickering), a raw per-frame FPS history graph, and the VSync toggle.
+    // The smoothing still runs per frame; the TEXT readouts below sample
+    // it only 4x per second (the graphs stay per-frame — raw variation is
+    // what they are for).
     smoothedFrameSeconds_ = smoothedFrameSeconds_ <= 0.0f
                                 ? io.DeltaTime
                                 : smoothedFrameSeconds_ * 0.95f + io.DeltaTime * 0.05f;
     fpsHistory_[fpsHistoryOffset_] = 1.0f / io.DeltaTime;
     fpsHistoryOffset_ = (fpsHistoryOffset_ + 1) % fpsHistory_.size();
+    textRefreshTimer_ += io.DeltaTime;
+    const bool refreshText = textRefreshTimer_ >= kTextRefreshSeconds;
+    if (refreshText) {
+        textRefreshTimer_ = 0.0f;
+        shownFrameSeconds_ = smoothedFrameSeconds_;
+    }
     ImGui::SetNextWindowPos(ImVec2(8.0f, 8.0f));
     ImGui::Begin("##debug", nullptr,
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
                      ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
-    ImGui::Text("%.0f FPS (%.2f ms)", 1.0f / smoothedFrameSeconds_,
-                smoothedFrameSeconds_ * 1000.0f);
+    ImGui::Text("%.0f FPS (%.2f ms)",
+                shownFrameSeconds_ > 0.0f ? 1.0f / shownFrameSeconds_ : 0.0f,
+                shownFrameSeconds_ * 1000.0f);
     ImGui::PlotLines("##fpsHistory", fpsHistory_.data(),
                      static_cast<int>(fpsHistory_.size()),
                      static_cast<int>(fpsHistoryOffset_), nullptr, 0.0f, FLT_MAX,
@@ -188,21 +198,26 @@ void Ui::buildFrame(std::uint32_t width, std::uint32_t height, float deltaSecond
     const double totalMiB = static_cast<double>(mem.totalBytes()) / kMiB;
     memoryHistory_[memoryHistoryOffset_] = static_cast<float>(totalMiB);
     memoryHistoryOffset_ = (memoryHistoryOffset_ + 1) % memoryHistory_.size();
+    if (refreshText) {
+        using Kind = rend::gpu::MemoryTracker::Kind;
+        shownMemoryMiB_ = totalMiB;
+        shownMemoryCount_ = mem.totalCount();
+        shownDeviceMiB_ = mem.bytes[static_cast<std::uint32_t>(Kind::DeviceBuffer)] / kMiB;
+        shownDeviceCount_ = mem.counts[static_cast<std::uint32_t>(Kind::DeviceBuffer)];
+        shownHostMiB_ = mem.bytes[static_cast<std::uint32_t>(Kind::HostBuffer)] / kMiB;
+        shownHostCount_ = mem.counts[static_cast<std::uint32_t>(Kind::HostBuffer)];
+        shownImageMiB_ = mem.bytes[static_cast<std::uint32_t>(Kind::Image)] / kMiB;
+        shownImageCount_ = mem.counts[static_cast<std::uint32_t>(Kind::Image)];
+    }
     ImGui::Separator();
-    ImGui::Text("GPU memory: %.1f MiB (%u allocations)", totalMiB, mem.totalCount());
+    ImGui::Text("GPU memory: %.1f MiB (%u allocations)", shownMemoryMiB_, shownMemoryCount_);
     ImGui::PlotLines("##memHistory", memoryHistory_.data(),
                      static_cast<int>(memoryHistory_.size()),
                      static_cast<int>(memoryHistoryOffset_), nullptr, 0.0f, FLT_MAX,
                      ImVec2(180.0f, 42.0f));
-    using Kind = rend::gpu::MemoryTracker::Kind;
-    ImGui::Text("Buffers: %.1f MiB (%u) device, %.1f MiB (%u) host",
-                mem.bytes[static_cast<std::uint32_t>(Kind::DeviceBuffer)] / kMiB,
-                mem.counts[static_cast<std::uint32_t>(Kind::DeviceBuffer)],
-                mem.bytes[static_cast<std::uint32_t>(Kind::HostBuffer)] / kMiB,
-                mem.counts[static_cast<std::uint32_t>(Kind::HostBuffer)]);
-    ImGui::Text("Images: %.1f MiB (%u)",
-                mem.bytes[static_cast<std::uint32_t>(Kind::Image)] / kMiB,
-                mem.counts[static_cast<std::uint32_t>(Kind::Image)]);
+    ImGui::Text("Buffers: %.1f MiB (%u) device, %.1f MiB (%u) host", shownDeviceMiB_,
+                shownDeviceCount_, shownHostMiB_, shownHostCount_);
+    ImGui::Text("Images: %.1f MiB (%u)", shownImageMiB_, shownImageCount_);
 
     // GPU culling result, same treatment: what the cull dispatch emitted
     // last completed frame — draws that survived, the triangles they
@@ -212,10 +227,13 @@ void Ui::buildFrame(std::uint32_t width, std::uint32_t height, float deltaSecond
         const float megaTris = static_cast<float>(cull->triangles) / 1.0e6f;
         triangleHistory_[triangleHistoryOffset_] = megaTris;
         triangleHistoryOffset_ = (triangleHistoryOffset_ + 1) % triangleHistory_.size();
+        if (refreshText) {
+            shownCull_ = *cull;
+        }
         ImGui::Separator();
-        ImGui::Text("Culling: %u / %u draws, %u occluded", cull->drawsInView,
-                    cull->drawsLive, cull->occluded);
-        ImGui::Text("Triangles: %.2fM", megaTris);
+        ImGui::Text("Culling: %u / %u draws, %u occluded", shownCull_.drawsInView,
+                    shownCull_.drawsLive, shownCull_.occluded);
+        ImGui::Text("Triangles: %.2fM", static_cast<float>(shownCull_.triangles) / 1.0e6f);
         ImGui::PlotLines("##triHistory", triangleHistory_.data(),
                          static_cast<int>(triangleHistory_.size()),
                          static_cast<int>(triangleHistoryOffset_), nullptr, 0.0f, FLT_MAX,
