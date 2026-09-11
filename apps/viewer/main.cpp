@@ -4236,7 +4236,14 @@ int main(int argc, char** argv) {
                           "bindless",
                           texMs, textures.size(),
                           static_cast<double>(texStream.texelBytes) / (1024.0 * 1024.0));
-                waitForTextures = false;
+                if (waitForTextures) {
+                    waitForTextures = false;
+                    // The wait cover passed a null batch to drawFrame, so
+                    // any static recording baked so far is the clear-only
+                    // one — drop it here rather than relying on the probe
+                    // branch's invalidate happening to run next frame.
+                    renderer->invalidateStaticRecordings();
+                }
             }
         } else if (capturePendingProbe) {
             // One-shot deferred probe capture, now that every texture the
