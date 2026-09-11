@@ -914,6 +914,11 @@ int main(int argc, char** argv) {
     std::vector<std::vector<gpu::AccelerationStructure::TriangleGeometry>> refitGeometries;
     math::Vec3 sceneMin{1e30f, 1e30f, 1e30f};
     math::Vec3 sceneMax{-1e30f, -1e30f, -1e30f};
+    // Static <Model> bounds alone, snapshotted after scene setup: the
+    // base the cascade-fit AABB is recomputed from when runtime
+    // instances spawn/move/unload (sceneMin/Max above hold the union).
+    math::Vec3 staticSceneMin{1e30f, 1e30f, 1e30f};
+    math::Vec3 staticSceneMax{-1e30f, -1e30f, -1e30f};
     std::vector<gpu::DrawIndexedIndirect> draws; // outlives the loop: Direct mode records from it
     std::unique_ptr<gpu::Buffer> objectBuffer;
     std::unique_ptr<gpu::DescriptorTable> descriptorTable;
@@ -2027,6 +2032,11 @@ int main(int argc, char** argv) {
             log::info("Textures ready in 0 ms: 1 images (white fallback only)");
         }
 
+        // Static <Model> bounds are final here — snapshot them for the
+        // runtime-instance cascade-fit recompute and the probe position.
+        staticSceneMin = sceneMin;
+        staticSceneMax = sceneMax;
+
         // Reflection probe capture: render the scene's draw stream into a
         // small cubemap once — the raster tier reflective objects sample.
         // Static by nature: animated meshes bake at the bind pose, lighting
@@ -2042,8 +2052,9 @@ int main(int argc, char** argv) {
         capturePendingProbe = [&, sceneDrawCount = static_cast<std::uint32_t>(draws.size())] {
             const auto probeStart = std::chrono::steady_clock::now();
             // Probe position: first <ReflectionProbe> in the scene XML,
-            // else the scene AABB's center.
-            math::Vec3 probePos = vmul(vadd(sceneMin, sceneMax), 0.5f);
+            // else the STATIC scene AABB's center (runtime spawns are
+            // excluded from the capture, so they don't steer it either).
+            math::Vec3 probePos = vmul(vadd(staticSceneMin, staticSceneMax), 0.5f);
             if (!scene->reflectionProbes.empty()) {
                 const auto& p = scene->reflectionProbes.front().position;
                 probePos = {p[0], p[1], p[2]};
@@ -3204,6 +3215,24 @@ int main(int argc, char** argv) {
                         std::max(sceneMax.z, w.z)};
         }
     };
+    // Cascade-fit AABB = static scene bounds union every LIVE runtime
+    // instance. Spawn/move/unload mark it dirty; the frame loop
+    // recomputes before fitting, so a moved instance is followed and an
+    // unloaded one stops inflating the fit (previously the union only
+    // grew on spawn and SetTransform never fed it at all).
+    bool sceneAabbDirty = false;
+    auto recomputeSceneAabb = [&] {
+        sceneMin = staticSceneMin;
+        sceneMax = staticSceneMax;
+        for (const auto& [path, resource] : resourcesByPath) {
+            for (const ResourceInstance& instance : resource.instances) {
+                const math::Mat4& m = objectTransforms[instance.transformIndex];
+                for (const auto& [localMin, localMax] : resource.meshBounds) {
+                    growSceneAabb(localMin, localMax, m);
+                }
+            }
+        }
+    };
     // Runtime resources carry their LOCAL per-mesh AABBs in the bounds
     // table (mode bmax[3] = 1): the cull shader pushes them through each
     // instance's transform itself, so nothing here tracks instance
@@ -3273,9 +3302,8 @@ int main(int argc, char** argv) {
                              {.objectIndex = resource.meshObjectIndices[m],
                               .transformIndex = *transformIndex});
             draws[resource.meshObjectIndices[m]].instanceCount = count + 1;
-            growSceneAabb(resource.meshBounds[m].first, resource.meshBounds[m].second,
-                          placement);
         }
+        sceneAabbDirty = true; // the cascade fit picks up the new instance
         resource.instances.push_back({.handle = cmd.handle, .transformIndex = *transformIndex});
         liveHandles.push_back(cmd.handle);
         templatesDirty.fill(true);
@@ -3291,6 +3319,7 @@ int main(int argc, char** argv) {
     // resource's whole GPU state rides the same deferred reclaim. The
     // caller erases the emptied resource from the map.
     auto removeInstanceAt = [&](GeometryResource& resource, std::size_t k) {
+        sceneAabbDirty = true; // the cascade fit stops covering it
         const auto meshCount = static_cast<std::uint32_t>(resource.meshObjectIndices.size());
         const std::size_t last = resource.instances.size() - 1;
         PendingReclaim reclaim;
@@ -3975,8 +4004,9 @@ int main(int argc, char** argv) {
                     for (ResourceInstance& instance : resource.instances) {
                         if (instance.handle == cmd.transform.handle) {
                             // The cull shader tests local bounds through
-                            // this transform — nothing else to update.
+                            // this transform; the cascade fit re-unions.
                             objectTransforms[instance.transformIndex] = placement;
+                            sceneAabbDirty = true;
                             found = true;
                             break;
                         }
@@ -4550,6 +4580,10 @@ int main(int argc, char** argv) {
             const math::Vec3 direction = sun.direction();
             const float aspect =
                 viewHeight > 0 ? static_cast<float>(viewWidth) / viewHeight : 1.0f;
+            if (sceneAabbDirty) {
+                recomputeSceneAabb();
+                sceneAabbDirty = false;
+            }
             const CascadeFit fit =
                 fitCascades(camera.position, camera.forward(), camera.fovDegrees, aspect,
                             direction, sceneMin, sceneMax, sun.shadowDistance);
