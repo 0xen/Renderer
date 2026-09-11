@@ -2034,7 +2034,12 @@ int main(int argc, char** argv) {
         // ray traced reflections are the exact tier above). DEFERRED until
         // the texture stream completes so the capture samples the real
         // textures — the frame loop's pump invokes this once.
-        capturePendingProbe = [&] {
+        // Snapshot the static-scene draw count now: runtime loads only
+        // append entries, and those must not reach either capture — the
+        // capture-face transform regions are seeded identity and never
+        // rewritten, so a runtime instance resident at capture time would
+        // bake into the cubes untransformed at the origin.
+        capturePendingProbe = [&, sceneDrawCount = static_cast<std::uint32_t>(draws.size())] {
             const auto probeStart = std::chrono::steady_clock::now();
             // Probe position: first <ReflectionProbe> in the scene XML,
             // else the scene AABB's center.
@@ -2119,7 +2124,7 @@ int main(int argc, char** argv) {
                         *device, {
                                      .geometry = geometryPool->buffer().handle(),
                                      .draws = draws.data(),
-                                     .drawCount = static_cast<std::uint32_t>(draws.size()),
+                                     .drawCount = sceneDrawCount,
                                      .descriptors = descriptorTable->set(),
                                      .pipeline = probePipeline.get(),
                                      .format = kProbeFormat,
@@ -2214,7 +2219,7 @@ int main(int argc, char** argv) {
                             {
                                 .geometry = geometryPool->buffer().handle(),
                                 .draws = draws.data(),
-                                .drawCount = static_cast<std::uint32_t>(draws.size()),
+                                .drawCount = sceneDrawCount,
                                 .descriptors = descriptorTable->set(),
                                 .pipeline = bakePipeline.get(),
                                 .format = gpu::kFormatR32Sfloat,
