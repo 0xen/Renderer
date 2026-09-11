@@ -354,9 +354,16 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
         // counts, scratch-row allocator, emitted-index stats), run one
         // thread per template, then make the writes visible to the
         // indirect fetch.
+        // Under traced primaries the proxy pass never runs, so occlusion
+        // testing here would read (and keep re-clearing) a visibility
+        // buffer nothing refreshes — every entry would drop, and the
+        // first raster frame after a mode toggle would flash blank.
+        // Mask the bit out: visibility stays stale-but-conservative,
+        // exactly like scenes where this dispatch never ran.
+        const std::uint32_t cullFlags = rtDraw ? (batch->cullFlags & ~4u) : batch->cullFlags;
         const bool occlusion = batch->occlusionPipeline != nullptr &&
                                batch->occlusionVisibility != VK_NULL_HANDLE &&
-                               (batch->cullFlags & 4u) != 0;
+                               (cullFlags & 4u) != 0;
         VkDependencyInfo cullDependency{};
         cullDependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
         if (occlusion) {
@@ -452,7 +459,7 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
             batch->drawCount, slot,
             static_cast<std::uint32_t>(batch->indirectRegionStride /
                                        sizeof(DrawIndexedIndirect)),
-            batch->cullFlags, 0};
+            cullFlags, 0};
         std::memcpy(&push[4], &batch->lodFactor, sizeof(float));
         vkCmdPushConstants(cmd, batch->cullPipeline->layout(), VK_SHADER_STAGE_COMPUTE_BIT, 0,
                            sizeof(push), push);
