@@ -1195,10 +1195,19 @@ int main(int argc, char** argv) {
                         }
                         simplified.resize(lodIndices.size());
                         float relError = 0.0f;
-                        const std::size_t count = meshopt_simplify(
+                        // Attribute-aware collapse ordering: without the
+                        // normal/UV error term, seam collapses smear UVs and
+                        // corrupt the screen-space tangent frame the normal
+                        // mapping derives from them. The bounded target_error
+                        // lets a level stop early rather than always hitting
+                        // the 4x index target at any quality.
+                        static constexpr float kLodAttributeWeights[5] = {0.5f, 0.5f, 0.5f,
+                                                                          1.0f, 1.0f};
+                        const std::size_t count = meshopt_simplifyWithAttributes(
                             simplified.data(), lodIndices.data(), lodIndices.size(),
-                            mesh.positions.data(), vertexCount, 3 * sizeof(float), target,
-                            0.25f, 0, &relError);
+                            mesh.positions.data(), vertexCount, 3 * sizeof(float),
+                            vertexData.data() + 3, kVertexStride, kLodAttributeWeights, 5,
+                            nullptr, target, 0.01f, 0, &relError);
                         // No meaningful reduction (dense/degenerate
                         // topology): further levels won't do better.
                         if (count == 0 || count >= lodIndices.size() * 9 / 10) {
@@ -1221,9 +1230,11 @@ int main(int argc, char** argv) {
                             geometryPool->free(lodSlice.value());
                             break;
                         }
-                        // Keep errors non-decreasing so the shader's
-                        // coarsest-that-fits scan stays well ordered.
-                        lastError = std::max(relError * errorScale, lastError);
+                        // result_error is relative to THIS level's input, so
+                        // levels accumulate their deviation from LOD0 (also
+                        // keeps errors non-decreasing for the shader's
+                        // coarsest-that-fits scan).
+                        lastError += relError * errorScale;
                         lodTable.lods[lodTable.lodCount++] = {
                             .firstIndex = static_cast<std::uint32_t>(lodSlice.value().offset /
                                                                      sizeof(std::uint32_t)),
