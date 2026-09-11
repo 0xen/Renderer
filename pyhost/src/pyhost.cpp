@@ -76,7 +76,8 @@ PYBIND11_EMBEDDED_MODULE(rend, m) {
 
     m.def(
         "load_model",
-        [](const std::string& path, std::array<float, 3> position, float yaw, float scale) {
+        [](const std::string& path, std::array<float, 3> position, float yaw, float scale,
+           bool reflective) {
             renderer::Command cmd;
             cmd.type = renderer::Command::Type::LoadModel;
             cmd.load.handle = g_host.queue->allocateHandle();
@@ -89,13 +90,17 @@ PYBIND11_EMBEDDED_MODULE(rend, m) {
             cmd.load.position[2] = position[2];
             cmd.load.yawDegrees = yaw;
             cmd.load.scale = scale;
+            cmd.load.reflective = reflective ? 1u : 0u;
             pushCommand(cmd);
             return cmd.load.handle;
         },
         py::arg("path"), py::arg("position") = std::array<float, 3>{0.0f, 0.0f, 0.0f},
-        py::arg("yaw") = 0.0f, py::arg("scale") = 1.0f,
+        py::arg("yaw") = 0.0f, py::arg("scale") = 1.0f, py::arg("reflective") = false,
         "Queue a model load; returns its handle. The model exists only "
-        "once a model_ready event for the handle reports ok.");
+        "once a model_ready event for the handle reports ok. reflective "
+        "tags the model for RT/probe reflections (the scene-XML "
+        "reflective=\"true\" twin); the first load of a path decides for "
+        "every instance of it.");
 
     m.def(
         "set_transform",

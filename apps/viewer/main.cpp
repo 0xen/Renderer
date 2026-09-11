@@ -2976,6 +2976,10 @@ int main(int argc, char** argv) {
     };
     struct GeometryResource {
         bool resident = false;
+        // Reflective tag requested by the FIRST load of the path — object
+        // rows are per resource, so every instance shares it; later loads
+        // asking for the other value warn and get this one.
+        std::uint32_t reflective = 0;
         std::vector<std::uint32_t> meshObjectIndices; // rows in draws/objectData
         // Local-space AABB per mesh: scene-AABB growth per placed instance.
         std::vector<std::pair<math::Vec3, math::Vec3>> meshBounds;
@@ -3436,6 +3440,11 @@ int main(int argc, char** argv) {
                 claimTexture(material.baseColorTexture, true);
                 claimTexture(material.normalTexture, false);
                 claimTexture(material.metallicRoughnessTexture, false);
+            }
+            // Semantic scene tag, same as the XML path's reflective="true":
+            // the RT-variant shaders decide whether to trace it.
+            if (out.cmd.reflective != 0) {
+                prepared.object.flags |= kObjectReflective;
             }
             prepared.vertexData = interleave(mesh);
             for (std::size_t v = 0; v + 2 < mesh.positions.size(); v += 3) {
@@ -3934,6 +3943,13 @@ int main(int argc, char** argv) {
                 const auto now = std::chrono::steady_clock::now();
                 auto [it, inserted] = resourcesByPath.try_emplace(path);
                 GeometryResource& resource = it->second;
+                if (inserted) {
+                    resource.reflective = cmd.load.reflective;
+                } else if (resource.reflective != cmd.load.reflective) {
+                    log::warn("load_model('{}'): reflective={} ignored — the resource is "
+                              "shared and the first load chose {}",
+                              path, cmd.load.reflective != 0, resource.reflective != 0);
+                }
                 if (inserted) {
                     resource.queued.push_back({cmd.load, now});
                     {

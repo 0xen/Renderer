@@ -21,6 +21,11 @@ struct LoadModelCmd {
     float position[3] = {};
     float yawDegrees = 0.0f;
     float scale = 1.0f;
+    // Semantic reflective tag, the runtime twin of the scene-XML
+    // reflective="true" attribute. Material state is per RESOURCE (shared
+    // by every instance of the path), so the first load of a path decides;
+    // later loads with a different value warn and keep the first.
+    std::uint32_t reflective = 0;
 };
 
 struct SetTransformCmd {
