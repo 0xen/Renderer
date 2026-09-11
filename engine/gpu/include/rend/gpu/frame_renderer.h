@@ -179,6 +179,11 @@ struct DrawBatch {
     // gets recorded — invalidate static recordings after flipping it.
     const Pipeline* rtPrimaryPipeline = nullptr;
     bool rtPrimary = false;
+    // Keep the shadow cascades (and, in IndirectCount mode, the compaction
+    // dispatch that feeds them) recorded even under rtPrimary: the traced
+    // pass's volumetric fog march samples the cascade maps per step. Set
+    // when the scene has fog; baked like rtPrimary — invalidate on change.
+    bool fogCascades = false;
     // THE raster scene path (deferred shading; requires setDeferredTargets
     // called once): the opaque stream is rasterized into the G-buffer
     // targets (gbufferPipeline: scene VS + attribute-MRT fragment shader),

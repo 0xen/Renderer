@@ -2785,6 +2785,9 @@ int main(int argc, char** argv) {
         }
         batch.rtPrimaryPipeline = rtPrimaryPipeline.get();
         batch.rtPrimary = rtPrimaryFromStart && rtPrimaryPipeline != nullptr;
+        // The traced pass's fog march samples the cascade maps, so fog
+        // scenes keep the cascade passes recorded under traced primary.
+        batch.fogCascades = scene && scene->fog.enabled;
         if (skinPipeline && !animatedMeshes.empty()) {
             if (batch.mode == gpu::DrawSubmitMode::Direct) {
                 log::warn("Animation needs per-slot indirect entries; Direct mode shows the "

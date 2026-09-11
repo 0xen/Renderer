@@ -111,8 +111,10 @@ same element. `density` is the extinction coefficient per meter inside the box
 `anisotropy` the Henyey-Greenstein g in -1..1 (positive = forward scattering, brighter
 looking toward the sun), and `steps` the per-pixel raymarch budget. The raster
 background clear color is matched to the fog's converged in-scatter so sky pixels read
-as fog all the way out. Current gaps: the traced-primary path (`--rtprimary`) ignores
-fog, and in-scatter on transparent surfaces is scaled by their blend factor.
+as fog all the way out. The traced-primary path (`--rtprimary`) runs the same march
+after its hit loop (fog scenes keep the cascade passes recorded for it, and its sky
+miss uses the scene sky color). Current gap: in-scatter on transparent surfaces is
+scaled by their blend factor (both paths).
 
 `Script path="scripts/foo.py"` (optional, zero or more) names Python scripts that run
 alongside the scene, resolved against the scene file's directory like mesh paths. The

@@ -19,6 +19,7 @@ struct PushConstants {
 
 #include "shading.hlsli"
 #include "rt_common.hlsli"
+#include "lighting.hlsli" // applyFog + the cascade maps its march samples
 
 struct VSOutput {
     float4 position : SV_Position;
@@ -45,6 +46,7 @@ float4 PSMain(VSOutput input) : SV_Target0 {
     float3 color = 0.0f;
     float3 throughput = 1.0f;
     float travelled = 0.0f; // cone width grows across transparency steps
+    float fogDistance = 0.0f; // camera -> final surface (or sky) along dir
     [loop] for (uint step = 0; step < kMaxTransparencySteps; ++step) {
         RayQuery<RAY_FLAG_NONE> q;
         RayDesc ray;
@@ -56,7 +58,12 @@ float4 PSMain(VSOutput input) : SV_Target0 {
         resolveCandidates(q);
 
         if (q.CommittedStatus() != COMMITTED_TRIANGLE_HIT) {
-            color += throughput * skyColor(dir);
+            // Flat scene sky (matches the raster sky pass, which fog
+            // scenes set to the converged in-scatter color); the day-phase
+            // skybox mode keeps the traced gradient as before.
+            color += throughput * (light.ambientColor.w < 0.0f ? light.skyColor.rgb
+                                                               : skyColor(dir));
+            fogDistance = travelled + ray.TMax;
             break;
         }
 
@@ -66,6 +73,7 @@ float4 PSMain(VSOutput input) : SV_Target0 {
             q.CommittedTriangleBarycentrics(), origin, dir, q.CommittedRayT(),
             travelled + q.CommittedRayT(), cam.position.w, light);
         travelled += q.CommittedRayT();
+        fogDistance = travelled;
 
         float3 shaded = hit.color;
         if ((hit.flags & kFlagReflective) != 0) {
@@ -83,6 +91,18 @@ float4 PSMain(VSOutput input) : SV_Target0 {
         }
         color += throughput * shaded;
         break;
+    }
+    // Same march the raster paths run last (deferred.hlsl/scene.hlsl); the
+    // segment spans every transparency step since dir never changes. Fog on
+    // transparent surfaces is throughput-approximate exactly like raster.
+    // The viewer keeps the cascade passes recorded under traced primary
+    // when the scene has fog (DrawBatch.fogCascades) so the march's shadow
+    // taps read live maps.
+    if (light.fogColor.w > 0.0f) {
+        const float3 camPos = cam.position.xyz;
+        const float viewDepth = dot(dir, cam.forwardAxis.xyz) * fogDistance;
+        color = applyFog(color, camPos, camPos + dir * fogDistance, viewDepth,
+                         input.position.xy, light);
     }
     return float4(color, 1.0f);
 }

@@ -235,6 +235,9 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
     // cascades, no compaction, no indirect stream — one fullscreen triangle
     // whose fragments walk the TLAS instead.
     const bool rtDraw = batch && batch->rtPrimary && batch->rtPrimaryPipeline;
+    // Exception: a fog scene's traced pass marches the cascade maps, so
+    // the compaction dispatch + cascade passes stay recorded for it.
+    const bool fogCascades = rtDraw && batch->fogCascades;
     // The raster scene path IS deferred: G-buffer pass then the lighting
     // triangle in the composite pass. A batch must carry gbufferPipeline +
     // lightingPipeline (see DrawBatch) — there is no forward opaque path.
@@ -345,7 +348,8 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
         vkCmdPipelineBarrier2(cmd, &dependency);
     }
 
-    if (batch && !rtDraw && batch->cullPipeline && batch->mode == DrawSubmitMode::IndirectCount) {
+    if (batch && (!rtDraw || fogCascades) && batch->cullPipeline &&
+        batch->mode == DrawSubmitMode::IndirectCount) {
         // GPU compaction: zero the slot's whole counter region (stream
         // counts, scratch-row allocator, emitted-index stats), run one
         // thread per template, then make the writes visible to the
@@ -525,7 +529,7 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
     shadowDependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
     shadowDependency.imageMemoryBarrierCount = 1;
 
-    if (batch && !rtDraw && batch->shadowPipeline && batch->cascadeCount > 0) {
+    if (batch && (!rtDraw || fogCascades) && batch->shadowPipeline && batch->cascadeCount > 0) {
         for (std::uint32_t c = 0; c < batch->cascadeCount; ++c) {
             const Image* map = batch->shadowCascades[c];
             // Depth-only pass from the light's view. Contents are cleared,
