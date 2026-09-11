@@ -19,6 +19,7 @@
 #include "rend/platform/backend.h"
 #include "rend/pyhost/pyhost.h"
 #include "rend/renderer/message_queue.h"
+#include "rend/renderer/settings.h"
 
 #include <meshoptimizer.h>
 
@@ -2978,6 +2979,152 @@ int main(int argc, char** argv) {
                       static_cast<int>(fog.steps));
         }
     }
+    // ---- Graphics-settings registry ----
+    // The single authority every mutation path goes through: the ImGui
+    // Settings rows, Python's set_setting command, and the CLI flags
+    // (which seeded the state the slots read their initial values from).
+    // The apply callbacks are the ONE place that touches renderer state —
+    // and the one place that knows whether a setting is live per-slot
+    // buffer data or baked into static recordings (invalidate there).
+    renderer::SettingsRegistry settings;
+    // Traced primary rays supersede the per-technique choices (the traced
+    // pass fires shadow/reflection rays from its hit points regardless)
+    // and the raster culling toggles (rays traverse the full BVH; the
+    // opaque stream goes undrawn). Overridden slots report active() =
+    // "override" and an empty option list until the override lifts.
+    auto updatePrimaryOverrides = [&] {
+        for (const char* name : {"shadows", "reflections", "frustum_culling", "lod_selection",
+                                 "occlusion_culling", "occlusion_boxes"}) {
+            if (!settings.exists(name)) {
+                continue;
+            }
+            if (batch.rtPrimary) {
+                settings.setOverride(name, "primary");
+            } else {
+                settings.clearOverride(name);
+            }
+        }
+    };
+    auto applyCullFlags = [&] {
+        // The flags ride the cull dispatch's push constants, which static
+        // recordings bake.
+        batch.cullFlags = (frustumCull ? 1u : 0u) | (lodSelect ? 2u : 0u) |
+                          (occlusionCull && occlusionPipeline ? 4u : 0u);
+        renderer->invalidateStaticRecordings();
+    };
+    // Offer-based like the old combos: the device's list filtered by what
+    // the viewer actually built (BVH / probe readiness). Re-evaluated when
+    // the deferred probe capture lands.
+    auto reflectionOptions = [&] {
+        std::vector<std::string> options;
+        for (gpu::ReflectionTechnique offer : reflectionOffers) {
+            if (offer == gpu::ReflectionTechnique::ReflectionProbe && probeReady) {
+                options.push_back("probe");
+            } else if (offer == gpu::ReflectionTechnique::RayTraced && rtReady) {
+                options.push_back("raytraced");
+            }
+        }
+        return options;
+    };
+    if (drawScene) {
+        {
+            std::vector<std::string> options{"raster"};
+            if (batch.rtPrimaryPipeline) {
+                options.push_back("raytraced");
+            }
+            settings.addChoice("primary", std::move(options),
+                               batch.rtPrimary ? "raytraced" : "raster",
+                               [&](const std::string& value) {
+                                   // Recording structure differs between
+                                   // the modes: drop static recordings
+                                   // (lazy rebuild), then flip overrides.
+                                   batch.rtPrimary = value == "raytraced";
+                                   renderer->invalidateStaticRecordings();
+                                   updatePrimaryOverrides();
+                                   log::info("Primary rays: {}", value);
+                                   return true;
+                               });
+        }
+        {
+            std::vector<std::string> options;
+            for (gpu::ShadowTechnique offer : shadowOffers) {
+                if (offer == gpu::ShadowTechnique::CascadedShadowMaps) {
+                    options.push_back("cascaded");
+                } else if (offer == gpu::ShadowTechnique::RayTraced && rtReady) {
+                    options.push_back("raytraced");
+                }
+            }
+            settings.addChoice("shadows", std::move(options),
+                               (rtReady && sun.rtShadows) ? "raytraced" : "cascaded",
+                               [&](const std::string& value) {
+                                   // Rides the per-slot light buffer:
+                                   // live, no invalidation.
+                                   sun.rtShadows = value == "raytraced";
+                                   log::info("Shadows: {}", value);
+                                   return true;
+                               });
+        }
+        settings.addChoice("reflections", reflectionOptions(),
+                           (rtReady && reflectionsTraced) ? "raytraced"
+                           : probeReady                   ? "probe"
+                                                          : "none",
+                           [&](const std::string& value) {
+                               reflectionsTraced = value == "raytraced";
+                               log::info("Reflections: {}", value);
+                               return true;
+                           });
+        if (batch.cullPipeline) {
+            settings.addChoice("frustum_culling", {"on", "off"}, frustumCull ? "on" : "off",
+                               [&](const std::string& value) {
+                                   frustumCull = value == "on";
+                                   applyCullFlags();
+                                   log::info("Frustum culling {}", value);
+                                   return true;
+                               });
+            settings.addChoice("lod_selection", {"on", "off"}, lodSelect ? "on" : "off",
+                               [&](const std::string& value) {
+                                   lodSelect = value == "on";
+                                   applyCullFlags();
+                                   log::info("LOD selection {}", value);
+                                   return true;
+                               });
+            if (occlusionPipeline) {
+                settings.addChoice("occlusion_culling", {"on", "off"},
+                                   occlusionCull ? "on" : "off",
+                                   [&](const std::string& value) {
+                                       occlusionCull = value == "on";
+                                       applyCullFlags();
+                                       log::info("Occlusion culling {}", value);
+                                       return true;
+                                   });
+            }
+            if (occlusionDebugPipeline) {
+                settings.addChoice(
+                    "occlusion_boxes", {"on", "off"}, showOcclusionBoxes ? "on" : "off",
+                    [&](const std::string& value) {
+                        // Pipeline presence is baked into static
+                        // recordings: one rebuild per flip.
+                        showOcclusionBoxes = value == "on";
+                        batch.occlusionDebugPipeline =
+                            showOcclusionBoxes ? occlusionDebugPipeline.get() : nullptr;
+                        batch.occlusionInstanceDebugPipeline =
+                            showOcclusionBoxes ? occlusionInstanceDebugPipeline.get() : nullptr;
+                        renderer->invalidateStaticRecordings();
+                        log::info("Occlusion box overlay {}", value);
+                        return true;
+                    });
+            }
+        }
+        if (scene && scene->fog.enabled) {
+            settings.addFloat("fog_density", 0.0f, 0.15f, fogDensity, [&](float value) {
+                // Per-slot light-buffer data: live in every primary mode.
+                fogDensity = value;
+                return true;
+            });
+        }
+        updatePrimaryOverrides(); // --rtprimary starts overridden
+    }
+
     // ---- Runtime model loading over the renderer message queue ----
     // The viewer is the first producer (Settings panel + --spawn-test);
     // Python and other clients speak the same Command/Event schema later.
@@ -2985,6 +3132,30 @@ int main(int argc, char** argv) {
     // slot's fence), where the current slot's buffers are CPU-writable.
     renderer::MessageQueue messageQueue;
     renderer::Sender messageSender = messageQueue.createSender();
+    // Settings changes broadcast one SettingState per dirty slot (initial
+    // registration marked every slot dirty, so the Python host's mirror
+    // seeds on the first frame). Pushing with no receivers is a no-op.
+    auto broadcastSettings = [&] {
+        for (const std::string& name : settings.takeDirty()) {
+            renderer::Event event;
+            event.type = renderer::Event::Type::SettingState;
+            event.settingState = {};
+            renderer::SettingStateEvent& state = event.settingState;
+            std::snprintf(state.name, sizeof(state.name), "%s", name.c_str());
+            std::snprintf(state.active, sizeof(state.active), "%s",
+                          settings.active(name).c_str());
+            std::snprintf(state.overriddenBy, sizeof(state.overriddenBy), "%s",
+                          settings.overrideSource(name).c_str());
+            const std::vector<std::string> options = settings.options(name);
+            state.optionCount = static_cast<std::uint32_t>(
+                std::min<std::size_t>(options.size(), renderer::kSettingMaxOptions));
+            for (std::uint32_t i = 0; i < state.optionCount; ++i) {
+                std::snprintf(state.options[i], sizeof(state.options[i]), "%s",
+                              options[i].c_str());
+            }
+            messageQueue.pushEvent(event);
+        }
+    };
     // Events broadcast to per-consumer receivers; the Python host holds
     // one. The viewer itself currently consumes none (a receiver nothing
     // polls would only accumulate, so don't create one idly).
@@ -4102,6 +4273,30 @@ int main(int argc, char** argv) {
                 flyRemaining = 0.0f;
                 break;
             }
+            case renderer::Command::Type::SetSetting: {
+                // Same authority the ImGui rows use; a refusal (unknown
+                // slot, unlisted option, overridden slot) answers with a
+                // SettingRejected event, an acceptance with the slot's
+                // SettingState at this frame's broadcast.
+                if (auto applied = settings.set(cmd.setting.name, cmd.setting.value);
+                    !applied) {
+                    log::warn("set_setting('{}', '{}'): {}", cmd.setting.name,
+                              cmd.setting.value, applied.error().message);
+                    renderer::Event event;
+                    event.type = renderer::Event::Type::SettingRejected;
+                    event.settingRejected = {};
+                    std::snprintf(event.settingRejected.name,
+                                  sizeof(event.settingRejected.name), "%s", cmd.setting.name);
+                    std::snprintf(event.settingRejected.value,
+                                  sizeof(event.settingRejected.value), "%s",
+                                  cmd.setting.value);
+                    std::snprintf(event.settingRejected.reason,
+                                  sizeof(event.settingRejected.reason), "%s",
+                                  applied.error().message.c_str());
+                    messageQueue.pushEvent(event);
+                }
+                break;
+            }
             }
         }
         // Integrate whatever the loader finished, in completion order —
@@ -4283,6 +4478,9 @@ int main(int argc, char** argv) {
             capturePendingProbe();
             capturePendingProbe = nullptr;
             renderer->invalidateStaticRecordings();
+            // The probe tier just became selectable: refresh the offer
+            // (snaps "none" to "probe"; keeps "raytraced" if chosen).
+            settings.setOptions("reflections", reflectionOptions());
         }
 
         const auto events = [&] {
@@ -4439,6 +4637,7 @@ int main(int argc, char** argv) {
                 }
             }
             processMessages(renderer->frameSlot());
+            broadcastSettings();
             // Publish this frame's TLAS instances into the slot's region:
             // the scene BLAS plus one entry per runtime model instance,
             // transforms straight from the canonical array — the recorded
@@ -4714,93 +4913,81 @@ int main(int argc, char** argv) {
                 // past the bottom edge of the default window height.
                 ImGui::SetNextWindowPos(ImVec2(8.0f, 396.0f), ImGuiCond_FirstUseEver);
                 ImGui::Begin("Settings", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
-                // One shadow choice, built from the device's offer list.
-                // Ray traced additionally needs the BVH the viewer built.
-                const gpu::ShadowTechnique active = (rtReady && sun.rtShadows)
-                                                        ? gpu::ShadowTechnique::RayTraced
-                                                        : gpu::ShadowTechnique::CascadedShadowMaps;
-                if (batch.rtPrimaryPipeline) {
-                    // Recording differs between the two modes, so flipping
-                    // drops any static command buffers (lazy rebuild).
-                    const char* primaryNames[] = {"Raster", "Ray traced"};
-                    int primary = batch.rtPrimary ? 1 : 0;
-                    if (ImGui::Combo("Primary rays", &primary, primaryNames, 2)) {
-                        batch.rtPrimary = primary == 1;
-                        renderer->invalidateStaticRecordings();
+                // Every row reads and writes through the settings
+                // registry — the exact path Python's set_setting takes.
+                // Overridden rows (traced primary supersedes the raster
+                // technique choices) stay VISIBLE as a disabled
+                // "Override" instead of vanishing.
+                auto displayName = [](const std::string& token) -> const char* {
+                    if (token == "raster") {
+                        return "Raster";
                     }
-                }
-                if (!batch.rtPrimary &&
-                    ImGui::BeginCombo("Shadows", gpu::shadowTechniqueName(active))) {
-                    // Hidden while primary rays are traced: that path fires
-                    // its shadow rays from the hit points regardless.
-                    for (gpu::ShadowTechnique offer : shadowOffers) {
-                        if (offer == gpu::ShadowTechnique::RayTraced && !rtReady) {
-                            continue;
+                    if (token == "raytraced") {
+                        return "Ray traced";
+                    }
+                    if (token == "cascaded") {
+                        return "Cascaded shadow maps";
+                    }
+                    if (token == "probe") {
+                        return "Reflection probe";
+                    }
+                    if (token == "none") {
+                        return "None";
+                    }
+                    return token.c_str();
+                };
+                auto settingCombo = [&](const char* slot, const char* label) {
+                    if (!settings.exists(slot)) {
+                        return;
+                    }
+                    const std::string activeValue = settings.active(slot);
+                    if (activeValue == renderer::kSettingOverride) {
+                        ImGui::BeginDisabled();
+                        if (ImGui::BeginCombo(label, "Override")) {
+                            ImGui::EndCombo();
                         }
-                        if (ImGui::Selectable(gpu::shadowTechniqueName(offer), offer == active)) {
-                            sun.rtShadows = offer == gpu::ShadowTechnique::RayTraced;
+                        ImGui::EndDisabled();
+                        return;
+                    }
+                    if (ImGui::BeginCombo(label, displayName(activeValue))) {
+                        for (const std::string& option : settings.options(slot)) {
+                            if (ImGui::Selectable(displayName(option), option == activeValue)) {
+                                if (auto applied = settings.set(slot, option); !applied) {
+                                    log::warn("Setting '{}': {}", slot,
+                                              applied.error().message);
+                                }
+                            }
+                        }
+                        ImGui::EndCombo();
+                    }
+                };
+                auto settingCheckbox = [&](const char* slot, const char* label) {
+                    if (!settings.exists(slot)) {
+                        return;
+                    }
+                    const std::string activeValue = settings.active(slot);
+                    if (activeValue == renderer::kSettingOverride) {
+                        ImGui::BeginDisabled();
+                        bool off = false;
+                        ImGui::Checkbox(label, &off);
+                        ImGui::EndDisabled();
+                        return;
+                    }
+                    bool on = activeValue == "on";
+                    if (ImGui::Checkbox(label, &on)) {
+                        if (auto applied = settings.set(slot, on ? "on" : "off"); !applied) {
+                            log::warn("Setting '{}': {}", slot, applied.error().message);
                         }
                     }
-                    ImGui::EndCombo();
-                }
-                // Reflection technique for reflective-tagged objects, from
-                // the device's offer list. Hidden while primary rays are
-                // traced — that path reflects everything for real, the
-                // per-object choice is superseded (same as Shadows above).
-                const gpu::ReflectionTechnique activeReflection =
-                    (rtReady && reflectionsTraced) ? gpu::ReflectionTechnique::RayTraced
-                                                   : gpu::ReflectionTechnique::ReflectionProbe;
-                if (!batch.rtPrimary && (probeReady || rtReady) &&
-                    ImGui::BeginCombo("Reflections",
-                                      gpu::reflectionTechniqueName(activeReflection))) {
-                    for (gpu::ReflectionTechnique offer : reflectionOffers) {
-                        if (offer == gpu::ReflectionTechnique::ReflectionProbe && !probeReady) {
-                            continue;
-                        }
-                        if (offer == gpu::ReflectionTechnique::RayTraced && !rtReady) {
-                            continue;
-                        }
-                        if (ImGui::Selectable(gpu::reflectionTechniqueName(offer),
-                                              offer == activeReflection)) {
-                            reflectionsTraced = offer == gpu::ReflectionTechnique::RayTraced;
-                        }
-                    }
-                    ImGui::EndCombo();
-                }
+                };
+                settingCombo("primary", "Primary rays");
+                settingCombo("shadows", "Shadows");
+                settingCombo("reflections", "Reflections");
+                settingCheckbox("frustum_culling", "Frustum culling");
+                settingCheckbox("lod_selection", "LOD selection");
+                settingCheckbox("occlusion_culling", "Occlusion culling");
+                settingCheckbox("occlusion_boxes", "Show occlusion boxes");
                 if (!batch.rtPrimary && batch.cullPipeline) {
-                    if (ImGui::Checkbox("Frustum culling", &frustumCull)) {
-                        // The flag rides the cull dispatch's push
-                        // constants, which static recordings bake.
-                        batch.cullFlags = (frustumCull ? 1u : 0u) | (lodSelect ? 2u : 0u) |
-                                          (occlusionCull && occlusionPipeline ? 4u : 0u);
-                        renderer->invalidateStaticRecordings();
-                        log::info("Frustum culling {}", frustumCull ? "on" : "off");
-                    }
-                    if (ImGui::Checkbox("LOD selection", &lodSelect)) {
-                        batch.cullFlags = (frustumCull ? 1u : 0u) | (lodSelect ? 2u : 0u) |
-                                          (occlusionCull && occlusionPipeline ? 4u : 0u);
-                        renderer->invalidateStaticRecordings();
-                        log::info("LOD selection {}", lodSelect ? "on" : "off");
-                    }
-                    if (occlusionPipeline &&
-                        ImGui::Checkbox("Occlusion culling", &occlusionCull)) {
-                        batch.cullFlags = (frustumCull ? 1u : 0u) | (lodSelect ? 2u : 0u) |
-                                          (occlusionCull ? 4u : 0u);
-                        renderer->invalidateStaticRecordings();
-                        log::info("Occlusion culling {}", occlusionCull ? "on" : "off");
-                    }
-                    if (occlusionDebugPipeline &&
-                        ImGui::Checkbox("Show occlusion boxes", &showOcclusionBoxes)) {
-                        // Pipeline presence is baked into static
-                        // recordings: one rebuild per flip, zero
-                        // per-frame CPU cost afterwards.
-                        batch.occlusionDebugPipeline =
-                            showOcclusionBoxes ? occlusionDebugPipeline.get() : nullptr;
-                        batch.occlusionInstanceDebugPipeline =
-                            showOcclusionBoxes ? occlusionInstanceDebugPipeline.get() : nullptr;
-                        renderer->invalidateStaticRecordings();
-                        log::info("Occlusion box overlay {}", showOcclusionBoxes ? "on" : "off");
-                    }
                     ImGui::Text("Draws: %u in view / %u live / %u table", shownDrawCounts[1],
                                 shownDrawCounts[0], batch.drawCount);
                     ImGui::Text("Transparent draws: %u", shownDrawCounts[3]);
@@ -4813,10 +5000,18 @@ int main(int argc, char** argv) {
                                 shownDrawCounts[5] / 3);
                     ImGui::Text("Occluded: %u", shownDrawCounts[6]);
                 }
-                if (scene && scene->fog.enabled) {
+                if (settings.exists("fog_density")) {
                     // Per-slot light-buffer data like the sun sliders:
                     // live in every primary-ray mode, no invalidation.
-                    ImGui::SliderFloat("Fog density", &fogDensity, 0.0f, 0.15f, "%.3f");
+                    float fogValue = settings.floatValue("fog_density");
+                    if (ImGui::SliderFloat("Fog density", &fogValue,
+                                           settings.floatMin("fog_density"),
+                                           settings.floatMax("fog_density"), "%.3f")) {
+                        if (auto applied = settings.setFloat("fog_density", fogValue);
+                            !applied) {
+                            log::warn("Setting 'fog_density': {}", applied.error().message);
+                        }
+                    }
                 }
                 if (ImGui::TreeNode("Advanced")) {
                     ImGui::SliderFloat("Azimuth", &sun.azimuthDeg, -180.0f, 180.0f, "%.0f deg");

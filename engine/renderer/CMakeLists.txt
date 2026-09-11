@@ -4,6 +4,7 @@
 # descriptor model land here in later milestones.
 add_library(rend_renderer OBJECT
     src/message_queue.cpp
+    src/settings.cpp
 )
 add_library(rend::renderer ALIAS rend_renderer)
 

@@ -93,6 +93,18 @@ struct SetCameraCmd {
     float target[3] = {0.0f, 0.0f, -1.0f};
 };
 
+// Graphics-settings slot names and option tokens are short strings (the
+// registry in settings.h validates them); a rejected set comes back as a
+// SettingRejected event, an accepted one as the slot's SettingState.
+inline constexpr std::uint32_t kSettingNameChars = 32;
+inline constexpr std::uint32_t kSettingOptionChars = 32;
+inline constexpr std::uint32_t kSettingMaxOptions = 8;
+
+struct SetSettingCmd {
+    char name[kSettingNameChars] = {};    // e.g. "shadows"
+    char value[kSettingOptionChars] = {}; // e.g. "raytraced", "on", "0.08"
+};
+
 struct Command {
     enum class Type : std::uint32_t {
         LoadModel,
@@ -105,6 +117,7 @@ struct Command {
         SetPointLight,
         SetPointLightScale,
         SetCamera,
+        SetSetting,
     };
     Type type = Type::LoadModel;
     union {
@@ -118,6 +131,7 @@ struct Command {
         SetPointLightCmd pointLight;
         SetPointLightScaleCmd pointLightScale;
         SetCameraCmd camera;
+        SetSettingCmd setting;
     };
     Command() : load{} {}
 };
@@ -133,11 +147,36 @@ struct ModelReadyEvent {
     char error[160] = {};
 };
 
+// One graphics-setting slot's full public state, broadcast at startup and
+// whenever it changes (any producer's set, a UI flip, a capability
+// arriving). `active` is the EFFECTIVE answer: the selected option token,
+// a formatted number for continuous slots, or the literal "override" when
+// `overriddenBy` names the slot that superseded this one — in which case
+// optionCount is 0 (nothing is selectable until the override lifts).
+struct SettingStateEvent {
+    char name[kSettingNameChars] = {};
+    char active[kSettingOptionChars] = {};
+    char overriddenBy[kSettingNameChars] = {};
+    std::uint32_t optionCount = 0;
+    char options[kSettingMaxOptions][kSettingOptionChars] = {};
+};
+
+// A SetSetting the consumer refused (unknown slot, unlisted option,
+// overridden slot). The producer's only failure signal — the accepted
+// case answers with SettingState instead.
+struct SettingRejectedEvent {
+    char name[kSettingNameChars] = {};
+    char value[kSettingOptionChars] = {};
+    char reason[160] = {};
+};
+
 struct Event {
-    enum class Type : std::uint32_t { ModelReady };
+    enum class Type : std::uint32_t { ModelReady, SettingState, SettingRejected };
     Type type = Type::ModelReady;
     union {
         ModelReadyEvent ready;
+        SettingStateEvent settingState;
+        SettingRejectedEvent settingRejected;
     };
     Event() : ready{} {}
 };

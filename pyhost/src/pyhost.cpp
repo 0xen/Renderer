@@ -11,6 +11,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdio>
+#include <map>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -25,11 +26,22 @@ namespace {
 // One host per process: the embedded module functions need a place to
 // find the queue, and CPython itself is a process-global anyway (a second
 // interpreter would fight over the GIL and extension state).
+// Mirrored graphics-settings state: the viewer broadcasts every slot's
+// SettingState at startup and on change, so the get_setting* bindings
+// answer synchronously from this cache — no request/response round trip
+// over the queue. Touched only with the GIL held (like eventCache).
+struct SettingMirror {
+    std::string active;
+    std::string overriddenBy;
+    std::vector<std::string> options;
+};
+
 struct HostState {
     renderer::MessageQueue* queue = nullptr;
     std::optional<renderer::Sender> sender;         // script-thread-only
     std::optional<renderer::EventReceiver> receiver; // script-thread-only
     std::vector<renderer::Event> eventCache; // polled but unconsumed events
+    std::map<std::string, SettingMirror> settings;
     std::atomic<bool> quit{false};
     std::thread thread;
     // Guards interpreterAlive against the Stop-side PyErr_SetInterrupt:
@@ -51,15 +63,43 @@ py::dict eventToDict(const renderer::Event& event) {
         out["millis"] = event.ready.millis;
         out["error"] = std::string(event.ready.error);
         break;
+    case renderer::Event::Type::SettingRejected:
+        out["type"] = "setting_rejected";
+        out["name"] = std::string(event.settingRejected.name);
+        out["value"] = std::string(event.settingRejected.value);
+        out["reason"] = std::string(event.settingRejected.reason);
+        break;
+    case renderer::Event::Type::SettingState:
+        break; // absorbed into the settings mirror, never surfaced raw
     }
     return out;
 }
 
 // Pulls freshly broadcast events into the host cache (so a wait for one
-// handle never swallows events a later poll should still see).
+// handle never swallows events a later poll should still see). Settings
+// broadcasts fold into the mirror instead of the cache — they are state
+// sync, not completions a script waits on.
 void refillEventCache() {
-    auto fresh = g_host.receiver->poll();
-    g_host.eventCache.insert(g_host.eventCache.end(), fresh.begin(), fresh.end());
+    for (const renderer::Event& event : g_host.receiver->poll()) {
+        if (event.type == renderer::Event::Type::SettingState) {
+            SettingMirror& mirror = g_host.settings[event.settingState.name];
+            mirror.active = event.settingState.active;
+            mirror.overriddenBy = event.settingState.overriddenBy;
+            mirror.options.clear();
+            for (std::uint32_t i = 0;
+                 i < event.settingState.optionCount && i < renderer::kSettingMaxOptions; ++i) {
+                mirror.options.emplace_back(event.settingState.options[i]);
+            }
+        } else {
+            g_host.eventCache.push_back(event);
+        }
+    }
+}
+
+const SettingMirror* findSetting(const std::string& name) {
+    refillEventCache();
+    const auto it = g_host.settings.find(name);
+    return it != g_host.settings.end() ? &it->second : nullptr;
 }
 
 void pushCommand(const renderer::Command& command) {
@@ -235,6 +275,82 @@ PYBIND11_EMBEDDED_MODULE(rend, m) {
         "one-call fade for scene-XML lamps.");
 
     m.def(
+        "set_setting",
+        [](const std::string& name, const std::string& value) {
+            renderer::Command cmd;
+            cmd.type = renderer::Command::Type::SetSetting;
+            if (name.size() >= sizeof(cmd.setting.name)) {
+                throw py::value_error("setting name too long");
+            }
+            if (value.size() >= sizeof(cmd.setting.value)) {
+                throw py::value_error("setting value too long");
+            }
+            std::snprintf(cmd.setting.name, sizeof(cmd.setting.name), "%s", name.c_str());
+            std::snprintf(cmd.setting.value, sizeof(cmd.setting.value), "%s", value.c_str());
+            pushCommand(cmd);
+        },
+        py::arg("name"), py::arg("value"),
+        "Request a graphics setting change (e.g. set_setting('shadows', "
+        "'raytraced')). Asynchronous: an accepted change shows up in the "
+        "getters next frame; a refused one (unknown name, unlisted option, "
+        "overridden slot) arrives as a 'setting_rejected' event.");
+
+    m.def(
+        "list_settings",
+        [] {
+            refillEventCache();
+            py::list out;
+            for (const auto& [name, mirror] : g_host.settings) {
+                out.append(name);
+            }
+            return out;
+        },
+        "Names of every graphics setting the active renderer exposes.");
+
+    m.def(
+        "get_setting",
+        [](const std::string& name) -> py::object {
+            if (const SettingMirror* mirror = findSetting(name)) {
+                return py::str(mirror->active);
+            }
+            return py::none();
+        },
+        py::arg("name"),
+        "The setting's effective value: its option token, a number as a "
+        "string, or 'override' when another setting supersedes it (see "
+        "get_override_source). None for unknown names.");
+
+    m.def(
+        "get_setting_options",
+        [](const std::string& name) {
+            py::list out;
+            if (const SettingMirror* mirror = findSetting(name)) {
+                for (const std::string& option : mirror->options) {
+                    out.append(option);
+                }
+            }
+            return out;
+        },
+        py::arg("name"),
+        "Option tokens selectable RIGHT NOW. Empty while the setting is "
+        "overridden, for continuous (numeric) settings, and for unknown "
+        "names.");
+
+    m.def(
+        "get_override_source",
+        [](const std::string& name) -> py::object {
+            if (const SettingMirror* mirror = findSetting(name);
+                mirror && !mirror->overriddenBy.empty()) {
+                return py::str(mirror->overriddenBy);
+            }
+            return py::none();
+        },
+        py::arg("name"),
+        "Name of the setting overriding this one (e.g. 'primary' while "
+        "traced primary rays subsume the shadow choice); None when not "
+        "overridden.");
+
+    m.def(
         "poll_events",
         [] {
             refillEventCache();
@@ -368,6 +484,7 @@ bool rendPyHostStart(rend::renderer::MessageQueue* queue, const char* const* scr
     // event can ever be missed.
     g_host.receiver.emplace(queue->createEventReceiver());
     g_host.eventCache.clear();
+    g_host.settings.clear();
     g_host.quit.store(false);
     std::vector<std::string> scripts(scriptPaths, scriptPaths + scriptCount);
     g_host.thread = std::thread(scriptThreadMain, std::move(scripts));
