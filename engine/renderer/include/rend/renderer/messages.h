@@ -84,6 +84,15 @@ struct SetPointLightScaleCmd {
     float scale = 1.0f;
 };
 
+// Place the free-fly camera: position plus a look-at target the consumer
+// converts to yaw/pitch, so user mouselook continues naturally from the
+// scripted pose the moment commands stop arriving. Cancels any scene
+// fly-in in progress. Scripts animate by sending one per step.
+struct SetCameraCmd {
+    float position[3] = {};
+    float target[3] = {0.0f, 0.0f, -1.0f};
+};
+
 struct Command {
     enum class Type : std::uint32_t {
         LoadModel,
@@ -95,6 +104,7 @@ struct Command {
         SetAmbient,
         SetPointLight,
         SetPointLightScale,
+        SetCamera,
     };
     Type type = Type::LoadModel;
     union {
@@ -107,6 +117,7 @@ struct Command {
         SetAmbientCmd ambient;
         SetPointLightCmd pointLight;
         SetPointLightScaleCmd pointLightScale;
+        SetCameraCmd camera;
     };
     Command() : load{} {}
 };

@@ -4091,6 +4091,17 @@ int main(int argc, char** argv) {
             case renderer::Command::Type::SetPointLightScale:
                 pointLightScale = std::max(cmd.pointLightScale.scale, 0.0f);
                 break;
+            case renderer::Command::Type::SetCamera: {
+                camera.position = {cmd.camera.position[0], cmd.camera.position[1],
+                                   cmd.camera.position[2]};
+                const math::Vec3 aim = math::normalize(math::sub(
+                    {cmd.camera.target[0], cmd.camera.target[1], cmd.camera.target[2]},
+                    camera.position));
+                camera.yaw = std::atan2(aim.x, -aim.z);
+                camera.pitch = std::asin(std::clamp(aim.y, -1.0f, 1.0f));
+                flyRemaining = 0.0f;
+                break;
+            }
             }
         }
         // Integrate whatever the loader finished, in completion order —

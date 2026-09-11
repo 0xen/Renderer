@@ -129,6 +129,22 @@ PYBIND11_EMBEDDED_MODULE(rend, m) {
         py::arg("handle"), "Remove a loaded model from the scene.");
 
     m.def(
+        "set_camera",
+        [](std::array<float, 3> position, std::array<float, 3> target) {
+            renderer::Command cmd;
+            cmd.type = renderer::Command::Type::SetCamera;
+            for (int i = 0; i < 3; ++i) {
+                cmd.camera.position[i] = position[i];
+                cmd.camera.target[i] = target[i];
+            }
+            pushCommand(cmd);
+        },
+        py::arg("position"), py::arg("target"),
+        "Place the free-fly camera at position looking at target. Cancels "
+        "a scene fly-in; the user's mouselook/WASD continue from the last "
+        "scripted pose once the script stops sending.");
+
+    m.def(
         "set_sun",
         [](std::array<float, 3> direction, std::array<float, 3> color, float intensity) {
             renderer::Command cmd;
