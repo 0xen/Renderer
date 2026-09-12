@@ -20,6 +20,7 @@ Key translateKey(SDL_Keycode code) {
     case SDLK_D: return Key::D;
     case SDLK_Q: return Key::Q;
     case SDLK_E: return Key::E;
+    case SDLK_G: return Key::G;
     case SDLK_LSHIFT: return Key::LeftShift;
     case SDLK_LCTRL: return Key::LeftCtrl;
     default: return Key::Unknown;

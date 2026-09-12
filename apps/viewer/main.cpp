@@ -670,6 +670,256 @@ struct FlyCamera {
     }
 };
 
+// ---- Viewer-level collision (walking mode) ----
+// A CPU triangle soup of the world-baked static meshes in a uniform CSR
+// grid, built once after the bake loop (positions are already world
+// space and stay alive for the app's lifetime). Skinned meshes stay in
+// bind space and runtime-spawned models free their CPU geometry after
+// upload, so neither is collidable — accepted gaps for a basic system.
+
+inline math::Vec3 vscale(const math::Vec3& v, float s) { return {v.x * s, v.y * s, v.z * s}; }
+
+struct CollisionWorld {
+    std::vector<math::Vec3> vertices;   // world space
+    std::vector<std::uint32_t> indices; // triangle index triples
+    math::Vec3 boundsMin{};
+    math::Vec3 boundsMax{};
+    float cellSize = 1.0f;
+    std::array<std::int32_t, 3> dims{1, 1, 1};
+    std::vector<std::uint32_t> cellStart; // CSR offsets, dims product + 1
+    std::vector<std::uint32_t> cellTris;  // triangle ids per cell
+
+    bool empty() const { return indices.empty(); }
+
+    std::int32_t cellClamp(float v, float lo, int axis) const {
+        return std::clamp(static_cast<std::int32_t>((v - lo) / cellSize), 0, dims[axis] - 1);
+    }
+    std::size_t cellIndex(std::int32_t x, std::int32_t y, std::int32_t z) const {
+        return (static_cast<std::size_t>(z) * dims[1] + y) * dims[0] + x;
+    }
+};
+
+CollisionWorld buildCollisionWorld(const assetio::LoadedScene& scene) {
+    CollisionWorld world;
+    std::size_t vertexTotal = 0, indexTotal = 0;
+    for (const auto& model : scene.models) {
+        for (const auto& mesh : model.data.meshes) {
+            if (!mesh.skinned) {
+                vertexTotal += mesh.vertexCount();
+                indexTotal += mesh.indices.size();
+            }
+        }
+    }
+    world.vertices.reserve(vertexTotal);
+    world.indices.reserve(indexTotal);
+    for (const auto& model : scene.models) {
+        for (const auto& mesh : model.data.meshes) {
+            if (mesh.skinned) {
+                continue;
+            }
+            const auto base = static_cast<std::uint32_t>(world.vertices.size());
+            for (std::size_t i = 0; i < mesh.vertexCount(); ++i) {
+                world.vertices.push_back({mesh.positions[i * 3], mesh.positions[i * 3 + 1],
+                                          mesh.positions[i * 3 + 2]});
+            }
+            for (const std::uint32_t index : mesh.indices) {
+                world.indices.push_back(base + index);
+            }
+        }
+    }
+    if (world.indices.empty()) {
+        return world;
+    }
+    world.boundsMin = world.boundsMax = world.vertices[0];
+    for (const math::Vec3& v : world.vertices) {
+        world.boundsMin = {std::min(world.boundsMin.x, v.x), std::min(world.boundsMin.y, v.y),
+                           std::min(world.boundsMin.z, v.z)};
+        world.boundsMax = {std::max(world.boundsMax.x, v.x), std::max(world.boundsMax.y, v.y),
+                           std::max(world.boundsMax.z, v.z)};
+    }
+    // Cell size starts at 1 m and doubles until the grid stays modest;
+    // queries only ever touch the few cells around the player capsule.
+    const math::Vec3 extent = math::sub(world.boundsMax, world.boundsMin);
+    for (;;) {
+        for (int axis = 0; axis < 3; ++axis) {
+            const float e = axis == 0 ? extent.x : axis == 1 ? extent.y : extent.z;
+            world.dims[axis] = std::max(1, static_cast<std::int32_t>(e / world.cellSize) + 1);
+        }
+        const std::size_t cells = static_cast<std::size_t>(world.dims[0]) * world.dims[1] *
+                                  static_cast<std::size_t>(world.dims[2]);
+        if (cells <= 2'000'000) {
+            break;
+        }
+        world.cellSize *= 2.0f;
+    }
+    const std::size_t cellCount = static_cast<std::size_t>(world.dims[0]) * world.dims[1] *
+                                  static_cast<std::size_t>(world.dims[2]);
+    // Two-pass CSR fill: count triangles per overlapped cell, prefix-sum,
+    // then write ids. A triangle lands in every cell its AABB touches.
+    world.cellStart.assign(cellCount + 1, 0);
+    const std::size_t triangleCount = world.indices.size() / 3;
+    auto forEachCell = [&](std::size_t tri, auto&& fn) {
+        const math::Vec3& a = world.vertices[world.indices[tri * 3]];
+        const math::Vec3& b = world.vertices[world.indices[tri * 3 + 1]];
+        const math::Vec3& c = world.vertices[world.indices[tri * 3 + 2]];
+        const std::int32_t x0 = world.cellClamp(std::min({a.x, b.x, c.x}), world.boundsMin.x, 0);
+        const std::int32_t x1 = world.cellClamp(std::max({a.x, b.x, c.x}), world.boundsMin.x, 0);
+        const std::int32_t y0 = world.cellClamp(std::min({a.y, b.y, c.y}), world.boundsMin.y, 1);
+        const std::int32_t y1 = world.cellClamp(std::max({a.y, b.y, c.y}), world.boundsMin.y, 1);
+        const std::int32_t z0 = world.cellClamp(std::min({a.z, b.z, c.z}), world.boundsMin.z, 2);
+        const std::int32_t z1 = world.cellClamp(std::max({a.z, b.z, c.z}), world.boundsMin.z, 2);
+        for (std::int32_t z = z0; z <= z1; ++z) {
+            for (std::int32_t y = y0; y <= y1; ++y) {
+                for (std::int32_t x = x0; x <= x1; ++x) {
+                    fn(world.cellIndex(x, y, z));
+                }
+            }
+        }
+    };
+    for (std::size_t tri = 0; tri < triangleCount; ++tri) {
+        forEachCell(tri, [&](std::size_t cell) { ++world.cellStart[cell + 1]; });
+    }
+    for (std::size_t cell = 0; cell < cellCount; ++cell) {
+        world.cellStart[cell + 1] += world.cellStart[cell];
+    }
+    world.cellTris.resize(world.cellStart[cellCount]);
+    std::vector<std::uint32_t> cursor(world.cellStart.begin(), world.cellStart.end() - 1);
+    for (std::size_t tri = 0; tri < triangleCount; ++tri) {
+        forEachCell(tri, [&](std::size_t cell) {
+            world.cellTris[cursor[cell]++] = static_cast<std::uint32_t>(tri);
+        });
+    }
+    return world;
+}
+
+// Ericson, Real-Time Collision Detection 5.1.5.
+math::Vec3 closestPointOnTriangle(const math::Vec3& p, const math::Vec3& a, const math::Vec3& b,
+                                  const math::Vec3& c) {
+    const math::Vec3 ab = math::sub(b, a);
+    const math::Vec3 ac = math::sub(c, a);
+    const math::Vec3 ap = math::sub(p, a);
+    const float d1 = math::dot(ab, ap);
+    const float d2 = math::dot(ac, ap);
+    if (d1 <= 0.0f && d2 <= 0.0f) {
+        return a;
+    }
+    const math::Vec3 bp = math::sub(p, b);
+    const float d3 = math::dot(ab, bp);
+    const float d4 = math::dot(ac, bp);
+    if (d3 >= 0.0f && d4 <= d3) {
+        return b;
+    }
+    const float vc = d1 * d4 - d3 * d2;
+    if (vc <= 0.0f && d1 >= 0.0f && d3 <= 0.0f) {
+        return vadd(a, vscale(ab, d1 / (d1 - d3)));
+    }
+    const math::Vec3 cp = math::sub(p, c);
+    const float d5 = math::dot(ab, cp);
+    const float d6 = math::dot(ac, cp);
+    if (d6 >= 0.0f && d5 <= d6) {
+        return c;
+    }
+    const float vb = d5 * d2 - d1 * d6;
+    if (vb <= 0.0f && d2 >= 0.0f && d6 <= 0.0f) {
+        return vadd(a, vscale(ac, d2 / (d2 - d6)));
+    }
+    const float va = d3 * d6 - d5 * d4;
+    if (va <= 0.0f && d4 - d3 >= 0.0f && d5 - d6 >= 0.0f) {
+        return vadd(b, vscale(math::sub(c, b), (d4 - d3) / ((d4 - d3) + (d5 - d6))));
+    }
+    const float denom = 1.0f / (va + vb + vc);
+    return vadd(a, vadd(vscale(ab, vb * denom), vscale(ac, vc * denom)));
+}
+
+// Push a vertical capsule (feet origin, axis +Y) out of the world:
+// deepest contact first, a few rounds so corners and steps settle. The
+// caller reads grounded/ceiling to zero the matching velocity component.
+struct CapsuleContacts {
+    bool grounded = false;
+    bool ceiling = false;
+};
+
+CapsuleContacts resolveCapsule(const CollisionWorld& world, math::Vec3& feet, float radius,
+                               float height) {
+    CapsuleContacts out;
+    if (world.empty()) {
+        return out;
+    }
+    for (int iteration = 0; iteration < 4; ++iteration) {
+        const float segMinY = feet.y + radius;
+        const float segMaxY = feet.y + height - radius;
+        const std::int32_t x0 = world.cellClamp(feet.x - radius, world.boundsMin.x, 0);
+        const std::int32_t x1 = world.cellClamp(feet.x + radius, world.boundsMin.x, 0);
+        const std::int32_t y0 = world.cellClamp(feet.y, world.boundsMin.y, 1);
+        const std::int32_t y1 = world.cellClamp(feet.y + height, world.boundsMin.y, 1);
+        const std::int32_t z0 = world.cellClamp(feet.z - radius, world.boundsMin.z, 2);
+        const std::int32_t z1 = world.cellClamp(feet.z + radius, world.boundsMin.z, 2);
+        float bestDepth = 0.0f;
+        math::Vec3 bestNormal{};
+        for (std::int32_t z = z0; z <= z1; ++z) {
+            for (std::int32_t y = y0; y <= y1; ++y) {
+                for (std::int32_t x = x0; x <= x1; ++x) {
+                    const std::size_t cell = world.cellIndex(x, y, z);
+                    for (std::uint32_t e = world.cellStart[cell]; e < world.cellStart[cell + 1];
+                         ++e) {
+                        const std::uint32_t tri = world.cellTris[e];
+                        const math::Vec3& v0 = world.vertices[world.indices[tri * 3]];
+                        const math::Vec3& v1 = world.vertices[world.indices[tri * 3 + 1]];
+                        const math::Vec3& v2 = world.vertices[world.indices[tri * 3 + 2]];
+                        math::Vec3 n = math::cross(math::sub(v1, v0), math::sub(v2, v0));
+                        const float nLen = std::sqrt(math::dot(n, n));
+                        if (nLen < 1.0e-12f) {
+                            continue;
+                        }
+                        n = vscale(n, 1.0f / nLen);
+                        // Reference point: the capsule axis is vertical,
+                        // so the plane crossing reduces to a y solve.
+                        float t = 0.0f;
+                        if (std::abs(n.y) > 1.0e-6f && segMaxY > segMinY) {
+                            const float planeY =
+                                math::dot(n, math::sub(v0, {feet.x, 0.0f, feet.z})) / n.y;
+                            t = std::clamp((planeY - segMinY) / (segMaxY - segMinY), 0.0f, 1.0f);
+                        }
+                        const math::Vec3 ref{feet.x, segMinY + t * (segMaxY - segMinY), feet.z};
+                        const math::Vec3 c = closestPointOnTriangle(ref, v0, v1, v2);
+                        const math::Vec3 p{feet.x, std::clamp(c.y, segMinY, segMaxY), feet.z};
+                        const math::Vec3 d = math::sub(p, c);
+                        const float dist2 = math::dot(d, d);
+                        if (dist2 >= radius * radius) {
+                            continue;
+                        }
+                        const float dist = std::sqrt(dist2);
+                        math::Vec3 pushNormal;
+                        if (dist > 1.0e-4f) {
+                            pushNormal = vscale(d, 1.0f / dist);
+                        } else {
+                            // Degenerate overlap: push along the face
+                            // normal, oriented toward the capsule.
+                            pushNormal = math::dot(n, math::sub(p, v0)) < 0.0f ? vscale(n, -1.0f)
+                                                                               : n;
+                        }
+                        const float depth = radius - dist;
+                        if (depth > bestDepth) {
+                            bestDepth = depth;
+                            bestNormal = pushNormal;
+                        }
+                    }
+                }
+            }
+        }
+        if (bestDepth <= 0.0f) {
+            break;
+        }
+        feet = vadd(feet, vscale(bestNormal, bestDepth + 1.0e-4f));
+        if (bestNormal.y > 0.7f) {
+            out.grounded = true;
+        } else if (bestNormal.y < -0.3f) {
+            out.ceiling = true;
+        }
+    }
+    return out;
+}
+
 // Interleave the assetio streams into the vertex layout the scene pass will
 // consume: position (3f), normal (3f), uv (2f). Missing streams pad with
 // zeros so one pipeline serves every mesh.
@@ -728,6 +978,9 @@ int main(int argc, char** argv) {
     // recordings. Seeded from the scene's authored value after load.
     float fogDensity = 0.0f;
     std::uint64_t benchFrames = 0; // non-zero: exit after N frames with a report
+    // Start in walking mode (G toggles it live): capsule + gravity against
+    // the viewer-level collision world instead of free-fly movement.
+    bool walkFromStart = false;
     // Streaming test harness: auto-spawn this model at random intervals
     // through the message queue.
     const char* spawnTestPath = nullptr;
@@ -763,6 +1016,8 @@ int main(int argc, char** argv) {
             occlusionCull = false;
         } else if (arg == "--noobb") {
             obbRefine = false;
+        } else if (arg == "--walk") {
+            walkFromStart = true;
         } else if (arg == "--spawn-test" && i + 1 < argc) {
             spawnTestPath = argv[++i];
         } else if (arg == "--bench" && i + 1 < argc) {
@@ -796,6 +1051,9 @@ int main(int argc, char** argv) {
     // The assetio project turns the scene XML + referenced model files into
     // plain CPU-side data; the viewer feeds it to the GPU below.
     std::optional<assetio::LoadedScene> scene;
+    // Viewer-level collision world for walking mode, built once from the
+    // world-baked static triangles right after the bake loop below.
+    CollisionWorld collisionWorld;
     if (scenePath) {
         const auto start = std::chrono::steady_clock::now();
         auto sceneResult = [&] {
@@ -861,9 +1119,23 @@ int main(int argc, char** argv) {
                 bakeMeshTransform(mesh, m);
             }
         }
+
+        {
+            const auto collisionStart = std::chrono::steady_clock::now();
+            collisionWorld = buildCollisionWorld(*scene);
+            if (!collisionWorld.empty()) {
+                const auto collisionMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                             std::chrono::steady_clock::now() - collisionStart)
+                                             .count();
+                log::info("Collision world: {} triangles, {}x{}x{} grid (cell {:.1f} m), {} ms",
+                          collisionWorld.indices.size() / 3, collisionWorld.dims[0],
+                          collisionWorld.dims[1], collisionWorld.dims[2],
+                          collisionWorld.cellSize, collisionMs);
+            }
+        }
     } else {
         log::info("No scene file given "
-                  "(usage: viewer [--debug] [--novsync] [--static] [--bench N] "
+                  "(usage: viewer [--debug] [--novsync] [--static] [--bench N] [--walk] "
                   "[--draw-mode count|indirect|direct] [--spawn-test model.gltf] <scene.xml>)");
     }
 
@@ -4425,6 +4697,25 @@ int main(int argc, char** argv) {
     constexpr float kMoveSpeed = 3.0f;          // units per second
     constexpr float kFastMultiplier = 5.0f;
 
+    // Walking mode (G toggles, --walk starts in it): a vertical capsule
+    // with gravity resolved against the collision world; WASD moves on
+    // the yaw plane, mouselook is unchanged, Q/E do nothing.
+    constexpr float kPlayerRadius = 0.35f;
+    constexpr float kPlayerHeight = 1.75f; // capsule total, feet to crown
+    constexpr float kEyeHeight = 1.6f;     // camera above the feet
+    constexpr float kGravity = 9.81f;
+    bool walkMode = false;
+    float walkVerticalVelocity = 0.0f;
+    bool walkReportedGround = false; // one grounded log per toggle
+    if (walkFromStart) {
+        if (collisionWorld.empty()) {
+            log::warn("--walk ignored: no collidable scene geometry");
+        } else {
+            walkMode = true;
+            log::info("Walk mode on (G toggles back to fly)");
+        }
+    }
+
     bool running = true;
     std::uint64_t frame = 0;
     std::uint32_t viewWidth = extent.width;
@@ -4541,6 +4832,16 @@ int main(int argc, char** argv) {
                     log::info("Switched to {} recording",
                               renderer->staticRecording() ? "static" : "per-frame");
                 }
+                if (event.key == platform::Key::G) {
+                    if (collisionWorld.empty()) {
+                        log::info("Walk mode unavailable: no collidable scene geometry");
+                    } else {
+                        walkMode = !walkMode;
+                        walkVerticalVelocity = 0.0f;
+                        walkReportedGround = false;
+                        log::info("Walk mode {}", walkMode ? "on" : "off");
+                    }
+                }
                 break;
             case platform::Event::Type::KeyUp:
                 keyHeld[static_cast<int>(event.key)] = false;
@@ -4587,21 +4888,66 @@ int main(int argc, char** argv) {
         // plane, Q/E down/up, Shift fast).
         if (drawScene) {
             auto held = [&](platform::Key k) { return keyHeld[static_cast<int>(k)]; };
-            const float speed = kMoveSpeed *
-                                (held(platform::Key::LeftShift) ? kFastMultiplier : 1.0f) *
-                                deltaSeconds;
-            const math::Vec3 f = camera.forward();
-            const math::Vec3 right = math::normalize(math::cross(f, {0.0f, 1.0f, 0.0f}));
-            auto move = [&](const math::Vec3& d, float s) {
-                camera.position = {camera.position.x + d.x * s, camera.position.y + d.y * s,
-                                   camera.position.z + d.z * s};
-            };
-            if (held(platform::Key::W)) move(f, speed);
-            if (held(platform::Key::S)) move(f, -speed);
-            if (held(platform::Key::D)) move(right, speed);
-            if (held(platform::Key::A)) move(right, -speed);
-            if (held(platform::Key::E)) move({0.0f, 1.0f, 0.0f}, speed);
-            if (held(platform::Key::Q)) move({0.0f, 1.0f, 0.0f}, -speed);
+            if (walkMode) {
+                // Ground movement on the yaw plane + gravity on the
+                // capsule; dt clamped so a stall can't tunnel the player
+                // through geometry.
+                const float dt = std::min(deltaSeconds, 0.05f);
+                const float walkSpeed =
+                    kMoveSpeed * (held(platform::Key::LeftShift) ? kFastMultiplier : 1.0f);
+                const math::Vec3 fwd{std::sin(camera.yaw), 0.0f, -std::cos(camera.yaw)};
+                const math::Vec3 right{std::cos(camera.yaw), 0.0f, std::sin(camera.yaw)};
+                math::Vec3 wish{};
+                if (held(platform::Key::W)) wish = vadd(wish, fwd);
+                if (held(platform::Key::S)) wish = vadd(wish, vscale(fwd, -1.0f));
+                if (held(platform::Key::D)) wish = vadd(wish, right);
+                if (held(platform::Key::A)) wish = vadd(wish, vscale(right, -1.0f));
+                const float wishLen = std::sqrt(math::dot(wish, wish));
+                if (wishLen > 0.0f) {
+                    wish = vscale(wish, 1.0f / wishLen);
+                }
+                walkVerticalVelocity -= kGravity * dt;
+                math::Vec3 feet{camera.position.x, camera.position.y - kEyeHeight,
+                                camera.position.z};
+                feet = vadd(feet, vscale(wish, walkSpeed * dt));
+                feet.y += walkVerticalVelocity * dt;
+                const CapsuleContacts contacts =
+                    resolveCapsule(collisionWorld, feet, kPlayerRadius, kPlayerHeight);
+                if (contacts.grounded) {
+                    if (walkVerticalVelocity < 0.0f) {
+                        walkVerticalVelocity = 0.0f;
+                    }
+                    if (!walkReportedGround) {
+                        walkReportedGround = true;
+                        log::info("Walk mode: grounded at ({:.2f} {:.2f} {:.2f})", feet.x,
+                                  feet.y, feet.z);
+                    }
+                }
+                if (contacts.ceiling && walkVerticalVelocity > 0.0f) {
+                    walkVerticalVelocity = 0.0f;
+                }
+                if (feet.y < collisionWorld.boundsMin.y - 25.0f) {
+                    walkMode = false;
+                    log::warn("Walk mode: fell out of the world; back to fly mode");
+                }
+                camera.position = {feet.x, feet.y + kEyeHeight, feet.z};
+            } else {
+                const float speed = kMoveSpeed *
+                                    (held(platform::Key::LeftShift) ? kFastMultiplier : 1.0f) *
+                                    deltaSeconds;
+                const math::Vec3 f = camera.forward();
+                const math::Vec3 right = math::normalize(math::cross(f, {0.0f, 1.0f, 0.0f}));
+                auto move = [&](const math::Vec3& d, float s) {
+                    camera.position = {camera.position.x + d.x * s, camera.position.y + d.y * s,
+                                       camera.position.z + d.z * s};
+                };
+                if (held(platform::Key::W)) move(f, speed);
+                if (held(platform::Key::S)) move(f, -speed);
+                if (held(platform::Key::D)) move(right, speed);
+                if (held(platform::Key::A)) move(right, -speed);
+                if (held(platform::Key::E)) move({0.0f, 1.0f, 0.0f}, speed);
+                if (held(platform::Key::Q)) move({0.0f, 1.0f, 0.0f}, -speed);
+            }
 
             // Scene fly-in (<Camera flyFrom flySeconds>): ease from the
             // spawn point into the authored pose, aimed at the scene

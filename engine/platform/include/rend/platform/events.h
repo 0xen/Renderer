@@ -17,6 +17,7 @@ enum class Key {
     D,
     Q,
     E,
+    G,
     LeftShift,
     LeftCtrl,
 };
