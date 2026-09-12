@@ -147,6 +147,18 @@ struct ModelReadyEvent {
     char error[160] = {};
 };
 
+// The free-fly camera's pose, broadcast whenever it changes (user input,
+// scene fly-in, SetCamera). Consumers mirror the latest one so a
+// synchronous get_camera can answer without a round trip; yaw/pitch are
+// radians in the FlyCamera convention (yaw 0 looks down -Z, positive
+// turns toward +X; pitch positive looks up).
+struct CameraStateEvent {
+    float position[3] = {};
+    float yaw = 0.0f;
+    float pitch = 0.0f;
+    float fovDegrees = 60.0f;
+};
+
 // One graphics-setting slot's full public state, broadcast at startup and
 // whenever it changes (any producer's set, a UI flip, a capability
 // arriving). `active` is the EFFECTIVE answer: the selected option token,
@@ -171,12 +183,13 @@ struct SettingRejectedEvent {
 };
 
 struct Event {
-    enum class Type : std::uint32_t { ModelReady, SettingState, SettingRejected };
+    enum class Type : std::uint32_t { ModelReady, SettingState, SettingRejected, CameraState };
     Type type = Type::ModelReady;
     union {
         ModelReadyEvent ready;
         SettingStateEvent settingState;
         SettingRejectedEvent settingRejected;
+        CameraStateEvent cameraState;
     };
     Event() : ready{} {}
 };

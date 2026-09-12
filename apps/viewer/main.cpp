@@ -3164,6 +3164,30 @@ int main(int argc, char** argv) {
             messageQueue.pushEvent(event);
         }
     };
+    // The camera pose broadcasts as one CameraState event whenever it
+    // changes (input, fly-in, SetCamera), so the Python host's mirror can
+    // answer get_camera synchronously. memcmp against the last broadcast
+    // keeps motionless frames event-free.
+    renderer::CameraStateEvent lastCameraState{};
+    bool cameraStateSent = false;
+    auto broadcastCamera = [&] {
+        renderer::CameraStateEvent state;
+        state.position[0] = camera.position.x;
+        state.position[1] = camera.position.y;
+        state.position[2] = camera.position.z;
+        state.yaw = camera.yaw;
+        state.pitch = camera.pitch;
+        state.fovDegrees = camera.fovDegrees;
+        if (cameraStateSent && std::memcmp(&state, &lastCameraState, sizeof(state)) == 0) {
+            return;
+        }
+        lastCameraState = state;
+        cameraStateSent = true;
+        renderer::Event event;
+        event.type = renderer::Event::Type::CameraState;
+        event.cameraState = state;
+        messageQueue.pushEvent(event);
+    };
     // Events broadcast to per-consumer receivers; the Python host holds
     // one. The viewer itself currently consumes none (a receiver nothing
     // polls would only accumulate, so don't create one idly).
@@ -4649,6 +4673,9 @@ int main(int argc, char** argv) {
             }
             processMessages(renderer->frameSlot());
             broadcastSettings();
+            // After the drain so a scripted SetCamera is reflected in the
+            // same frame's broadcast (input/fly-in ran above).
+            broadcastCamera();
             // Publish this frame's TLAS instances into the slot's region:
             // the scene BLAS plus one entry per runtime model instance,
             // transforms straight from the canonical array — the recorded

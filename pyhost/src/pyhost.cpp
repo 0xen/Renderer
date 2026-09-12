@@ -42,6 +42,10 @@ struct HostState {
     std::optional<renderer::EventReceiver> receiver; // script-thread-only
     std::vector<renderer::Event> eventCache; // polled but unconsumed events
     std::map<std::string, SettingMirror> settings;
+    // Latest broadcast camera pose (same mirror idea as settings): the
+    // viewer sends CameraState whenever the pose changes, get_camera
+    // answers from here. Empty until the first broadcast lands.
+    std::optional<renderer::CameraStateEvent> cameraMirror;
     std::atomic<bool> quit{false};
     std::thread thread;
     // Guards interpreterAlive against the Stop-side PyErr_SetInterrupt:
@@ -70,7 +74,8 @@ py::dict eventToDict(const renderer::Event& event) {
         out["reason"] = std::string(event.settingRejected.reason);
         break;
     case renderer::Event::Type::SettingState:
-        break; // absorbed into the settings mirror, never surfaced raw
+    case renderer::Event::Type::CameraState:
+        break; // absorbed into their mirrors, never surfaced raw
     }
     return out;
 }
@@ -90,6 +95,8 @@ void refillEventCache() {
                  i < event.settingState.optionCount && i < renderer::kSettingMaxOptions; ++i) {
                 mirror.options.emplace_back(event.settingState.options[i]);
             }
+        } else if (event.type == renderer::Event::Type::CameraState) {
+            g_host.cameraMirror = event.cameraState;
         } else {
             g_host.eventCache.push_back(event);
         }
@@ -183,6 +190,29 @@ PYBIND11_EMBEDDED_MODULE(rend, m) {
         "Place the free-fly camera at position looking at target. Cancels "
         "a scene fly-in; the user's mouselook/WASD continue from the last "
         "scripted pose once the script stops sending.");
+
+    m.def(
+        "get_camera",
+        []() -> py::object {
+            refillEventCache();
+            if (!g_host.cameraMirror) {
+                return py::none();
+            }
+            const renderer::CameraStateEvent& cam = *g_host.cameraMirror;
+            py::dict out;
+            out["position"] =
+                py::make_tuple(cam.position[0], cam.position[1], cam.position[2]);
+            out["yaw"] = cam.yaw;
+            out["pitch"] = cam.pitch;
+            out["fov_degrees"] = cam.fovDegrees;
+            return out;
+        },
+        "The free-fly camera's latest broadcast pose as {position, yaw, "
+        "pitch, fov_degrees} (yaw/pitch radians: yaw 0 looks down -Z, "
+        "positive turns toward +X; pitch positive looks up). None until "
+        "the first frame's broadcast arrives. Updates lag the frame loop "
+        "by up to a frame — poll, don't assume instant echo of "
+        "set_camera.");
 
     m.def(
         "set_sun",
@@ -485,6 +515,7 @@ bool rendPyHostStart(rend::renderer::MessageQueue* queue, const char* const* scr
     g_host.receiver.emplace(queue->createEventReceiver());
     g_host.eventCache.clear();
     g_host.settings.clear();
+    g_host.cameraMirror.reset();
     g_host.quit.store(false);
     std::vector<std::string> scripts(scriptPaths, scriptPaths + scriptCount);
     g_host.thread = std::thread(scriptThreadMain, std::move(scripts));
