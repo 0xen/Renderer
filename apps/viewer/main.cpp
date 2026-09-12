@@ -181,7 +181,13 @@ struct ObjectData {
     float baseAlpha = 1.0f; // baseColorFactor.a: blend opacity multiplier
     float metallicFactor = 1.0f;
     float roughnessFactor = 1.0f;
+    // baseColorFactor.rgb — multiplies the albedo texture everywhere and
+    // tints traced transmission through transparent surfaces. w kept 1
+    // (alpha lives in baseAlpha) so full-float4 multiplies are safe.
+    std::array<float, 4> baseColor{1.0f, 1.0f, 1.0f, 1.0f};
 };
+// 16-byte-aligned float4 at offset 32: C++ and HLSL std430 strides agree.
+static_assert(sizeof(ObjectData) == 48);
 
 // Per-slot camera region. viewProj feeds the raster vertex shader; the
 // extra vectors are ray-generation axes for the traced primary pass
@@ -1096,6 +1102,8 @@ int main(int argc, char** argv) {
                                    (material.transparent ? kObjectTransparent : 0u);
                     object.alphaCutoff = material.alphaCutoff;
                     object.baseAlpha = material.baseColorFactor[3];
+                    object.baseColor = {material.baseColorFactor[0], material.baseColorFactor[1],
+                                        material.baseColorFactor[2], 1.0f};
                     object.metallicFactor = material.metallicFactor;
                     object.roughnessFactor = material.roughnessFactor;
                     object.textureIndex = registerTexture(material.baseColorTexture, true);
@@ -3651,6 +3659,9 @@ int main(int argc, char** argv) {
                                         (material.transparent ? kObjectTransparent : 0u);
                 prepared.object.alphaCutoff = material.alphaCutoff;
                 prepared.object.baseAlpha = material.baseColorFactor[3];
+                prepared.object.baseColor = {material.baseColorFactor[0],
+                                             material.baseColorFactor[1],
+                                             material.baseColorFactor[2], 1.0f};
                 prepared.object.metallicFactor = material.metallicFactor;
                 prepared.object.roughnessFactor = material.roughnessFactor;
                 prepared.baseColorPath = material.baseColorTexture.string();

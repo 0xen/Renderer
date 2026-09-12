@@ -71,14 +71,17 @@ float4 PSMain(VSOutput input) : SV_Target0 {
     // its shadow work entirely instead of tracing/sampling for it.
     const float direct = light.intensity > 0.0f ? saturate(dot(n, l)) : 0.0f;
     uint cascade = 0;
-    float shadow = 1.0f;
+    float3 shadow = 1.0f;
 #if RT_SHADOWS
     if (light.rtShadows != 0) {
-        shadow = direct > 0.0f ? shadowRay(worldPos, n, light) : 0.0f;
+        // Traced shadows are per-channel: transparent occluders tint the
+        // light that passes through them instead of blocking it.
+        shadow = direct > 0.0f ? shadowRay(worldPos, n, light) : (float3)0.0f;
     } else
 #endif
     if (light.cascadeCount > 0) {
-        shadow = direct > 0.0f ? shadowFactor(worldPos, n, viewDepth, light, cascade) : 0.0f;
+        shadow = direct > 0.0f ? shadowFactor(worldPos, n, viewDepth, light, cascade).xxx
+                               : (float3)0.0f;
     }
 
     const float3 v = normalize(cam.position.xyz - worldPos);

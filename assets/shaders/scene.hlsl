@@ -62,11 +62,12 @@ VSOutput VSMain(VSInput input) {
 
 float4 PSMain(VSOutput input) : SV_Target0 {
     const ObjectData object = objects[input.objectIndex];
-    const float4 albedo =
+    float4 albedo =
         textures[NonUniformResourceIndex(object.textureIndex)].Sample(linearSampler, input.uv);
     if ((object.flags & kFlagAlphaMasked) != 0 && albedo.a < object.alphaCutoff) {
         discard;
     }
+    albedo.rgb *= object.baseColor.rgb;
 
     const LightData light = lights[pc.cameraSlot];
     float3 n = normalize(input.normal);
@@ -84,16 +85,18 @@ float4 PSMain(VSOutput input) : SV_Target0 {
     // its shadow work entirely instead of tracing/sampling for it.
     const float direct = light.intensity > 0.0f ? saturate(dot(n, l)) : 0.0f;
     uint cascade = 0;
-    float shadow = 1.0f;
+    float3 shadow = 1.0f;
 #if RT_SHADOWS
     if (light.rtShadows != 0) {
-        shadow = direct > 0.0f ? shadowRay(input.worldPos, n, light) : 0.0f;
+        // Traced shadows are per-channel: transparent occluders tint the
+        // light that passes through them instead of blocking it.
+        shadow = direct > 0.0f ? shadowRay(input.worldPos, n, light) : (float3)0.0f;
     } else
 #endif
     if (light.cascadeCount > 0) {
         shadow = direct > 0.0f
-                     ? shadowFactor(input.worldPos, n, input.viewDepth, light, cascade)
-                     : 0.0f;
+                     ? shadowFactor(input.worldPos, n, input.viewDepth, light, cascade).xxx
+                     : (float3)0.0f;
     }
 
     const float3 v = normalize(cameras[pc.cameraSlot].position.xyz - input.worldPos);

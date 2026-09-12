@@ -4,8 +4,8 @@
 // attributes from the geometry pool (bindings 11/12), shade with the same
 // sun + ambient model as scene.hlsl, and fire the shadow ray from the hit
 // point. Alpha-masked geometries are non-opaque in the BLAS, so the
-// candidate loop alpha-tests them (correct foliage silhouettes, unlike the
-// FORCE_OPAQUE shadow rays). Transparent (alpha-blend) surfaces commit,
+// candidate loop alpha-tests them (correct foliage silhouettes; the
+// occlusion rays run the same walk). Transparent (alpha-blend) surfaces commit,
 // contribute opacity-weighted shading, and the ray marches on through them
 // with the remaining throughput — front-to-back, no sorting needed.
 // Reflective-flagged objects (per-object RT) get one extra reflection
@@ -82,7 +82,7 @@ float4 PSMain(VSOutput input) : SV_Target0 {
 
         if ((hit.flags & kFlagTransparent) != 0) {
             color += throughput * hit.opacity * shaded;
-            throughput *= 1.0f - hit.opacity;
+            throughput *= hit.transmission; // colored glass tints the view through it
             if (max(throughput.x, max(throughput.y, throughput.z)) < 0.01f) {
                 break;
             }

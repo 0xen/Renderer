@@ -42,6 +42,7 @@ struct ObjectData {
     float baseAlpha;
     float metallicFactor;
     float roughnessFactor;
+    float4 baseColor; // unused here; keeps the 48 B stride in lockstep
 };
 
 static const uint kFlagAlphaMasked = 1u;

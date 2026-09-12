@@ -51,7 +51,7 @@ PSOutput PSMain(VSOutput input) {
     }
 
     PSOutput output;
-    output.albedo = float4(albedo.rgb, 1.0f);
+    output.albedo = float4(albedo.rgb * object.baseColor.rgb, 1.0f);
     output.normal = float4(n, 0.0f);
     output.material = float4(roughness, metallic,
                              (object.flags & kFlagReflective) != 0 ? 1.0f : 0.0f, 0.0f);

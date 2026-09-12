@@ -83,34 +83,67 @@ void resolveCandidates(inout RayQuery<RAY_FLAG_NONE> q) {
     }
 }
 
-// One opaque any-hit ray from the surface toward the sun. Alpha-masked
-// casters count as solid here (colored/cutout shadow rays are a later
-// any-hit refinement).
-float shadowRay(float3 worldPos, float3 n, LightData light) {
-    RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_FORCE_OPAQUE> q;
+// Shared candidate walk for the two occlusion rays below: transparent
+// candidates are NOT committed — the ray continues past them while their
+// color tints the running transmittance (a red pane throws a red shadow).
+// Alpha-masked candidates commit where the texture passes the cutoff, and
+// ACCEPT_FIRST ends the search on any commit (opaque hits auto-commit),
+// so a solid blocker still exits early. The transmittance product is
+// order-independent, so arbitrary candidate order is fine. Returns the
+// per-channel visibility: 1 = fully lit, 0 = blocked.
+float3 occlusionMarch(RayDesc ray) {
+    RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> q;
+    q.TraceRayInline(sceneBVH, RAY_FLAG_NONE, 0xff, ray);
+    float3 transmittance = 1.0f;
+    while (q.Proceed()) {
+        if (q.CandidateType() != CANDIDATE_NON_OPAQUE_TRIANGLE) {
+            continue;
+        }
+        const uint objectIndex =
+            hitObjectIndex(q.CandidateInstanceID(), q.CandidateGeometryIndex());
+        const ObjectData object = objects[objectIndex];
+        const float2 uv =
+            hitUv(objectIndex, q.CandidatePrimitiveIndex(), q.CandidateTriangleBarycentrics());
+        // No ray cone is tracked on occlusion rays; level 0 matches the
+        // candidate alpha test in resolveCandidates.
+        const float4 albedo = textures[NonUniformResourceIndex(object.textureIndex)]
+                                  .SampleLevel(linearSampler, uv, 0);
+        if ((object.flags & kFlagTransparent) != 0) {
+            const float opacity = saturate(albedo.a * object.baseAlpha);
+            transmittance *= (1.0f - opacity) * albedo.rgb * object.baseColor.rgb;
+            if (max(transmittance.x, max(transmittance.y, transmittance.z)) < 0.01f) {
+                return 0.0f;
+            }
+            continue;
+        }
+        if (albedo.a >= object.alphaCutoff) {
+            q.CommitNonOpaqueTriangleHit();
+        }
+    }
+    return q.CommittedStatus() == COMMITTED_TRIANGLE_HIT ? (float3)0.0f : transmittance;
+}
+
+// Occlusion ray from the surface toward the sun, tinted by transparent
+// occluders on the way.
+float3 shadowRay(float3 worldPos, float3 n, LightData light) {
     RayDesc ray;
     ray.Origin = worldPos + n * 0.02f;
     ray.Direction = -light.direction;
     ray.TMin = 0.0f;
     ray.TMax = 1.0e4f;
-    q.TraceRayInline(sceneBVH, RAY_FLAG_NONE, 0xff, ray);
-    q.Proceed();
-    return q.CommittedStatus() == COMMITTED_TRIANGLE_HIT ? 0.0f : 1.0f;
+    return occlusionMarch(ray);
 }
 
 // Distance-bounded occlusion ray toward one point light. The reach stops
 // short of the light point: scripts place lamp lights at (or inside) the
 // fixture's bulb geometry, which would otherwise occlude everything.
-float pointShadowRay(float3 worldPos, float3 n, float3 l, float dist) {
-    RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_FORCE_OPAQUE> q;
+float3 pointShadowRay(float3 worldPos, float3 n, float3 l, float dist) {
     RayDesc ray;
     ray.Origin = worldPos + n * 0.02f;
     ray.Direction = l;
     ray.TMin = 0.0f;
     ray.TMax = max(dist - 0.3f, 0.0f);
-    q.TraceRayInline(sceneBVH, RAY_FLAG_NONE, 0xff, ray);
-    q.Proceed();
-    return q.CommittedStatus() == COMMITTED_TRIANGLE_HIT ? 0.0f : 1.0f;
+    return occlusionMarch(ray);
 }
 
 // Traced variant of shading.hlsli's shadePointLights: same sample math,
@@ -137,12 +170,17 @@ float3 shadePointLightsTraced(float3 albedo, float metallic, float roughness, fl
             continue;
         }
         // castsShadows (params.x) gates the ray; a non-casting light just
-        // shades unshadowed.
-        if (pl.params.x > 0.0f && pointShadowRay(worldPos, n, s.l, s.dist) <= 0.0f) {
-            continue;
+        // shades unshadowed. The ray's per-channel visibility carries the
+        // tint of transparent occluders.
+        float3 shadow = 1.0f;
+        if (pl.params.x > 0.0f) {
+            shadow = pointShadowRay(worldPos, n, s.l, s.dist);
+            if (max(shadow.x, max(shadow.y, shadow.z)) <= 0.0f) {
+                continue;
+            }
         }
         sum += shadeSurface(albedo, metallic, roughness, n, v, s.l, pl.colorIntensity.rgb,
-                            pl.colorIntensity.w * s.atten, 1.0f);
+                            pl.colorIntensity.w * s.atten, shadow);
     }
     return sum;
 }
@@ -209,6 +247,10 @@ struct TracedHit {
     float3 normal; // shading normal (normal-mapped, faced toward the ray)
     float3 f0;     // Fresnel reflectance at normal incidence
     float roughness;
+    // Per-channel throughput multiplier for rays continuing through this
+    // hit: (1 - opacity) * albedo for transparent surfaces (colored
+    // glass tints what lies behind it), 0 for opaque.
+    float3 transmission;
 };
 
 TracedHit shadeCommittedHit(uint objectIndex, float3x4 objectToWorld, uint primitive,
@@ -252,13 +294,14 @@ TracedHit shadeCommittedHit(uint objectIndex, float3x4 objectToWorld, uint primi
         roughness *= mr.x;
         metallic *= mr.y;
     }
-    const float4 albedo =
+    float4 albedo =
         textures[NonUniformResourceIndex(object.textureIndex)]
             .SampleLevel(linearSampler, uv,
                          textureLod(object.textureIndex, lodBase, coneWidth, ndotd));
+    albedo.rgb *= object.baseColor.rgb;
     const float3 l = -normalize(light.direction);
     const float direct = light.intensity > 0.0f ? saturate(dot(n, l)) : 0.0f;
-    const float shadow = direct > 0.0f ? shadowRay(hit.position, n, light) : 0.0f;
+    const float3 shadow = direct > 0.0f ? shadowRay(hit.position, n, light) : (float3)0.0f;
     const float3 sun = shadeSurface(albedo.rgb, metallic, roughness, n, -dir, l, light.color,
                                     light.intensity, shadow);
     hit.color = albedo.rgb * ambientLight(n, light.ambientColor.rgb) + sun;
@@ -266,6 +309,9 @@ TracedHit shadeCommittedHit(uint objectIndex, float3x4 objectToWorld, uint primi
         shadePointLightsTraced(albedo.rgb, metallic, roughness, n, -dir, hit.position, light);
     hit.opacity =
         (object.flags & kFlagTransparent) != 0 ? saturate(albedo.a * object.baseAlpha) : 1.0f;
+    hit.transmission = (object.flags & kFlagTransparent) != 0
+                           ? (1.0f - hit.opacity) * albedo.rgb
+                           : (float3)0.0f;
     hit.normal = n;
     hit.f0 = lerp(0.04f, albedo.rgb, metallic);
     hit.roughness = roughness;
@@ -301,7 +347,7 @@ float3 traceReflection(float3 origin, float3 dir, float travelled, float conePer
         travelled += q.CommittedRayT();
         if ((hit.flags & kFlagTransparent) != 0) {
             color += throughput * hit.opacity * hit.color;
-            throughput *= 1.0f - hit.opacity;
+            throughput *= hit.transmission; // colored glass tints the view through it
             if (max(throughput.x, max(throughput.y, throughput.z)) < 0.01f) {
                 break;
             }

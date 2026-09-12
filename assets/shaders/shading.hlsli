@@ -33,6 +33,10 @@ struct ObjectData {
     float baseAlpha; // baseColorFactor.a: blend opacity multiplier
     float metallicFactor;
     float roughnessFactor;
+    // baseColorFactor.rgb (w = 1): multiplies the albedo texture, and
+    // tints traced transmission through transparent surfaces. The float4
+    // sits at offset 32, so C++ and std430 strides agree (48 B).
+    float4 baseColor;
 };
 
 // One dynamic point light: position + falloff radius, color + intensity,
@@ -118,10 +122,12 @@ struct InstanceRow {
 // One directional light, glTF metallic-roughness: Lambert diffuse + GGX
 // specular (Smith-Schlick visibility, Schlick Fresnel). Scaled by pi so a
 // white dielectric matches the old albedo*NdotL model's brightness.
+// shadow is a per-channel visibility (traced shadow rays tint through
+// transparent occluders; the cascade path broadcasts its scalar).
 float3 shadeSurface(float3 albedo, float metallic, float roughness, float3 n, float3 v, float3 l,
-                    float3 lightColor, float intensity, float shadow) {
+                    float3 lightColor, float intensity, float3 shadow) {
     const float ndotl = saturate(dot(n, l));
-    if (ndotl <= 0.0f || shadow <= 0.0f) {
+    if (ndotl <= 0.0f || max(shadow.x, max(shadow.y, shadow.z)) <= 0.0f) {
         return 0.0f;
     }
     const float3 h = normalize(v + l);
