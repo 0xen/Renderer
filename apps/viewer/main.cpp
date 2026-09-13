@@ -495,8 +495,8 @@ struct LightData {
     std::uint32_t debugTint = 0;
     std::uint32_t rtShadows = 0;
     std::uint32_t reflections = kReflectionProbe; // kReflection* above
-    std::uint32_t pad3 = 0;
-    std::uint32_t pad4 = 0;
+    float exposure = 1.0f;      // post pass: scene-color multiplier
+    std::uint32_t tonemap = 0;  // post pass: 0 = clamp only, 1 = ACES fitted
     // Volumetric fog box; fogColor[3] = step count doubles as the enable
     // flag, so the zero-initialized probe-face regions render fog-free.
     std::array<float, 4> fogBoxMin{}; // xyz min corner, w = density
@@ -2609,10 +2609,11 @@ int main(int argc, char** argv) {
     std::unique_ptr<gpu::Pipeline> skinPipeline;
     std::unique_ptr<gpu::Pipeline> gbufferPipeline;
     std::unique_ptr<gpu::Pipeline> lightingPipeline;
+    std::unique_ptr<gpu::Pipeline> postPipeline;
     std::unique_ptr<gpu::Shader> sceneVert, sceneFrag, cullShader, obbShader, shadowVert,
         shadowFrag, skinShader, proxyVert, proxyInstVert, proxyFrag, proxyDebugFrag, skyVert,
         skyFrag,
-        gbufferFrag, deferredVert, deferredFrag;
+        gbufferFrag, deferredVert, deferredFrag, postVert, postFrag;
     if (scene) {
         auto vertResult = gpu::Shader::createFromFile(*device, shaderDir / "scene.vert.spv");
         // scene.hlsl's forward fragment shader survives ONLY for the
@@ -2636,7 +2637,7 @@ int main(int argc, char** argv) {
             *device, {
                          .vertexShader = sceneVert.get(),
                          .fragmentShader = sceneFrag.get(),
-                         .colorFormat = swapchain->imageFormat(),
+                         .colorFormat = gpu::FrameRenderer::kSceneColorFormat,
                          .vertexStride = kVertexStride,
                          .vertexAttributes = {{0, gpu::kFormatR32G32B32Sfloat, 0},
                                               {1, gpu::kFormatR32G32B32Sfloat, 12},
@@ -2666,7 +2667,7 @@ int main(int argc, char** argv) {
                 *device, {
                              .vertexShader = skyVert.get(),
                              .fragmentShader = skyFrag.get(),
-                             .colorFormat = swapchain->imageFormat(),
+                             .colorFormat = gpu::FrameRenderer::kSceneColorFormat,
                              .depthFormat = gpu::kFormatD32Sfloat,
                              .pushConstantBytes = 2 * sizeof(std::uint32_t), // {slot, cascade}
                              .descriptorLayout = descriptorTable->layout(),
@@ -2723,7 +2724,7 @@ int main(int argc, char** argv) {
             *device, {
                          .vertexShader = deferredVert.get(),
                          .fragmentShader = deferredFrag.get(),
-                         .colorFormat = swapchain->imageFormat(),
+                         .colorFormat = gpu::FrameRenderer::kSceneColorFormat,
                          .depthFormat = gpu::kFormatD32Sfloat,
                          .pushConstantBytes = 2 * sizeof(std::uint32_t), // {slot, cascade}
                          .descriptorLayout = descriptorTable->layout(),
@@ -2736,6 +2737,33 @@ int main(int argc, char** argv) {
         }
         gbufferPipeline = std::move(gbufferResult).value();
         lightingPipeline = std::move(lightingResult).value();
+
+        // Post pass: the only path from the HDR scene-color target to the
+        // swapchain — every composite-pass pipeline above declares the
+        // scene-color format, so this is as fatal as the lighting pass.
+        auto postVertResult = gpu::Shader::createFromFile(*device, shaderDir / "post.vert.spv");
+        auto postFragResult = gpu::Shader::createFromFile(*device, shaderDir / "post.frag.spv");
+        if (!postVertResult || !postFragResult) {
+            log::error("Post shaders missing: {}",
+                       (!postVertResult ? postVertResult : postFragResult).error().message);
+            return 1;
+        }
+        postVert = std::move(postVertResult).value();
+        postFrag = std::move(postFragResult).value();
+        auto postResult = gpu::Pipeline::createGraphics(
+            *device, {
+                         .vertexShader = postVert.get(),
+                         .fragmentShader = postFrag.get(),
+                         .colorFormat = swapchain->imageFormat(),
+                         .depthFormat = 0, // fullscreen map, no depth attachment
+                         .pushConstantBytes = 2 * sizeof(std::uint32_t), // {slot, cascade}
+                         .descriptorLayout = descriptorTable->layout(),
+                     });
+        if (!postResult) {
+            log::error("Post pipeline creation failed: {}", postResult.error().message);
+            return 1;
+        }
+        postPipeline = std::move(postResult).value();
 
         // The compaction pass (IndirectCount mode only). A failure here is
         // not fatal: the draw-mode ladder just skips to Indirect.
@@ -2802,7 +2830,7 @@ int main(int argc, char** argv) {
                 *device, {
                              .vertexShader = proxyVert.get(),
                              .fragmentShader = proxyFrag.get(),
-                             .colorFormat = swapchain->imageFormat(),
+                             .colorFormat = gpu::FrameRenderer::kSceneColorFormat,
                              .depthFormat = gpu::kFormatD32Sfloat,
                              .pushConstantBytes = 2 * sizeof(std::uint32_t), // {slot, capacity}
                              .descriptorLayout = descriptorTable->layout(),
@@ -2821,7 +2849,7 @@ int main(int argc, char** argv) {
                         *device, {
                                      .vertexShader = proxyInstVert.get(),
                                      .fragmentShader = proxyFrag.get(),
-                                     .colorFormat = swapchain->imageFormat(),
+                                     .colorFormat = gpu::FrameRenderer::kSceneColorFormat,
                                      .depthFormat = gpu::kFormatD32Sfloat,
                                      .pushConstantBytes =
                                          2 * sizeof(std::uint32_t), // {slot, capacity}
@@ -2849,7 +2877,7 @@ int main(int argc, char** argv) {
                         *device, {
                                      .vertexShader = proxyVert.get(),
                                      .fragmentShader = proxyDebugFrag.get(),
-                                     .colorFormat = swapchain->imageFormat(),
+                                     .colorFormat = gpu::FrameRenderer::kSceneColorFormat,
                                      .depthFormat = gpu::kFormatD32Sfloat,
                                      .pushConstantBytes =
                                          2 * sizeof(std::uint32_t), // {slot, capacity}
@@ -2868,7 +2896,7 @@ int main(int argc, char** argv) {
                             {
                                 .vertexShader = proxyInstVert.get(),
                                 .fragmentShader = proxyDebugFrag.get(),
-                                .colorFormat = swapchain->imageFormat(),
+                                .colorFormat = gpu::FrameRenderer::kSceneColorFormat,
                                 .depthFormat = gpu::kFormatD32Sfloat,
                                 .pushConstantBytes = 2 * sizeof(std::uint32_t),
                                 .descriptorLayout = descriptorTable->layout(),
@@ -2965,7 +2993,7 @@ int main(int argc, char** argv) {
                 *device, {
                              .vertexShader = rtPrimaryVert.get(),
                              .fragmentShader = rtPrimaryFrag.get(),
-                             .colorFormat = swapchain->imageFormat(),
+                             .colorFormat = gpu::FrameRenderer::kSceneColorFormat,
                              .depthFormat = 0, // rays need no depth buffer
                              .pushConstantBytes = 2 * sizeof(std::uint32_t),
                              .descriptorLayout = descriptorTable->layout(),
@@ -3056,6 +3084,9 @@ int main(int argc, char** argv) {
         // draws), the lighting triangle shades it.
         batch.gbufferPipeline = gbufferPipeline.get();
         batch.lightingPipeline = lightingPipeline.get();
+        // Composite passes render into the HDR scene-color target; this
+        // pass maps it to the swapchain (exposure + tonemap).
+        batch.postPipeline = postPipeline.get();
         batch.count = countBuffer->handle();
         batch.countRegionStride = 8 * sizeof(std::uint32_t);
         batch.cpuDraws = draws.data();
@@ -3200,6 +3231,10 @@ int main(int argc, char** argv) {
     // path; defaults to the best offer (traced where available, so nothing
     // visually regresses vs. the per-object RT milestone).
     bool reflectionsTraced = false;
+    // Post-pass state (Settings): both ride the per-slot light buffer, so
+    // changes are live in every primary mode with no invalidation.
+    float exposureValue = 1.0f;
+    bool tonemapAces = true;
     // Fly-in countdown (scene camera's flySeconds); 0 = no fly-in or done.
     float flyRemaining = 0.0f;
     if (scene) {
@@ -3402,6 +3437,19 @@ int main(int argc, char** argv) {
                 return true;
             });
         }
+        // Post pass: exposure + tonemap curve. Light-buffer data like
+        // fog_density — live everywhere, never overridden by traced
+        // primary (the post pass runs in every mode).
+        settings.addFloat("exposure", 0.0f, 4.0f, exposureValue, [&](float value) {
+            exposureValue = value;
+            return true;
+        });
+        settings.addChoice("tonemap", {"aces", "off"}, tonemapAces ? "aces" : "off",
+                           [&](const std::string& value) {
+                               tonemapAces = value == "aces";
+                               log::info("Tonemap: {}", value);
+                               return true;
+                           });
         updatePrimaryOverrides(); // --rtprimary starts overridden
     }
 
@@ -5220,6 +5268,8 @@ int main(int argc, char** argv) {
             lightData.reflections = (rtReady && reflectionsTraced) ? kReflectionTraced
                                     : probeReady                  ? kReflectionProbe
                                                                   : kReflectionNone;
+            lightData.exposure = exposureValue;
+            lightData.tonemap = tonemapAces ? 1u : 0u;
             if (scene && scene->fog.enabled) {
                 const assetio::FogDesc& fog = scene->fog;
                 lightData.fogBoxMin = {fog.position[0] - fog.size[0] * 0.5f,
@@ -5293,9 +5343,10 @@ int main(int argc, char** argv) {
                 // Below the debug panel, which grew GPU-memory and culling
                 // sections (screenshots 055/039 caught earlier overlaps of
                 // exactly this kind — keep this below the panel's bottom).
-                // 396: the fog-density row would otherwise push "Advanced"
-                // past the bottom edge of the default window height.
-                ImGui::SetNextWindowPos(ImVec2(8.0f, 396.0f), ImGuiCond_FirstUseEver);
+                // 352: the fog-density + exposure/tonemap rows would
+                // otherwise push "Advanced" past the bottom edge of the
+                // default window height (the debug panel ends ~335).
+                ImGui::SetNextWindowPos(ImVec2(8.0f, 352.0f), ImGuiCond_FirstUseEver);
                 ImGui::Begin("Settings", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
                 // Every row reads and writes through the settings
                 // registry — the exact path Python's set_setting takes.
@@ -5317,6 +5368,12 @@ int main(int argc, char** argv) {
                     }
                     if (token == "none") {
                         return "None";
+                    }
+                    if (token == "aces") {
+                        return "ACES";
+                    }
+                    if (token == "off") {
+                        return "Off";
                     }
                     return token.c_str();
                 };
@@ -5397,6 +5454,19 @@ int main(int argc, char** argv) {
                         }
                     }
                 }
+                if (settings.exists("exposure")) {
+                    // Light-buffer data like fog density: live everywhere.
+                    float exposureUi = settings.floatValue("exposure");
+                    if (ImGui::SliderFloat("Exposure", &exposureUi,
+                                           settings.floatMin("exposure"),
+                                           settings.floatMax("exposure"), "%.2f")) {
+                        if (auto applied = settings.setFloat("exposure", exposureUi);
+                            !applied) {
+                            log::warn("Setting 'exposure': {}", applied.error().message);
+                        }
+                    }
+                }
+                settingCombo("tonemap", "Tonemap");
                 if (ImGui::TreeNode("Advanced")) {
                     ImGui::SliderFloat("Azimuth", &sun.azimuthDeg, -180.0f, 180.0f, "%.0f deg");
                     ImGui::SliderFloat("Elevation", &sun.elevationDeg, 10.0f, 90.0f, "%.0f deg");

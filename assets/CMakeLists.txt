@@ -40,6 +40,8 @@ set(REND_SHADER_STAGES
     "deferred.hlsl|PSMain|ps_6_0|deferred.frag.spv|-DRT_SHADOWS=0"
     # ps_6_5: RayQuery needs shader model 6.5 (SPV_KHR_ray_query).
     "deferred.hlsl|PSMain|ps_6_5|deferred_rt.frag.spv|-DRT_SHADOWS=1"
+    "post.hlsl|VSMain|vs_6_0|post.vert.spv"
+    "post.hlsl|PSMain|ps_6_0|post.frag.spv"
 )
 
 set(REND_SHADER_ARTIFACTS "")
@@ -87,6 +89,7 @@ set_source_files_properties(
     shaders/rt_primary.hlsl shaders/skin.hlsl shaders/proxy.hlsl shaders/obb.hlsl
     shaders/sky.hlsl
     shaders/point_shadow.hlsl shaders/gbuffer.hlsl shaders/deferred.hlsl
+    shaders/post.hlsl
     shaders/shading.hlsli shaders/lighting.hlsli shaders/rt_common.hlsli
     PROPERTIES VS_TOOL_OVERRIDE "None")
 
@@ -95,5 +98,6 @@ add_custom_target(shaders ALL DEPENDS ${REND_SHADER_ARTIFACTS}
             shaders/rt_primary.hlsl shaders/skin.hlsl shaders/proxy.hlsl shaders/obb.hlsl
             shaders/sky.hlsl
             shaders/point_shadow.hlsl shaders/gbuffer.hlsl shaders/deferred.hlsl
+            shaders/post.hlsl
             shaders/shading.hlsli shaders/lighting.hlsli shaders/rt_common.hlsli)
 set_target_properties(shaders PROPERTIES FOLDER "assets")

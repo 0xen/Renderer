@@ -154,6 +154,20 @@ Result<void> FrameRenderer::createGBuffer() {
         gbuffer_[i] = std::move(result).value();
         deferredTable_->writeSampledImage(28 + i, 0, gbuffer_[i]->view());
     }
+    // The HDR scene-color target the composite pass renders into when the
+    // batch carries a post pipeline; the post pass Loads it (binding 35).
+    auto sceneColorResult = Image::create(*device_, {
+                                                        .width = swapchain_->width(),
+                                                        .height = swapchain_->height(),
+                                                        .format = kSceneColorFormat,
+                                                        .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                                                                 VK_IMAGE_USAGE_SAMPLED_BIT,
+                                                    });
+    if (!sceneColorResult) {
+        return Error{std::format("Scene-color target: {}", sceneColorResult.error().message)};
+    }
+    sceneColor_ = std::move(sceneColorResult).value();
+    deferredTable_->writeSampledImage(35, 0, sceneColor_->view());
     return {};
 }
 
@@ -161,6 +175,7 @@ Result<void> FrameRenderer::setDeferredTargets(DescriptorTable* table) {
     deferredTable_ = table;
     if (table == nullptr) {
         gbuffer_ = {};
+        sceneColor_.reset();
         return {};
     }
     return createGBuffer();
@@ -705,20 +720,39 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
 
     VkImage image = swapchain_->images()[imageIndex];
 
-    VkImageMemoryBarrier2 toColor =
-        imageBarrier(image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                     VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, 0,
-                     VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                     VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+    // Post mode: the composite pass renders into the HDR scene-color
+    // target and a final fullscreen pass (exposure + tonemap) maps it to
+    // the swapchain. Every composite-pass pipeline must then declare
+    // kSceneColorFormat. Without a post pipeline the composite pass
+    // targets the swapchain directly, exactly as before.
+    const bool post = batch && batch->postPipeline != nullptr && sceneColor_ != nullptr;
+
     VkDependencyInfo dependency{};
     dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
     dependency.imageMemoryBarrierCount = 1;
-    dependency.pImageMemoryBarriers = &toColor;
-    vkCmdPipelineBarrier2(cmd, &dependency);
+    if (post) {
+        // Scene color is cleared each frame (old layout UNDEFINED); order
+        // against the previous frame's post-pass sampled reads.
+        VkImageMemoryBarrier2 toSceneColor = imageBarrier(
+            sceneColor_->handle(), VK_IMAGE_LAYOUT_UNDEFINED,
+            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, 0,
+            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+            VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+        dependency.pImageMemoryBarriers = &toSceneColor;
+        vkCmdPipelineBarrier2(cmd, &dependency);
+    } else {
+        VkImageMemoryBarrier2 toColor = imageBarrier(
+            image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, 0,
+            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+            VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+        dependency.pImageMemoryBarriers = &toColor;
+        vkCmdPipelineBarrier2(cmd, &dependency);
+    }
 
     VkRenderingAttachmentInfo color{};
     color.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-    color.imageView = swapchain_->imageViews()[imageIndex];
+    color.imageView = post ? sceneColor_->view() : swapchain_->imageViews()[imageIndex];
     color.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     color.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -899,6 +933,59 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
     // overlay pass) is the whole frame.
 
     vkCmdEndRendering(cmd);
+
+    if (post) {
+        // Scene color becomes sampleable, the swapchain image becomes the
+        // real render target, and one fullscreen triangle maps HDR scene
+        // color to it (exposure + tonemap from the light buffer).
+        std::array<VkImageMemoryBarrier2, 2> toPost{};
+        toPost[0] = imageBarrier(sceneColor_->handle(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                 VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                                 VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+                                 VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+                                 VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
+        toPost[1] = imageBarrier(image, VK_IMAGE_LAYOUT_UNDEFINED,
+                                 VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                 VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, 0,
+                                 VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                                 VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+        VkDependencyInfo postDependency{};
+        postDependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        postDependency.imageMemoryBarrierCount = static_cast<std::uint32_t>(toPost.size());
+        postDependency.pImageMemoryBarriers = toPost.data();
+        vkCmdPipelineBarrier2(cmd, &postDependency);
+
+        VkRenderingAttachmentInfo postColor{};
+        postColor.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+        postColor.imageView = swapchain_->imageViews()[imageIndex];
+        postColor.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        // The triangle covers every pixel unconditionally.
+        postColor.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        postColor.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+
+        VkRenderingInfo postRendering{};
+        postRendering.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+        postRendering.renderArea = {{0, 0}, extent};
+        postRendering.layerCount = 1;
+        postRendering.colorAttachmentCount = 1;
+        postRendering.pColorAttachments = &postColor;
+        vkCmdBeginRendering(cmd, &postRendering);
+        vkCmdSetViewport(cmd, 0, 1, &viewport);
+        vkCmdSetScissor(cmd, 0, 1, &scissor);
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, batch->postPipeline->handle());
+        if (batch->descriptors != VK_NULL_HANDLE) {
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                    batch->postPipeline->layout(), 0, 1, &batch->descriptors, 0,
+                                    nullptr);
+        }
+        const std::uint32_t postPush[2] = {slot, 0};
+        vkCmdPushConstants(cmd, batch->postPipeline->layout(),
+                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                           sizeof(postPush), postPush);
+        vkCmdDraw(cmd, 3, 1, 0, 0);
+        vkCmdEndRendering(cmd);
+    }
 
     // The image stays in COLOR_ATTACHMENT_OPTIMAL: the per-frame overlay
     // command buffer draws the UI on top and owns the present transition.

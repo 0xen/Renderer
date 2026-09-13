@@ -193,6 +193,17 @@ struct DrawBatch {
     // REQUIRED on every raster batch — there is no forward opaque path.
     const Pipeline* gbufferPipeline = nullptr;
     const Pipeline* lightingPipeline = nullptr;
+    // Post-process pass (optional): when set (and the scene-color target
+    // exists), every composite-pass draw — lighting, sky, transparents,
+    // proxies, or the traced-primary triangle — renders into the RGBA16F
+    // scene-color image (binding 35) instead of the swapchain, and one
+    // final fullscreen triangle (this pipeline, colorFormat = swapchain,
+    // no depth) maps it to the swapchain: exposure + tonemap, both riding
+    // the per-slot light buffer so they stay live under static
+    // recordings. Null = the composite pass targets the swapchain
+    // directly (the pass pipelines must then declare the swapchain
+    // format). Presence is baked — invalidate on change.
+    const Pipeline* postPipeline = nullptr;
     // GPU skinning (optional): compute dispatches that pose animated
     // vertices into per-slot pool regions before any draw pass reads them.
     // push holds the shader's PushConstants with the slot element patched
@@ -305,6 +316,10 @@ public:
     // the lighting shader's Loads follow this order.
     static constexpr std::array<std::uint32_t, kGBufferTargets> kGBufferFormats{
         kFormatR8G8B8A8Srgb, kFormatR16G16B16A16Sfloat, kFormatR8G8B8A8Unorm, kFormatR32Sfloat};
+    // The HDR scene-color target the composite pass renders into when a
+    // batch carries a postPipeline (descriptor binding 35). Every pass
+    // pipeline drawing inside the composite pass must declare this format.
+    static constexpr std::uint32_t kSceneColorFormat = kFormatR16G16B16A16Sfloat;
     Result<void> setDeferredTargets(DescriptorTable* table);
 
 private:
@@ -346,6 +361,9 @@ private:
     // table's bindings 28-31. Single-instance like depth_ — rendering is
     // serialized by the barriers. Empty when deferred targets are off.
     std::array<std::unique_ptr<Image>, kGBufferTargets> gbuffer_{};
+    // HDR scene-color target for the post pass (binding 35); lives and
+    // recreates alongside the G-buffer.
+    std::unique_ptr<Image> sceneColor_;
     DescriptorTable* deferredTable_ = nullptr;
 
     // Static-mode recordings, indexed [slot * imageCount + imageIndex];

@@ -65,8 +65,8 @@ struct LightData {
     uint debugTint; // non-zero: tint output by cascade for inspection
     uint rtShadows; // non-zero: trace shadow rays instead of sampling maps
     uint reflections; // kReflection* below: reflective objects' source
-    uint pad3;
-    uint pad4;
+    float exposure;   // post pass: scene-color multiplier (1 = neutral)
+    uint tonemap;     // post pass: 0 = clamp only, 1 = ACES fitted
     // Volumetric fog box (scene <Fog>): world-space AABB of the media.
     // fogColor.w is the raymarch step count and doubles as the enable
     // flag — 0 (the probe-capture regions' default) disables fog.

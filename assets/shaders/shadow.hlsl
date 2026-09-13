@@ -22,8 +22,8 @@ struct LightData {
     uint debugTint;
     uint rtShadows;
     uint reflections;
-    uint pad3;
-    uint pad4;
+    float exposure;
+    uint tonemap;
     float4 fogBoxMin; // volumetric fog box; only the stride matters here
     float4 fogBoxMax;
     float4 fogColor;
