@@ -65,6 +65,10 @@ public:
 
     bool isEnabled(Feature f) const { return (enabledMask_ & (1ull << static_cast<std::uint32_t>(f))) != 0; }
 
+    // Adapter's max sampler anisotropy when the feature was enabled at
+    // creation, 0 when unavailable (samplers must stay isotropic then).
+    float maxSamplerAnisotropy() const { return maxSamplerAnisotropy_; }
+
     // Capability offer: which shadow techniques this device can run,
     // derived from the features that were actually enabled.
     std::vector<ShadowTechnique> supportedShadowTechniques() const;
@@ -81,6 +85,7 @@ private:
     QueueInfo transfer_;
     std::string adapterName_;
     std::uint64_t enabledMask_ = 0;
+    float maxSamplerAnisotropy_ = 0.0f;
 };
 
 } // namespace rend::gpu

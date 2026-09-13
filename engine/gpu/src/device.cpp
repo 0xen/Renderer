@@ -346,6 +346,17 @@ Result<std::unique_ptr<Device>> Device::create(const Instance& instance, const F
         }
     }
 
+    // Sampler anisotropy: not part of the FeatureSet ladder (nothing
+    // degrades without it) — enable it whenever the adapter has it so the
+    // bindless sampler can filter glancing surfaces (floors shimmer badly
+    // under motion with plain trilinear).
+    VkPhysicalDeviceFeatures baseFeatures{};
+    vkGetPhysicalDeviceFeatures(best.pd, &baseFeatures);
+    const bool anisotropy = baseFeatures.samplerAnisotropy == VK_TRUE;
+    if (anisotropy) {
+        enabled.f2.features.samplerAnisotropy = VK_TRUE;
+    }
+
     std::vector<const char*> extensions = request.requiredExtensions;
     extensions.insert(extensions.end(), best.optionalExts.begin(), best.optionalExts.end());
 
@@ -385,6 +396,7 @@ Result<std::unique_ptr<Device>> Device::create(const Instance& instance, const F
     device->device_ = handle;
     device->adapterName_ = best.props.deviceName;
     device->enabledMask_ = mask;
+    device->maxSamplerAnisotropy_ = anisotropy ? best.props.limits.maxSamplerAnisotropy : 0.0f;
 
     device->graphics_.familyIndex = *best.families.graphics;
     vkGetDeviceQueue(handle, device->graphics_.familyIndex, 0, &device->graphics_.queue);

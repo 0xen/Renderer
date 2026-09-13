@@ -255,6 +255,14 @@ Result<std::unique_ptr<DescriptorTable>> DescriptorTable::create(const Device& d
     samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
     samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
     samplerInfo.maxLod = VK_LOD_CLAMP_NONE;
+    // Anisotropic filtering keeps glancing-angle textures (floors seen at
+    // eye height) sharp and stable under motion; without it trilinear
+    // over-blurs the far mips and the texture shimmers as the camera
+    // moves. 8x is the quality/bandwidth sweet spot.
+    if (device.maxSamplerAnisotropy() > 0.0f) {
+        samplerInfo.anisotropyEnable = VK_TRUE;
+        samplerInfo.maxAnisotropy = std::min(8.0f, device.maxSamplerAnisotropy());
+    }
     if (VkResult r = vkCreateSampler(device.handle(), &samplerInfo, nullptr, &table->sampler_);
         r != VK_SUCCESS) {
         return Error{std::format("vkCreateSampler failed ({})", static_cast<int>(r))};
