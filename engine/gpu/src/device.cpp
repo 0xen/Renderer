@@ -451,6 +451,23 @@ std::vector<ReflectionTechnique> Device::supportedReflectionTechniques() const {
     return techniques;
 }
 
+const char* antiAliasingTechniqueName(AntiAliasingTechnique technique) {
+    switch (technique) {
+    case AntiAliasingTechnique::None:
+        return "Off";
+    case AntiAliasingTechnique::Fxaa:
+        return "FXAA";
+    }
+    return "Unknown";
+}
+
+std::vector<AntiAliasingTechnique> Device::supportedAntiAliasingTechniques() const {
+    // None and FXAA run on the baseline feature set; future modules
+    // (temporal upscalers, compute-based morphological AA) append here
+    // gated on their required features.
+    return {AntiAliasingTechnique::None, AntiAliasingTechnique::Fxaa};
+}
+
 Device::~Device() {
     if (device_ != VK_NULL_HANDLE) {
         vkDestroyDevice(device_, nullptr);

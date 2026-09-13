@@ -35,6 +35,17 @@ enum class ReflectionTechnique {
 
 const char* reflectionTechniqueName(ReflectionTechnique technique);
 
+// Anti-aliasing techniques for the post chain, ordered cheapest first —
+// the same offer pattern as shadows/reflections. The app picks one and
+// wires the matching module (a pipeline stage after the post pass) into
+// the DrawBatch; None (the "off" choice) always exists.
+enum class AntiAliasingTechnique {
+    None, // post pass straight to the swapchain
+    Fxaa, // fullscreen LDR fragment pass over the post output; runs everywhere
+};
+
+const char* antiAliasingTechniqueName(AntiAliasingTechnique technique);
+
 struct QueueInfo {
     VkQueue queue = nullptr;
     std::uint32_t familyIndex = ~0u;
@@ -75,6 +86,10 @@ public:
     // Which reflection techniques this device can run; the probe tier is
     // the floor and exists everywhere.
     std::vector<ReflectionTechnique> supportedReflectionTechniques() const;
+    // Which anti-aliasing techniques this device can run. None and FXAA
+    // need nothing beyond the baseline; future temporal/compute modules
+    // gate on their features here.
+    std::vector<AntiAliasingTechnique> supportedAntiAliasingTechniques() const;
 
 private:
     Device() = default;

@@ -168,6 +168,20 @@ Result<void> FrameRenderer::createGBuffer() {
     }
     sceneColor_ = std::move(sceneColorResult).value();
     deferredTable_->writeSampledImage(35, 0, sceneColor_->view());
+    // The LDR intermediate an AA module samples (post output parked one
+    // pass before the swapchain when DrawBatch::aaPipeline is set).
+    auto ldrResult = Image::create(*device_, {
+                                                 .width = swapchain_->width(),
+                                                 .height = swapchain_->height(),
+                                                 .format = kLdrColorFormat,
+                                                 .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                                                          VK_IMAGE_USAGE_SAMPLED_BIT,
+                                             });
+    if (!ldrResult) {
+        return Error{std::format("LDR color target: {}", ldrResult.error().message)};
+    }
+    ldrColor_ = std::move(ldrResult).value();
+    deferredTable_->writeSampledImage(36, 0, ldrColor_->view());
     return {};
 }
 
@@ -176,6 +190,7 @@ Result<void> FrameRenderer::setDeferredTargets(DescriptorTable* table) {
     if (table == nullptr) {
         gbuffer_ = {};
         sceneColor_.reset();
+        ldrColor_.reset();
         return {};
     }
     return createGBuffer();
@@ -949,9 +964,48 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
     vkCmdEndRendering(cmd);
 
     if (post) {
-        // Scene color becomes sampleable, the swapchain image becomes the
-        // real render target, and one fullscreen triangle maps HDR scene
-        // color to it (exposure + tonemap from the light buffer).
+        // With an AA module the post pass parks its tonemapped output in
+        // the LDR intermediate and the AA pass maps that to the
+        // swapchain; without one the post pass writes the swapchain
+        // directly.
+        const bool aa = batch->aaPipeline != nullptr && batch->postLdrPipeline != nullptr &&
+                        ldrColor_ != nullptr;
+
+        // Shared fullscreen-pass recorder: transition the target, bind,
+        // push {slot, 0}, draw one triangle.
+        auto fullscreenPass = [&](const Pipeline& p, VkImageView target) {
+            VkRenderingAttachmentInfo passColor{};
+            passColor.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+            passColor.imageView = target;
+            passColor.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            // The triangle covers every pixel unconditionally.
+            passColor.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+            passColor.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+
+            VkRenderingInfo passRendering{};
+            passRendering.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+            passRendering.renderArea = {{0, 0}, extent};
+            passRendering.layerCount = 1;
+            passRendering.colorAttachmentCount = 1;
+            passRendering.pColorAttachments = &passColor;
+            vkCmdBeginRendering(cmd, &passRendering);
+            vkCmdSetViewport(cmd, 0, 1, &viewport);
+            vkCmdSetScissor(cmd, 0, 1, &scissor);
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, p.handle());
+            if (batch->descriptors != VK_NULL_HANDLE) {
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, p.layout(), 0, 1,
+                                        &batch->descriptors, 0, nullptr);
+            }
+            const std::uint32_t passPush[2] = {slot, 0};
+            vkCmdPushConstants(cmd, p.layout(),
+                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                               sizeof(passPush), passPush);
+            vkCmdDraw(cmd, 3, 1, 0, 0);
+            vkCmdEndRendering(cmd);
+        };
+
+        // Scene color becomes sampleable and the post target (LDR
+        // intermediate or the swapchain) becomes an attachment.
         std::array<VkImageMemoryBarrier2, 2> toPost{};
         toPost[0] = imageBarrier(sceneColor_->handle(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                                  VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
@@ -959,10 +1013,13 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
                                  VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
                                  VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
                                  VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
-        toPost[1] = imageBarrier(image, VK_IMAGE_LAYOUT_UNDEFINED,
+        toPost[1] = imageBarrier(aa ? ldrColor_->handle() : image, VK_IMAGE_LAYOUT_UNDEFINED,
                                  VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                                 VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, 0,
-                                 VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                                 // For the LDR image the unordered prior
+                                 // access is last frame's AA sampling.
+                                 aa ? VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT
+                                    : VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                                 0, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
                                  VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
         VkDependencyInfo postDependency{};
         postDependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
@@ -970,35 +1027,30 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
         postDependency.pImageMemoryBarriers = toPost.data();
         vkCmdPipelineBarrier2(cmd, &postDependency);
 
-        VkRenderingAttachmentInfo postColor{};
-        postColor.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        postColor.imageView = swapchain_->imageViews()[imageIndex];
-        postColor.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        // The triangle covers every pixel unconditionally.
-        postColor.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-        postColor.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        fullscreenPass(aa ? *batch->postLdrPipeline : *batch->postPipeline,
+                       aa ? ldrColor_->view() : swapchain_->imageViews()[imageIndex]);
 
-        VkRenderingInfo postRendering{};
-        postRendering.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-        postRendering.renderArea = {{0, 0}, extent};
-        postRendering.layerCount = 1;
-        postRendering.colorAttachmentCount = 1;
-        postRendering.pColorAttachments = &postColor;
-        vkCmdBeginRendering(cmd, &postRendering);
-        vkCmdSetViewport(cmd, 0, 1, &viewport);
-        vkCmdSetScissor(cmd, 0, 1, &scissor);
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, batch->postPipeline->handle());
-        if (batch->descriptors != VK_NULL_HANDLE) {
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    batch->postPipeline->layout(), 0, 1, &batch->descriptors, 0,
-                                    nullptr);
+        if (aa) {
+            // LDR output becomes sampleable, the swapchain becomes the
+            // attachment, and the AA module resolves onto it.
+            std::array<VkImageMemoryBarrier2, 2> toAa{};
+            toAa[0] = imageBarrier(ldrColor_->handle(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                   VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                   VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                                   VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+                                   VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+                                   VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
+            toAa[1] = imageBarrier(image, VK_IMAGE_LAYOUT_UNDEFINED,
+                                   VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                   VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, 0,
+                                   VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                                   VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+            postDependency.imageMemoryBarrierCount = static_cast<std::uint32_t>(toAa.size());
+            postDependency.pImageMemoryBarriers = toAa.data();
+            vkCmdPipelineBarrier2(cmd, &postDependency);
+
+            fullscreenPass(*batch->aaPipeline, swapchain_->imageViews()[imageIndex]);
         }
-        const std::uint32_t postPush[2] = {slot, 0};
-        vkCmdPushConstants(cmd, batch->postPipeline->layout(),
-                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-                           sizeof(postPush), postPush);
-        vkCmdDraw(cmd, 3, 1, 0, 0);
-        vkCmdEndRendering(cmd);
     }
 
     // The image stays in COLOR_ATTACHMENT_OPTIMAL: the per-frame overlay

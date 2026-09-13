@@ -981,6 +981,9 @@ int main(int argc, char** argv) {
     // Start in walking mode (G toggles it live): capsule + gravity against
     // the viewer-level collision world instead of free-fly movement.
     bool walkFromStart = false;
+    // Start with FXAA active (--aa fxaa); the anti_aliasing settings
+    // slot flips it live.
+    bool aaFromStart = false;
     // Streaming test harness: auto-spawn this model at random intervals
     // through the message queue.
     const char* spawnTestPath = nullptr;
@@ -1018,6 +1021,16 @@ int main(int argc, char** argv) {
             obbRefine = false;
         } else if (arg == "--walk") {
             walkFromStart = true;
+        } else if (arg == "--aa" && i + 1 < argc) {
+            const std::string_view technique = argv[++i];
+            if (technique == "off") {
+                aaFromStart = false;
+            } else if (technique == "fxaa") {
+                aaFromStart = true;
+            } else {
+                log::error("Unknown --aa '{}' (off|fxaa)", technique);
+                return 1;
+            }
         } else if (arg == "--spawn-test" && i + 1 < argc) {
             spawnTestPath = argv[++i];
         } else if (arg == "--bench" && i + 1 < argc) {
@@ -2610,10 +2623,12 @@ int main(int argc, char** argv) {
     std::unique_ptr<gpu::Pipeline> gbufferPipeline;
     std::unique_ptr<gpu::Pipeline> lightingPipeline;
     std::unique_ptr<gpu::Pipeline> postPipeline;
+    std::unique_ptr<gpu::Pipeline> postLdrPipeline;
+    std::unique_ptr<gpu::Pipeline> fxaaPipeline;
     std::unique_ptr<gpu::Shader> sceneVert, sceneFrag, cullShader, obbShader, shadowVert,
         shadowFrag, skinShader, proxyVert, proxyInstVert, proxyFrag, proxyDebugFrag, skyVert,
         skyFrag,
-        gbufferFrag, deferredVert, deferredFrag, postVert, postFrag;
+        gbufferFrag, deferredVert, deferredFrag, postVert, postFrag, fxaaVert, fxaaFrag;
     if (scene) {
         auto vertResult = gpu::Shader::createFromFile(*device, shaderDir / "scene.vert.spv");
         // scene.hlsl's forward fragment shader survives ONLY for the
@@ -2764,6 +2779,46 @@ int main(int argc, char** argv) {
             return 1;
         }
         postPipeline = std::move(postResult).value();
+
+        // Anti-aliasing module (post-chain stage, offer-based like
+        // shadows/reflections): the post pipeline rebuilt against the LDR
+        // intermediate plus the technique's own resolve pass. Optional —
+        // failure just pins the anti_aliasing slot to off.
+        auto postLdrResult = gpu::Pipeline::createGraphics(
+            *device, {
+                         .vertexShader = postVert.get(),
+                         .fragmentShader = postFrag.get(),
+                         .colorFormat = gpu::FrameRenderer::kLdrColorFormat,
+                         .depthFormat = 0,
+                         .pushConstantBytes = 2 * sizeof(std::uint32_t), // {slot, cascade}
+                         .descriptorLayout = descriptorTable->layout(),
+                     });
+        auto fxaaVertResult = gpu::Shader::createFromFile(*device, shaderDir / "fxaa.vert.spv");
+        auto fxaaFragResult = gpu::Shader::createFromFile(*device, shaderDir / "fxaa.frag.spv");
+        if (postLdrResult && fxaaVertResult && fxaaFragResult) {
+            postLdrPipeline = std::move(postLdrResult).value();
+            fxaaVert = std::move(fxaaVertResult).value();
+            fxaaFrag = std::move(fxaaFragResult).value();
+            auto fxaaResult = gpu::Pipeline::createGraphics(
+                *device, {
+                             .vertexShader = fxaaVert.get(),
+                             .fragmentShader = fxaaFrag.get(),
+                             .colorFormat = swapchain->imageFormat(),
+                             .depthFormat = 0,
+                             .pushConstantBytes = 2 * sizeof(std::uint32_t),
+                             .descriptorLayout = descriptorTable->layout(),
+                         });
+            if (fxaaResult) {
+                fxaaPipeline = std::move(fxaaResult).value();
+            } else {
+                log::warn("FXAA pipeline unavailable: {}", fxaaResult.error().message);
+            }
+        } else {
+            log::warn("FXAA module unavailable: {}",
+                      (!postLdrResult          ? postLdrResult.error().message
+                       : !fxaaVertResult       ? fxaaVertResult.error().message
+                                               : fxaaFragResult.error().message));
+        }
 
         // The compaction pass (IndirectCount mode only). A failure here is
         // not fatal: the draw-mode ladder just skips to Indirect.
@@ -3087,6 +3142,12 @@ int main(int argc, char** argv) {
         // Composite passes render into the HDR scene-color target; this
         // pass maps it to the swapchain (exposure + tonemap).
         batch.postPipeline = postPipeline.get();
+        if (aaFromStart && fxaaPipeline) {
+            batch.postLdrPipeline = postLdrPipeline.get();
+            batch.aaPipeline = fxaaPipeline.get();
+        } else if (aaFromStart) {
+            log::warn("--aa fxaa ignored: FXAA module unavailable");
+        }
         batch.count = countBuffer->handle();
         batch.countRegionStride = 8 * sizeof(std::uint32_t);
         batch.cpuDraws = draws.data();
@@ -3450,6 +3511,32 @@ int main(int argc, char** argv) {
                                log::info("Tonemap: {}", value);
                                return true;
                            });
+        {
+            // Anti-aliasing: the device's technique offer filtered by
+            // what actually built — the modular pattern future modules
+            // (XeSS, SSAO-adjacent post effects) slot into. Pipeline
+            // presence is baked into static recordings.
+            std::vector<std::string> options;
+            for (gpu::AntiAliasingTechnique offer :
+                 device->supportedAntiAliasingTechniques()) {
+                if (offer == gpu::AntiAliasingTechnique::None) {
+                    options.push_back("off");
+                } else if (offer == gpu::AntiAliasingTechnique::Fxaa && fxaaPipeline) {
+                    options.push_back("fxaa");
+                }
+            }
+            settings.addChoice("anti_aliasing", std::move(options),
+                               batch.aaPipeline ? "fxaa" : "off",
+                               [&](const std::string& value) {
+                                   const bool fxaa = value == "fxaa";
+                                   batch.postLdrPipeline =
+                                       fxaa ? postLdrPipeline.get() : nullptr;
+                                   batch.aaPipeline = fxaa ? fxaaPipeline.get() : nullptr;
+                                   renderer->invalidateStaticRecordings();
+                                   log::info("Anti-aliasing: {}", value);
+                                   return true;
+                               });
+        }
         updatePrimaryOverrides(); // --rtprimary starts overridden
     }
 
@@ -5375,6 +5462,9 @@ int main(int argc, char** argv) {
                     if (token == "off") {
                         return "Off";
                     }
+                    if (token == "fxaa") {
+                        return "FXAA";
+                    }
                     return token.c_str();
                 };
                 auto settingCombo = [&](const char* slot, const char* label) {
@@ -5467,6 +5557,7 @@ int main(int argc, char** argv) {
                     }
                 }
                 settingCombo("tonemap", "Tonemap");
+                settingCombo("anti_aliasing", "Anti-aliasing");
                 if (ImGui::TreeNode("Advanced")) {
                     ImGui::SliderFloat("Azimuth", &sun.azimuthDeg, -180.0f, 180.0f, "%.0f deg");
                     ImGui::SliderFloat("Elevation", &sun.elevationDeg, 10.0f, 90.0f, "%.0f deg");

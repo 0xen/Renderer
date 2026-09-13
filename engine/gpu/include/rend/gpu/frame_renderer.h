@@ -204,6 +204,15 @@ struct DrawBatch {
     // directly (the pass pipelines must then declare the swapchain
     // format). Presence is baked — invalidate on change.
     const Pipeline* postPipeline = nullptr;
+    // Anti-aliasing module (optional, needs postPipeline): when both are
+    // set, the post pass renders into the LDR intermediate (binding 36,
+    // kLdrColorFormat — postLdrPipeline is the post pipeline built
+    // against that format) and the AA pipeline draws one fullscreen
+    // triangle from it onto the swapchain. Null aaPipeline = the post
+    // pass targets the swapchain directly. Both baked — invalidate on
+    // change (the anti_aliasing settings slot's apply callback does).
+    const Pipeline* postLdrPipeline = nullptr;
+    const Pipeline* aaPipeline = nullptr;
     // GPU skinning (optional): compute dispatches that pose animated
     // vertices into per-slot pool regions before any draw pass reads them.
     // push holds the shader's PushConstants with the slot element patched
@@ -320,6 +329,11 @@ public:
     // batch carries a postPipeline (descriptor binding 35). Every pass
     // pipeline drawing inside the composite pass must declare this format.
     static constexpr std::uint32_t kSceneColorFormat = kFormatR16G16B16A16Sfloat;
+    // The LDR intermediate an AA module reads (descriptor binding 36):
+    // tonemapped output parked one pass before the swapchain when
+    // DrawBatch::aaPipeline is set. sRGB like the swapchain, so the post
+    // shader behaves identically against either target.
+    static constexpr std::uint32_t kLdrColorFormat = kFormatR8G8B8A8Srgb;
     Result<void> setDeferredTargets(DescriptorTable* table);
 
 private:
@@ -364,6 +378,8 @@ private:
     // HDR scene-color target for the post pass (binding 35); lives and
     // recreates alongside the G-buffer.
     std::unique_ptr<Image> sceneColor_;
+    // LDR intermediate for AA modules (binding 36); same lifecycle.
+    std::unique_ptr<Image> ldrColor_;
     DescriptorTable* deferredTable_ = nullptr;
 
     // Static-mode recordings, indexed [slot * imageCount + imageIndex];
