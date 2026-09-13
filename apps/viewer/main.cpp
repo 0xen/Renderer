@@ -987,6 +987,12 @@ int main(int argc, char** argv) {
     // Streaming test harness: auto-spawn this model at random intervals
     // through the message queue.
     const char* spawnTestPath = nullptr;
+    // Extra Python scripts injected from the command line (repeatable).
+    // They run BEFORE the scene's own <Script> nodes so an attached
+    // harness is up before a scene script that never returns takes the
+    // script thread; a path that does not exist warns and is skipped, so
+    // a launcher may reference an optional dev tool unconditionally.
+    std::vector<std::string> cliScripts;
     // Caps the draw-submit ladder for testing the fallbacks; the actual mode
     // is still limited by what the device supports.
     auto maxDrawMode = gpu::DrawSubmitMode::IndirectCount;
@@ -1031,6 +1037,8 @@ int main(int argc, char** argv) {
                 log::error("Unknown --aa '{}' (off|fxaa)", technique);
                 return 1;
             }
+        } else if (arg == "--script" && i + 1 < argc) {
+            cliScripts.emplace_back(argv[++i]);
         } else if (arg == "--spawn-test" && i + 1 < argc) {
             spawnTestPath = argv[++i];
         } else if (arg == "--bench" && i + 1 < argc) {
@@ -4786,13 +4794,31 @@ int main(int argc, char** argv) {
         messageSender.flush();
     };
 
-    // Scene-declared Python scripts: load the optional host DLL and run
-    // them against the message queue on the host's own thread. A scene
-    // without <Script> nodes never touches Python — the DLL isn't even
-    // loaded, so it (and the CPython runtime) may be absent entirely.
+    // Python scripts: --script injections first, then the scene's own
+    // <Script> nodes. Load the optional host DLL and run them against the
+    // message queue on the host's own thread. A run with neither source
+    // never touches Python — the DLL isn't even loaded, so it (and the
+    // CPython runtime) may be absent entirely.
     HMODULE pyhostDll = nullptr;
     pyhost::StopFn pyhostStop = nullptr;
-    if (scene && !scene->scripts.empty()) {
+    std::vector<std::string> scriptStorage;
+    for (const std::string& path : cliScripts) {
+        std::error_code error;
+        // Missing is a warning, not a failure: launchers pass the dev
+        // bridge unconditionally and must still boot without it.
+        if (!std::filesystem::exists(path, error) || error) {
+            log::warn("--script '{}' not found; skipping", path);
+            continue;
+        }
+        const std::filesystem::path absolute = std::filesystem::absolute(path, error);
+        scriptStorage.push_back(error ? path : absolute.string());
+    }
+    if (scene) {
+        for (const auto& path : scene->scripts) {
+            scriptStorage.push_back(path.string());
+        }
+    }
+    if (!scriptStorage.empty()) {
         const std::filesystem::path dllPath = executableDirectory() / "rend_pyhost.dll";
         pyhostDll = LoadLibraryW(dllPath.wstring().c_str());
         const auto start = pyhostDll ? reinterpret_cast<pyhost::StartFn>(
@@ -4802,11 +4828,7 @@ int main(int argc, char** argv) {
                                      GetProcAddress(pyhostDll, "rendPyHostStop"))
                                : nullptr;
         if (start && pyhostStop) {
-            std::vector<std::string> scriptStorage;
             std::vector<const char*> scriptPtrs;
-            for (const auto& path : scene->scripts) {
-                scriptStorage.push_back(path.string());
-            }
             for (const std::string& path : scriptStorage) {
                 scriptPtrs.push_back(path.c_str());
             }
@@ -4814,13 +4836,13 @@ int main(int argc, char** argv) {
                       static_cast<int>(scriptPtrs.size()))) {
                 log::info("Python host started ({} script(s))", scriptPtrs.size());
             } else {
-                log::warn("Python host refused to start; scene scripts skipped");
+                log::warn("Python host refused to start; scripts skipped");
                 pyhostStop = nullptr;
             }
         } else {
-            log::warn("Scene declares {} Python script(s) but rend_pyhost.dll is "
+            log::warn("{} Python script(s) requested but rend_pyhost.dll is "
                       "unavailable; running without them",
-                      scene->scripts.size());
+                      scriptStorage.size());
             pyhostStop = nullptr;
         }
     }
