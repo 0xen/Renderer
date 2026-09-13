@@ -78,6 +78,25 @@ struct VSOutput {
     float3 corner : CORNER;
 };
 
+// Conservative screen-space dilation: every box vertex is pushed this
+// far outward in NDC (scaled by w) away from the box center, so a
+// mostly-hidden box's surviving sliver always covers at least one pixel
+// center instead of landing on/off centers frame to frame (the
+// alternating-frame occlusion pop). ~Half a pixel up to ~1300 px
+// viewport height; over-dilation only errs visible (conservative).
+static const float kDilateNdc = 0.0015f;
+
+// Dilate a clip-space vertex away from the box's clip-space center.
+// Vertices at/behind the eye plane are left alone — the camera-inside
+// bypass covers those boxes anyway.
+float4 dilate(float4 clip, float4 centerClip) {
+    if (clip.w > 0.0f && centerClip.w > 0.0f) {
+        const float2 dir = sign(clip.xy / clip.w - centerClip.xy / centerClip.w);
+        clip.xy += dir * (kDilateNdc * clip.w);
+    }
+    return clip;
+}
+
 // 12 triangles of a unit cube as per-vertex corner selectors (xyz in
 // {0,1}); winding is irrelevant — the pipeline culls nothing.
 static const uint3 kCubeCorner[36] = {
@@ -114,6 +133,7 @@ VSOutput VSMain(uint vertexId : SV_VertexID, uint instanceId : SV_InstanceID) {
     }
     const uint3 corner = kCubeCorner[vertexId];
     float3 world;
+    float3 center;
     const uint row = kObbHeaderBytes + instanceId * kObbRowBytes;
     const float4 obbCenter = asfloat(obbs.Load4(row));
     if (obbCenter.w != 0.0f) {
@@ -123,12 +143,16 @@ VSOutput VSMain(uint vertexId : SV_VertexID, uint instanceId : SV_InstanceID) {
         const float3 s = float3(corner) * 2.0f - 1.0f;
         world = obbCenter.xyz + ax.xyz * (ax.w * s.x) + ay.xyz * (ay.w * s.y) +
                 az.xyz * (az.w * s.z);
+        center = obbCenter.xyz;
     } else {
         world = float3(corner.x != 0 ? b.bmax.x : b.bmin.x,
                        corner.y != 0 ? b.bmax.y : b.bmin.y,
                        corner.z != 0 ? b.bmax.z : b.bmin.z);
+        center = (b.bmin.xyz + b.bmax.xyz) * 0.5f;
     }
-    output.position = mul(cameras[push.slot].viewProj, float4(world, 1.0f));
+    const float4x4 viewProj = cameras[push.slot].viewProj;
+    output.position = dilate(mul(viewProj, float4(world, 1.0f)),
+                             mul(viewProj, float4(center, 1.0f)));
     output.corner = float3(corner);
     return output;
 }
@@ -160,7 +184,10 @@ VSOutput VSInstances(uint vertexId : SV_VertexID, uint instanceId : SV_InstanceI
     const float4x4 world = objectTransforms[push.slot * kTransformCapacity +
                                             instanceRows[instanceId].transformIndex];
     const float3 pos = mul(world, float4(local, 1.0f)).xyz;
-    output.position = mul(cameras[push.slot].viewProj, float4(pos, 1.0f));
+    const float3 center = mul(world, float4((b.bmin.xyz + b.bmax.xyz) * 0.5f, 1.0f)).xyz;
+    const float4x4 viewProj = cameras[push.slot].viewProj;
+    output.position = dilate(mul(viewProj, float4(pos, 1.0f)),
+                             mul(viewProj, float4(center, 1.0f)));
     output.corner = float3(corner);
     return output;
 }

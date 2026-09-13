@@ -137,8 +137,13 @@ struct MeshLodTable {
 // every live canonical instance row's transformed local box against the
 // finished scene depth (test only, [earlydepthstencil]) and marked
 // survivors 1 — so region [slot ^ 1] holds "had any pixel in front of
-// last frame's depth". Zeroed each frame before the proxy passes refill
-// it; seeded all-1 at load so frame 0 draws everything.
+// last frame's depth" and region [slot] holds the frame before that
+// (it is zeroed AFTER this dispatch reads it, then refilled by this
+// frame's proxy passes). Occlusion drops an entry only when BOTH
+// regions say hidden: a proxy box whose last sliver of coverage lands
+// on/off pixel centers on alternating frames would otherwise oscillate
+// visible/occluded every frame (one extra frame of disappear latency,
+// no popping). Seeded all-1 at load so frame 0 draws everything.
 [[vk::binding(26, 0)]] RWStructuredBuffer<uint> visibility;
 
 // GPU-refined oriented bounding boxes (must match obb.hlsl / proxy.hlsl /
@@ -254,10 +259,13 @@ bool instanceVisible(ObjectBounds b, uint rowIndex, float4x4 viewProj, bool coun
         const float3 camPos = cameras[push.slot].position.xyz;
         const bool cameraInside =
             all(camPos >= wc - we - 0.5f) && all(camPos <= wc + we + 0.5f);
-        // kFramesInFlight == 2: the other slot's region is last frame's.
+        // kFramesInFlight == 2: the other slot's region is last frame's,
+        // this slot's is the frame before (hysteresis — see binding 26).
+        const uint visStride = push.capacity + kInstanceRowCapacity;
+        const uint visSlot = push.capacity + rowIndex;
         if (!cameraInside &&
-            visibility[(push.slot ^ 1) * (push.capacity + kInstanceRowCapacity) +
-                       push.capacity + rowIndex] == 0) {
+            (visibility[(push.slot ^ 1) * visStride + visSlot] |
+             visibility[push.slot * visStride + visSlot]) == 0) {
             if (countOcclusion) {
                 InterlockedAdd(counts[push.slot * kCountStride + 6], 1);
             }
@@ -347,9 +355,12 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
             obb.ready ? all(abs(obbLocal(obb, camPos)) <= obb.extent + 0.5f)
                       : (all(camPos >= b.bmin.xyz - 0.5f) &&
                          all(camPos <= b.bmax.xyz + 0.5f));
-        // kFramesInFlight == 2: the other slot's region is last frame's.
+        // kFramesInFlight == 2: the other slot's region is last frame's,
+        // this slot's is the frame before (hysteresis — see binding 26).
+        const uint visStride = push.capacity + kInstanceRowCapacity;
         if (!cameraInside &&
-            visibility[(push.slot ^ 1) * (push.capacity + kInstanceRowCapacity) + id.x] == 0) {
+            (visibility[(push.slot ^ 1) * visStride + id.x] |
+             visibility[push.slot * visStride + id.x]) == 0) {
             InterlockedAdd(counts[push.slot * kCountStride + 6], 1);
             return;
         }

@@ -381,24 +381,11 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
                                (cullFlags & 4u) != 0;
         VkDependencyInfo cullDependency{};
         cullDependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-        if (occlusion) {
-            // This slot's visibility region was read by the PREVIOUS
-            // frame's cull dispatch — order that read before the clear.
-            VkMemoryBarrier2 computeToClear{};
-            computeToClear.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
-            computeToClear.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-            computeToClear.srcAccessMask = VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
-            computeToClear.dstStageMask = VK_PIPELINE_STAGE_2_CLEAR_BIT;
-            computeToClear.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-            cullDependency.memoryBarrierCount = 1;
-            cullDependency.pMemoryBarriers = &computeToClear;
-            vkCmdPipelineBarrier2(cmd, &cullDependency);
-            // Zero this slot's region for the proxy pass at the end of
-            // THIS frame; the cull dispatch below reads the OTHER slot's.
-            vkCmdFillBuffer(cmd, batch->occlusionVisibility,
-                            slot * batch->occlusionRegionStride,
-                            batch->occlusionRegionStride, 0);
-        }
+        // The visibility clear happens AFTER the cull dispatch below:
+        // with two-slot hysteresis the dispatch reads BOTH regions (this
+        // slot's still holds the frame-before-last's proxy results), so
+        // this slot's region must survive until then before the proxy
+        // pass at the end of this frame refills it.
         vkCmdFillBuffer(cmd, batch->count, slot * batch->countRegionStride,
                         batch->countRegionStride, 0);
 
@@ -493,6 +480,33 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
             VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
         cullDependency.pMemoryBarriers = &computeToDraw;
         vkCmdPipelineBarrier2(cmd, &cullDependency);
+
+        if (occlusion) {
+            // Now that the cull dispatch has read this slot's region
+            // (hysteresis), zero it for the proxy pass at the end of THIS
+            // frame. WAR against the dispatch, then make the clear
+            // visible to the proxy fragments' visibility stores.
+            VkMemoryBarrier2 cullToClear{};
+            cullToClear.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+            cullToClear.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+            cullToClear.srcAccessMask = VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
+            cullToClear.dstStageMask = VK_PIPELINE_STAGE_2_CLEAR_BIT;
+            cullToClear.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+            cullDependency.pMemoryBarriers = &cullToClear;
+            vkCmdPipelineBarrier2(cmd, &cullDependency);
+            vkCmdFillBuffer(cmd, batch->occlusionVisibility,
+                            slot * batch->occlusionRegionStride,
+                            batch->occlusionRegionStride, 0);
+            VkMemoryBarrier2 clearToProxy{};
+            clearToProxy.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+            clearToProxy.srcStageMask = VK_PIPELINE_STAGE_2_CLEAR_BIT;
+            clearToProxy.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+            clearToProxy.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+            clearToProxy.dstAccessMask =
+                VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
+            cullDependency.pMemoryBarriers = &clearToProxy;
+            vkCmdPipelineBarrier2(cmd, &cullDependency);
+        }
     }
 
     // Binds the batch's geometry/descriptors and emits its draw stream
