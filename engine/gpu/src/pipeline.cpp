@@ -58,6 +58,7 @@ Result<std::unique_ptr<Pipeline>> Pipeline::createCompute(const Device& device,
     pipeline->device_ = &device;
     pipeline->layout_ = layout;
     pipeline->pipeline_ = handle;
+    pipeline->compute_ = true;
     log::info("Compute pipeline created");
     return pipeline;
 }

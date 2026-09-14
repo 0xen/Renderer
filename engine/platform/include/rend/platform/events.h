@@ -20,6 +20,11 @@ enum class Key {
     G,
     LeftShift,
     LeftCtrl,
+    Up,
+    Down,
+    Left,
+    Right,
+    Count, // one past the last key: sizes held-key tables
 };
 
 enum class MouseButton {

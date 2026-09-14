@@ -2,6 +2,7 @@
 
 #include "rend/core/log.h"
 #include "rend/core/profile.h"
+#include "rend/gpu/command_context.h"
 #include "rend/gpu/descriptor_table.h"
 #include "rend/gpu/device.h"
 #include "rend/gpu/image.h"
@@ -260,6 +261,18 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
     if (VkResult r = vkBeginCommandBuffer(cmd, &begin); r != VK_SUCCESS) {
         return Error{std::format("vkBeginCommandBuffer failed ({})", static_cast<int>(r))};
     }
+
+    // Frame passes see the frame through this context; the per-point
+    // fields (color attachment, depth) are filled in as the frame goes.
+    PassContext passContext{};
+    passContext.slot = slot;
+    passContext.imageIndex = imageIndex;
+    passContext.width = swapchain_->width();
+    passContext.height = swapchain_->height();
+    passContext.swapchainImage = swapchain_->images()[imageIndex];
+    passContext.swapchainView = swapchain_->imageViews()[imageIndex];
+    passContext.swapchainFormat = swapchain_->imageFormat();
+    recordPasses(cmd, PassPoint::BeforeScene, passContext);
 
     // Traced primary visibility replaces the raster pipeline: no shadow
     // cascades, no compaction, no indirect stream — one fullscreen triangle
@@ -959,9 +972,20 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
         }
     }
     // No batch: nothing draws — the cleared swapchain image (plus the
-    // overlay pass) is the whole frame.
+    // overlay pass) is the whole frame — unless InScene passes draw here.
+    passContext.colorView = color.imageView;
+    passContext.colorFormat = post ? kSceneColorFormat : swapchain_->imageFormat();
+    passContext.depthAttached = rasterScene;
+    passContext.depthView = rasterScene ? depth.imageView : VK_NULL_HANDLE;
+    recordPasses(cmd, PassPoint::InScene, passContext);
 
     vkCmdEndRendering(cmd);
+
+    passContext.colorView = VK_NULL_HANDLE;
+    passContext.colorFormat = 0;
+    passContext.depthAttached = false;
+    passContext.depthView = VK_NULL_HANDLE;
+    recordPasses(cmd, PassPoint::AfterScene, passContext);
 
     if (post) {
         // With an AA module the post pass parks its tonemapped output in
@@ -1053,12 +1077,31 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
         }
     }
 
+    recordPasses(cmd, PassPoint::AfterPost, passContext);
+
     // The image stays in COLOR_ATTACHMENT_OPTIMAL: the per-frame overlay
     // command buffer draws the UI on top and owns the present transition.
     if (VkResult r = vkEndCommandBuffer(cmd); r != VK_SUCCESS) {
         return Error{std::format("vkEndCommandBuffer failed ({})", static_cast<int>(r))};
     }
     return {};
+}
+
+void FrameRenderer::recordPasses(VkCommandBuffer cmd, PassPoint point,
+                                 PassContext& context) const {
+    context.point = point;
+    CommandContext recording(cmd);
+    for (const FramePass& pass : framePasses_) {
+        if (pass.point == point && pass.record) {
+            pass.record(recording, context);
+        }
+    }
+}
+
+void FrameRenderer::setFramePasses(std::vector<FramePass> passes) {
+    framePasses_ = std::move(passes);
+    // Presence and content of the passes are baked into the recordings.
+    invalidateStatic();
 }
 
 Result<void> FrameRenderer::recordOverlay(VkCommandBuffer cmd, std::uint32_t imageIndex) const {

@@ -16,6 +16,8 @@ typedef struct VkSemaphore_T* VkSemaphore;
 typedef struct VkFence_T* VkFence;
 typedef struct VkBuffer_T* VkBuffer;
 typedef struct VkDescriptorSet_T* VkDescriptorSet;
+typedef struct VkImage_T* VkImage;
+typedef struct VkImageView_T* VkImageView;
 
 namespace rend::gpu {
 
@@ -239,6 +241,59 @@ struct DrawBatch {
     std::vector<std::vector<AccelerationStructure::TriangleGeometry>> refitGeometries;
 };
 
+// Where in the frame a FramePass records. The frame's own structure stays
+// fixed; passes are spliced in at these seams. The swapchain image is a
+// color attachment from InScene onward — passes never transition it.
+enum class PassPoint {
+    // First thing in the frame, outside any rendering pass: offscreen
+    // work (shadow masks, compute) the scene will consume. Nothing has
+    // touched the swapchain yet.
+    BeforeScene,
+    // Inside the active composite rendering pass, after every batch draw
+    // (or on the freshly cleared target when there is no batch): the
+    // viewport/scissor are set; the color attachment is the swapchain
+    // image (or the scene-color target when the batch has a post
+    // pipeline). Depth is attached only when a raster batch drew
+    // (PassContext::depthAttached) — pipelines must match. Passes begin no
+    // rendering of their own here.
+    InScene,
+    // After the composite pass ended and before post-processing, outside
+    // any rendering pass.
+    AfterScene,
+    // After the post/AA chain (or right after the composite pass without
+    // one), outside any rendering pass; the swapchain image is a color
+    // attachment and must be left as one for the overlay.
+    AfterPost,
+};
+
+// What a pass callback can see of the frame it records into.
+struct PassContext {
+    PassPoint point = PassPoint::BeforeScene;
+    std::uint32_t slot = 0;       // frame slot: index per-slot buffer regions
+    std::uint32_t imageIndex = 0; // swapchain image being recorded for
+    std::uint32_t width = 0;      // swapchain extent
+    std::uint32_t height = 0;
+    VkImage swapchainImage = nullptr;
+    VkImageView swapchainView = nullptr;
+    std::uint32_t swapchainFormat = 0; // VkFormat
+    // InScene only: what the active rendering pass attaches.
+    VkImageView colorView = nullptr; // swapchain or scene-color view
+    std::uint32_t colorFormat = 0;   // VkFormat of that attachment
+    bool depthAttached = false;
+    VkImageView depthView = nullptr; // the frame depth image, when attached
+};
+
+class CommandContext;
+
+// One caller-recorded pass. The callback receives the frame's command
+// recording surface and runs at record time — under static recording that
+// is once per (slot, image) pair, not once per frame.
+struct FramePass {
+    PassPoint point = PassPoint::BeforeScene;
+    const char* name = "pass"; // for logs
+    std::function<void(CommandContext&, const PassContext&)> record;
+};
+
 // Per-frame-recorded baseline frame loop: acquire, record, submit, present,
 // with two frames in flight. Deliberately the naive re-record-every-frame
 // path — the static command buffer model (docs/ARCHITECTURE.md) is measured
@@ -283,6 +338,16 @@ public:
     // scene buffers stay untouched. Null disables the pass.
     using OverlayRecorder = std::function<void(VkCommandBuffer)>;
     void setOverlayRecorder(OverlayRecorder recorder) { overlayRecorder_ = std::move(recorder); }
+
+    // Frame passes: caller-recorded work spliced into the frame at fixed
+    // points (see FramePass). Unlike the overlay they are recorded through
+    // the same path as the engine's own passes, so under static recording
+    // they are baked exactly like the batch — anything per-frame inside
+    // them must ride slot-indexed buffers. Replacing the list invalidates
+    // the static recordings (device idle wait). The callbacks and whatever
+    // they capture must outlive the renderer or the next replacement.
+    void setFramePasses(std::vector<FramePass> passes);
+    const std::vector<FramePass>& framePasses() const { return framePasses_; }
 
     // Blocks until the current frame slot's previous submission finished,
     // making the slot's per-frame regions (see DrawBatch::
@@ -351,6 +416,8 @@ private:
     Result<void> prerecordStatic(const DrawBatch* batch);
     void invalidateStatic();
     Result<void> recordOverlay(VkCommandBuffer cmd, std::uint32_t imageIndex) const;
+    // Runs every frame pass registered for `point` (context.point is set).
+    void recordPasses(VkCommandBuffer cmd, PassPoint point, PassContext& context) const;
 
     struct FrameData {
         VkCommandBuffer commandBuffer = nullptr;
@@ -391,6 +458,7 @@ private:
 
     Stats stats_{};
     OverlayRecorder overlayRecorder_;
+    std::vector<FramePass> framePasses_;
 
     std::array<float, 4> clearColor_{0.02f, 0.02f, 0.04f, 1.0f};
     std::uint32_t frameIndex_ = 0;

@@ -60,11 +60,43 @@ class Device;
 //   27 — point-light shadow cubes [16] (fragment; R32F distance)
 //   28-31 — deferred G-buffer targets (fragment; albedo / world normal /
 //        material params / view depth, rewritten on swapchain recreate)
+//   32-36 — RT hit remap, refined OBBs, row->entry map, scene color, LDR
+//        intermediate (descriptor_table.cpp is the authority)
+//   kUserBindingBase.. — caller-declared bindings (DescriptorTableDesc):
+//        the storage buffers first, then the sampled images, in the
+//        order the desc counted them. userStorageBinding(i) /
+//        userSampledImageBinding(i) give the binding numbers.
+struct DescriptorTableDesc {
+    std::uint32_t maxTextures = 0;
+    // Extra bindings for the caller's own passes (frame passes, custom
+    // shaders): storage buffers visible to vertex + fragment + compute,
+    // sampled images visible to fragment + compute. All partially bound.
+    std::uint32_t userStorageBuffers = 0;
+    std::uint32_t userSampledImages = 0;
+};
+
 class DescriptorTable {
 public:
+    static constexpr std::uint32_t kUserBindingBase = 40;
+
     static Result<std::unique_ptr<DescriptorTable>> create(const Device& device,
-                                                           std::uint32_t maxTextures);
+                                                           const DescriptorTableDesc& desc);
+    static Result<std::unique_ptr<DescriptorTable>> create(const Device& device,
+                                                           std::uint32_t maxTextures) {
+        return create(device, DescriptorTableDesc{.maxTextures = maxTextures});
+    }
     ~DescriptorTable();
+
+    // Binding numbers of the caller-declared bindings; write them with
+    // writeStorageBuffer / writeSampledImage(binding, 0, view).
+    std::uint32_t userStorageBinding(std::uint32_t index) const {
+        return kUserBindingBase + index;
+    }
+    std::uint32_t userSampledImageBinding(std::uint32_t index) const {
+        return kUserBindingBase + userStorageBuffers_ + index;
+    }
+    std::uint32_t userStorageBuffers() const { return userStorageBuffers_; }
+    std::uint32_t userSampledImages() const { return userSampledImages_; }
 
     DescriptorTable(const DescriptorTable&) = delete;
     DescriptorTable& operator=(const DescriptorTable&) = delete;
@@ -99,6 +131,8 @@ private:
     VkDescriptorSet set_ = nullptr;
     VkSampler sampler_ = nullptr;
     VkSampler shadowSampler_ = nullptr; // comparison (PCF) sampler, binding 9
+    std::uint32_t userStorageBuffers_ = 0;
+    std::uint32_t userSampledImages_ = 0;
 };
 
 } // namespace rend::gpu

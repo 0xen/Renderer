@@ -3,6 +3,7 @@
 add_library(rend_gpu OBJECT
     src/acceleration_structure.cpp
     src/buffer.cpp
+    src/command_context.cpp
     src/descriptor_table.cpp
     src/image.cpp
     src/instance.cpp

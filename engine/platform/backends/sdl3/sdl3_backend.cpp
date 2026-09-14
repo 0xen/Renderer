@@ -23,6 +23,10 @@ Key translateKey(SDL_Keycode code) {
     case SDLK_G: return Key::G;
     case SDLK_LSHIFT: return Key::LeftShift;
     case SDLK_LCTRL: return Key::LeftCtrl;
+    case SDLK_UP: return Key::Up;
+    case SDLK_DOWN: return Key::Down;
+    case SDLK_LEFT: return Key::Left;
+    case SDLK_RIGHT: return Key::Right;
     default: return Key::Unknown;
     }
 }

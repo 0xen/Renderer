@@ -103,6 +103,8 @@ public:
 
     VkPipeline handle() const { return pipeline_; }
     VkPipelineLayout layout() const { return layout_; }
+    // Which bind point the pipeline belongs to (CommandContext follows it).
+    bool isCompute() const { return compute_; }
 
 private:
     Pipeline() = default;
@@ -110,6 +112,7 @@ private:
     const Device* device_ = nullptr;
     VkPipelineLayout layout_ = nullptr;
     VkPipeline pipeline_ = nullptr;
+    bool compute_ = false;
 };
 
 } // namespace rend::gpu

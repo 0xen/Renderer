@@ -4848,7 +4848,7 @@ int main(int argc, char** argv) {
     }
 
     // Held-key state for camera movement; mouselook while RMB is held.
-    bool keyHeld[static_cast<int>(platform::Key::LeftCtrl) + 1] = {};
+    bool keyHeld[static_cast<int>(platform::Key::Count)] = {};
     bool mouselook = false;
     constexpr float kLookSensitivity = 0.0025f; // radians per pixel
     constexpr float kMoveSpeed = 3.0f;          // units per second

@@ -10,9 +10,12 @@
 namespace rend::gpu {
 
 Result<std::unique_ptr<DescriptorTable>> DescriptorTable::create(const Device& device,
-                                                                 std::uint32_t maxTextures) {
+                                                                 const DescriptorTableDesc& desc) {
     auto table = std::unique_ptr<DescriptorTable>(new DescriptorTable());
     table->device_ = &device;
+    table->userStorageBuffers_ = desc.userStorageBuffers;
+    table->userSampledImages_ = desc.userSampledImages;
+    const std::uint32_t maxTextures = desc.maxTextures;
 
     std::vector<VkDescriptorSetLayoutBinding> bindings(10);
     bindings[0] = {.binding = 0,
@@ -220,6 +223,27 @@ Result<std::unique_ptr<DescriptorTable>> DescriptorTable::create(const Device& d
 
     VkDescriptorSetLayoutBindingFlagsCreateInfo flagsInfo{};
     flagsInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
+    // Caller-declared bindings (kUserBindingBase upward): storage buffers
+    // first, then sampled images. The engine never touches them; they
+    // exist so a consumer's own passes and shaders share this one set.
+    for (std::uint32_t i = 0; i < desc.userStorageBuffers; ++i) {
+        bindings.push_back({.binding = table->userStorageBinding(i),
+                            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                            .descriptorCount = 1,
+                            .stageFlags = VK_SHADER_STAGE_VERTEX_BIT |
+                                          VK_SHADER_STAGE_FRAGMENT_BIT |
+                                          VK_SHADER_STAGE_COMPUTE_BIT});
+        bindingFlags.push_back(VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT);
+    }
+    for (std::uint32_t i = 0; i < desc.userSampledImages; ++i) {
+        bindings.push_back({.binding = table->userSampledImageBinding(i),
+                            .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
+                            .descriptorCount = 1,
+                            .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT |
+                                          VK_SHADER_STAGE_COMPUTE_BIT});
+        bindingFlags.push_back(VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT);
+    }
+
     flagsInfo.bindingCount = static_cast<std::uint32_t>(bindingFlags.size());
     flagsInfo.pBindingFlags = bindingFlags.data();
 
@@ -236,8 +260,9 @@ Result<std::unique_ptr<DescriptorTable>> DescriptorTable::create(const Device& d
     }
 
     std::vector<VkDescriptorPoolSize> poolSizes{
-        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 24},
-        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, maxTextures + 27},
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 24 + desc.userStorageBuffers},
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
+                             maxTextures + 27 + desc.userSampledImages},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_SAMPLER, 2}};
     if (rayQuery) {
         poolSizes.push_back({VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1});
