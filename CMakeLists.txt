@@ -21,15 +21,28 @@ else()
     target_compile_options(rend_warnings INTERFACE -Wall -Wextra -Wpedantic)
 endif()
 
+# The engine DLL itself needs only the windowing backend and the Vulkan
+# loader; the fetches under REND_BUILD_APPS serve assetio and the viewer.
 include(cmake/FetchSDL3.cmake)
 include(cmake/FetchVolk.cmake)
-include(cmake/FetchPugixml.cmake)
-include(cmake/FetchCgltf.cmake)
-include(cmake/FetchStb.cmake)
-include(cmake/FetchImgui.cmake)
-include(cmake/FetchMeshoptimizer.cmake)
+include(cmake/RendShaders.cmake)
 
-# One shared output dir so viewer.exe sits next to rend.dll.
+# A project consuming the engine via add_subdirectory() wants rend.dll and
+# the rend_add_shaders() rule only: turning this off skips the viewer,
+# assetio, the Python host, the engine's own shader target and the
+# third-party fetches only those need.
+option(REND_BUILD_APPS "Build the viewer app, assetio, the Python host and the engine shaders" ON)
+if(REND_BUILD_APPS)
+    include(cmake/FetchPugixml.cmake)
+    include(cmake/FetchCgltf.cmake)
+    include(cmake/FetchStb.cmake)
+    include(cmake/FetchImgui.cmake)
+    include(cmake/FetchMeshoptimizer.cmake)
+endif()
+
+# One shared output dir so viewer.exe sits next to rend.dll. A consuming
+# project that set its own runtime directory keeps it: CMAKE_BINARY_DIR is
+# then the consumer's build tree, so rend.dll lands next to its executable.
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 # Opt-in Tracy profiling: normal builds carry zero overhead (the zone
@@ -44,15 +57,17 @@ endif()
 # viewer loads it at RUNTIME only when a scene declares <Script> nodes,
 # so turning this off (or deleting the DLL) costs nothing.
 option(REND_PYTHON "Build the embedded Python script host DLL" ON)
-if(REND_PYTHON)
+if(REND_BUILD_APPS AND REND_PYTHON)
     include(cmake/FetchPython.cmake)
     include(cmake/FetchPybind11.cmake)
 endif()
 
-add_subdirectory(assets)
 add_subdirectory(engine)
-add_subdirectory(assetio)
-if(REND_PYTHON)
-    add_subdirectory(pyhost)
+if(REND_BUILD_APPS)
+    add_subdirectory(assets)
+    add_subdirectory(assetio)
+    if(REND_PYTHON)
+        add_subdirectory(pyhost)
+    endif()
+    add_subdirectory(apps/viewer)
 endif()
-add_subdirectory(apps/viewer)
