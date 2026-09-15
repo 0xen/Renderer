@@ -4,6 +4,12 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
 
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#endif
+
 namespace rend::platform {
 
 namespace {
@@ -111,6 +117,41 @@ public:
         if (!window) {
             return Error{std::string("SDL_CreateWindow failed: ") + SDL_GetError()};
         }
+
+#ifdef _WIN32
+        // Transparency spike: SDL's SDL_WINDOW_TRANSPARENT only enables DWM
+        // blur-behind, which is not enough on every driver (AMD/NVIDIA
+        // present through a DXGI flip swapchain that ignores alpha). The
+        // documented workaround (SDL issue #15751) is to add layered-window
+        // ex-styles. REND_TRANSPARENT_EXSTYLE selects the experiment:
+        // none | layered | layered+noredir | noredir | colorkey.
+        if (desc.style == WindowStyle::BorderlessTransparent) {
+            HWND hwnd = static_cast<HWND>(SDL_GetPointerProperty(
+                SDL_GetWindowProperties(window), SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr));
+            const char* mode = SDL_getenv("REND_TRANSPARENT_EXSTYLE");
+            const std::string exstyle = mode ? mode : "layered";
+            if (hwnd && exstyle != "none") {
+                LONG_PTR ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+                if (exstyle.find("layered") != std::string::npos || exstyle == "colorkey") {
+                    ex |= WS_EX_LAYERED;
+                }
+                if (exstyle.find("noredir") != std::string::npos) {
+                    ex |= WS_EX_NOREDIRECTIONBITMAP;
+                }
+                SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex);
+                if (exstyle == "colorkey") {
+                    // Chroma key: DWM keys on RGB, not alpha, so pure black
+                    // (the alpha-0 clear after post) becomes see-through
+                    // even when the driver presents opaque.
+                    SetLayeredWindowAttributes(hwnd, RGB(0, 0, 0), 255, LWA_COLORKEY);
+                } else if (exstyle.find("layered") != std::string::npos) {
+                    SetLayeredWindowAttributes(hwnd, 0, 255, LWA_ALPHA);
+                }
+                log::info("Transparent window ex-style experiment '{}' applied (exstyle 0x{:x})",
+                          exstyle, static_cast<unsigned long>(ex));
+            }
+        }
+#endif
 
         // Center on the requested monitor (SDL3 has no position in CreateWindow).
         int displayCount = 0;

@@ -146,6 +146,7 @@ float4 PSMain(VSOutput input) : SV_Target0 {
     } else {
         finalUv.x += pixelOffset * 2.0f * stepLength;
     }
-    return float4(
-        ldrColor.SampleLevel(linearSampler, clamp(finalUv, clampMin, clampMax), 0.0f).rgb, 1.0f);
+    // Alpha is the filtered sample's too, so a transparent window's
+    // background (alpha 0) survives the resolve.
+    return ldrColor.SampleLevel(linearSampler, clamp(finalUv, clampMin, clampMax), 0.0f);
 }

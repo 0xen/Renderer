@@ -61,8 +61,13 @@ VkCompositeAlphaFlagBitsKHR chooseCompositeAlpha(const VkSurfaceCapabilitiesKHR&
         if (caps.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR) {
             return VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR;
         }
-        log::warn("Transparent target requested but driver offers no alpha compositing; falling back to "
-                  "opaque");
+        // AMD's Windows driver reports OPAQUE only and presents opaque: the
+        // window renders a black background no matter what the image alpha
+        // or the HWND ex-styles say (verified on an RX 7700 XT, 2026-09).
+        // Per-pixel transparency there needs a D3D11/DirectComposition
+        // present path instead of this swapchain.
+        log::warn("Transparent target requested but the driver offers OPAQUE compositing only; "
+                  "the window will NOT be per-pixel transparent through this swapchain");
     }
     if (caps.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR) {
         return VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
@@ -99,6 +104,10 @@ Result<void> Swapchain::build(std::uint32_t width, std::uint32_t height, VkSwapc
 
     VkSurfaceCapabilitiesKHR caps{};
     vkGetPhysicalDeviceSurfaceCapabilitiesKHR(pd, surface_, &caps);
+    if (transparent_) {
+        log::info("Surface supportedCompositeAlpha mask 0x{:x} (1 opaque, 2 pre, 4 post, 8 inherit)",
+                  static_cast<unsigned>(caps.supportedCompositeAlpha));
+    }
 
     VkExtent2D extent = caps.currentExtent;
     if (extent.width == 0xFFFFFFFFu) { // surface lets us choose

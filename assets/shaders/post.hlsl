@@ -36,12 +36,17 @@ float3 acesFitted(float3 x) {
 
 float4 PSMain(VSOutput input) : SV_Target0 {
     const LightData light = lights[pc.cameraSlot];
-    float3 color = sceneColor.Load(int3(int2(input.position.xy), 0)).rgb;
+    const float4 scene = sceneColor.Load(int3(int2(input.position.xy), 0));
+    float3 color = scene.rgb;
     color *= max(light.exposure, 0.0f);
     if (light.tonemap == 1u) {
         color = acesFitted(color);
     }
     // The swapchain is sRGB: hardware encodes on store; clamp keeps the
-    // "off" curve from wrapping on HDR values.
-    return float4(saturate(color), 1.0f);
+    // "off" curve from wrapping on HDR values. Alpha passes through: the
+    // composite pass leaves 1 under geometry and the clear alpha (1, or 0
+    // for a transparent window) on uncovered pixels; blended transparents
+    // over a 0 background already leave premultiplied color, which is
+    // what a PRE_MULTIPLIED swapchain composites.
+    return float4(saturate(color), scene.a);
 }

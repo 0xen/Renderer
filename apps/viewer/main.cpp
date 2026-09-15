@@ -984,6 +984,11 @@ int main(int argc, char** argv) {
     // Start with FXAA active (--aa fxaa); the anti_aliasing settings
     // slot flips it live.
     bool aaFromStart = false;
+    // --transparent: borderless per-pixel-alpha window (desktop shows
+    // through background pixels). Spike: sky pass off, scene color cleared
+    // to alpha 0, post/FXAA pass alpha through, swapchain asks the driver
+    // for premultiplied compositing.
+    bool transparentWindow = false;
     // Streaming test harness: auto-spawn this model at random intervals
     // through the message queue.
     const char* spawnTestPath = nullptr;
@@ -1037,6 +1042,8 @@ int main(int argc, char** argv) {
                 log::error("Unknown --aa '{}' (off|fxaa)", technique);
                 return 1;
             }
+        } else if (arg == "--transparent") {
+            transparentWindow = true;
         } else if (arg == "--script" && i + 1 < argc) {
             cliScripts.emplace_back(argv[++i]);
         } else if (arg == "--spawn-test" && i + 1 < argc) {
@@ -1157,6 +1164,7 @@ int main(int argc, char** argv) {
     } else {
         log::info("No scene file given "
                   "(usage: viewer [--debug] [--novsync] [--static] [--bench N] [--walk] "
+                  "[--transparent] "
                   "[--draw-mode count|indirect|direct] [--spawn-test model.gltf] <scene.xml>)");
     }
 
@@ -2581,7 +2589,8 @@ int main(int argc, char** argv) {
     }
 
     platform::TargetDesc desc{
-        .style = platform::WindowStyle::Decorated,
+        .style = transparentWindow ? platform::WindowStyle::BorderlessTransparent
+                                   : platform::WindowStyle::Decorated,
         .size = {1280, 720},
         .title = "Renderer Viewer",
     };
@@ -2604,7 +2613,7 @@ int main(int argc, char** argv) {
                                                       .surface = surfaceResult.value(),
                                                       .width = extent.width,
                                                       .height = extent.height,
-                                                      .transparent = false,
+                                                      .transparent = transparentWindow,
                                                       .vsync = vsync,
                                                   });
     if (!swapchainResult) {
@@ -3078,6 +3087,13 @@ int main(int argc, char** argv) {
         return 1;
     }
     auto renderer = std::move(rendererResult).value();
+    // Background alpha: 0 lets the desktop through a transparent window;
+    // the lighting pass writes 1 wherever geometry covers the pixel.
+    const float clearAlpha = transparentWindow ? 0.0f : 1.0f;
+    if (transparentWindow) {
+        renderer->setClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+        log::info("Transparent window: sky pass disabled, clear alpha 0");
+    }
 
     // Deferred G-buffer targets (bindings 28-31), kept at swapchain extent
     // by the resize path. Non-fatal: deferred shading just stays
@@ -3160,7 +3176,9 @@ int main(int argc, char** argv) {
         batch.countRegionStride = 8 * sizeof(std::uint32_t);
         batch.cpuDraws = draws.data();
         batch.descriptors = descriptorTable->set();
-        batch.skyPipeline = skyPipeline.get();
+        // Transparent window: no sky pass, so background pixels keep the
+        // alpha-0 clear and the desktop shows through them.
+        batch.skyPipeline = transparentWindow ? nullptr : skyPipeline.get();
         if (shadowPipeline && !shadowMaps.empty() &&
             SunControls::sceneSun(scene->lights).castsShadows) {
             batch.shadowPipeline = shadowPipeline.get();
@@ -3355,7 +3373,7 @@ int main(int argc, char** argv) {
             for (int i = 0; i < 3; ++i) {
                 skyColor[i] = fog.color[i] * (sun.color[i] * sunScatter + ambient[i]);
             }
-            renderer->setClearColor(skyColor[0], skyColor[1], skyColor[2]);
+            renderer->setClearColor(skyColor[0], skyColor[1], skyColor[2], clearAlpha);
             log::info("Volumetric fog: box ({:.0f} {:.0f} {:.0f}) size ({:.0f} {:.0f} {:.0f}), "
                       "density {:.3f}, anisotropy {:.2f}, {} steps",
                       fog.position[0], fog.position[1], fog.position[2], fog.size[0],
