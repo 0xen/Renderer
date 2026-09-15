@@ -3,11 +3,15 @@
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
+// SDL_RegisterApp lives in SDL_main.h, which also redefines main(); declare it directly.
+extern "C" SDL_DECLSPEC bool SDLCALL SDL_RegisterApp(const char* name, Uint32 style, void* hInst);
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
+#include <dwmapi.h>
+#pragma comment(lib, "dwmapi.lib")
 #endif
 
 namespace rend::platform {
@@ -76,6 +80,16 @@ public:
     ~Sdl3Backend() override { shutdown(); }
 
     Result<void> initialize() override {
+#ifdef _WIN32
+        // Transparency experiment: SDL's default window class carries
+        // CS_OWNDC, which GLFW found incompatible with WS_EX_LAYERED
+        // (glfw #2731 / PR #2681). REND_TRANSPARENT_NOOWNDC=1 registers the
+        // class without it before SDL_Init does its own registration.
+        if (const char* v = SDL_getenv("REND_TRANSPARENT_NOOWNDC"); v && v[0] == '1') {
+            SDL_RegisterApp("Renderer", 0, nullptr);
+            log::info("Window class registered without CS_OWNDC");
+        }
+#endif
         if (!SDL_Init(SDL_INIT_VIDEO)) {
             return Error{std::string("SDL_Init failed: ") + SDL_GetError()};
         }
@@ -124,7 +138,7 @@ public:
         // present through a DXGI flip swapchain that ignores alpha). The
         // documented workaround (SDL issue #15751) is to add layered-window
         // ex-styles. REND_TRANSPARENT_EXSTYLE selects the experiment:
-        // none | layered | layered+noredir | noredir | colorkey.
+        // none | layered | layered+noredir | noredir | colorkey | glfw.
         if (desc.style == WindowStyle::BorderlessTransparent) {
             HWND hwnd = static_cast<HWND>(SDL_GetPointerProperty(
                 SDL_GetWindowProperties(window), SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr));
@@ -132,7 +146,8 @@ public:
             const std::string exstyle = mode ? mode : "layered";
             if (hwnd && exstyle != "none") {
                 LONG_PTR ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-                if (exstyle.find("layered") != std::string::npos || exstyle == "colorkey") {
+                if (exstyle.find("layered") != std::string::npos || exstyle == "colorkey" ||
+                    exstyle == "glfw") {
                     ex |= WS_EX_LAYERED;
                 }
                 if (exstyle.find("noredir") != std::string::npos) {
@@ -144,6 +159,21 @@ public:
                     // (the alpha-0 clear after post) becomes see-through
                     // even when the driver presents opaque.
                     SetLayeredWindowAttributes(hwnd, RGB(0, 0, 0), 255, LWA_COLORKEY);
+                } else if (exstyle == "glfw") {
+                    // GLFW PR #2681's recipe, which fixed AMD for OpenGL:
+                    // WS_EX_LAYERED, black class brush, alpha 254 (255 lets
+                    // Windows optimise the layering away), and blur-behind
+                    // applied AFTER the layered attributes.
+                    SetClassLongPtrW(hwnd, GCLP_HBRBACKGROUND,
+                                     reinterpret_cast<LONG_PTR>(GetStockObject(BLACK_BRUSH)));
+                    SetLayeredWindowAttributes(hwnd, 0, 254, LWA_ALPHA);
+                    HRGN rgn = CreateRectRgn(0, 0, -1, -1);
+                    DWM_BLURBEHIND bb{};
+                    bb.dwFlags = DWM_BB_ENABLE | DWM_BB_BLURREGION;
+                    bb.fEnable = TRUE;
+                    bb.hRgnBlur = rgn;
+                    DwmEnableBlurBehindWindow(hwnd, &bb);
+                    DeleteObject(rgn);
                 } else if (exstyle.find("layered") != std::string::npos) {
                     SetLayeredWindowAttributes(hwnd, 0, 255, LWA_ALPHA);
                 }
