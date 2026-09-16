@@ -1,6 +1,7 @@
 #include "rend/gpu/instance.h"
 
 #include "vulkan/vulkan_types.h"
+#include "d3d12/d3d12_types.h"
 
 #include "rend/core/log.h"
 
@@ -160,7 +161,7 @@ VulkanInstance::~VulkanInstance() {
 Result<std::unique_ptr<Instance>> Instance::create(Api api, const InstanceDesc& desc) {
     switch (api) {
     case Api::Vulkan: return VulkanInstance::create(desc);
-    case Api::D3D12: break;
+    case Api::D3D12: return D3D12Instance::create(desc);
     }
     return Error{std::format("{} backend: not implemented", apiName(api))};
 }

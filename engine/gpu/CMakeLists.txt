@@ -16,6 +16,11 @@ add_library(rend_gpu OBJECT
     src/probe_capture.cpp
     src/frame_renderer.cpp
     src/vulkan/vulkan_frame_renderer.cpp
+    src/d3d12/d3d12_backend.cpp
+    src/d3d12/d3d12_resources.cpp
+    src/d3d12/d3d12_swapchain.cpp
+    src/d3d12/d3d12_command_context.cpp
+    src/d3d12/d3d12_frame_renderer.cpp
     src/texture_uploader.cpp
     src/transfer.cpp
 )
@@ -27,7 +32,8 @@ target_link_libraries(rend_gpu
     PRIVATE rend_warnings volk
 )
 if(WIN32)
-    # Adapter selection asks DXGI which adapter owns the display.
-    target_link_libraries(rend_gpu PRIVATE dxgi)
+    # Adapter selection asks DXGI which adapter owns the display; the D3D12
+    # backend needs the runtime and DirectComposition (transparent targets).
+    target_link_libraries(rend_gpu PRIVATE dxgi d3d12 dcomp)
 endif()
 set_target_properties(rend_gpu PROPERTIES FOLDER "engine")

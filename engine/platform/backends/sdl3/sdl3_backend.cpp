@@ -108,7 +108,7 @@ public:
     }
 
     Result<std::unique_ptr<PresentationTarget>> createTarget(const TargetDesc& desc) override {
-        SDL_WindowFlags flags = SDL_WINDOW_VULKAN;
+        SDL_WindowFlags flags = desc.vulkan ? SDL_WINDOW_VULKAN : 0;
         switch (desc.style) {
         case WindowStyle::Decorated:
             flags |= SDL_WINDOW_RESIZABLE;
@@ -218,6 +218,17 @@ public:
             return Error{std::string("SDL_Vulkan_CreateSurface failed: ") + SDL_GetError()};
         }
         return surface;
+    }
+
+    void* nativeWindowHandle(PresentationTarget& target) override {
+#ifdef _WIN32
+        auto& sdlTarget = static_cast<Sdl3Target&>(target);
+        return SDL_GetPointerProperty(SDL_GetWindowProperties(sdlTarget.handle()),
+                                      SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr);
+#else
+        (void)target;
+        return nullptr;
+#endif
     }
 
     std::vector<Event> pumpEvents() override {

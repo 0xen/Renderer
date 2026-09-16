@@ -25,6 +25,10 @@ struct TargetDesc {
     Extent2D size{1280, 720};
     std::string title = "Renderer";
     int monitorIndex = 0; // which monitor to center on / fill
+    // Prepare the target for Vulkan presentation (loads the Vulkan
+    // library at window creation). Off for backends that present through
+    // the OS's native API (D3D12 swapchains only need the window handle).
+    bool vulkan = true;
 };
 
 } // namespace rend::platform

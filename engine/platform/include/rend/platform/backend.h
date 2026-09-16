@@ -44,6 +44,11 @@ public:
     // Creates a presentable surface for a target this backend created.
     virtual Result<VkSurfaceKHR> createVulkanSurface(VkInstance instance,
                                                      PresentationTarget& target) = 0;
+
+    // The OS window object behind a target (HWND on Windows), for graphics
+    // APIs that attach their swapchain to the window directly (D3D12).
+    // Null when the backend has no such handle.
+    virtual void* nativeWindowHandle(PresentationTarget& target) = 0;
 };
 
 Result<std::unique_ptr<IPlatformBackend>> createBackend(BackendKind kind);

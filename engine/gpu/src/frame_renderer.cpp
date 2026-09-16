@@ -12,6 +12,7 @@
 #include "rend/gpu/swapchain.h"
 
 #include "vulkan/vulkan_types.h"
+#include "d3d12/d3d12_types.h"
 
 #include <algorithm>
 #include <cstring>
@@ -23,7 +24,7 @@ Result<std::unique_ptr<FrameRenderer>> FrameRenderer::create(const Device& devic
                                                              Swapchain& swapchain) {
     switch (device.api()) {
     case Api::Vulkan: return VulkanFrameRenderer::create(device, swapchain);
-    case Api::D3D12: break;
+    case Api::D3D12: return D3D12FrameRenderer::create(device, swapchain);
     }
     return Error{std::format("{} backend: FrameRenderer not implemented", apiName(device.api()))};
 }

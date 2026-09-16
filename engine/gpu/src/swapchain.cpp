@@ -1,6 +1,7 @@
 #include "rend/gpu/swapchain.h"
 
 #include "vulkan/vulkan_types.h"
+#include "d3d12/d3d12_types.h"
 
 #include "rend/core/log.h"
 #include "rend/gpu/device.h"
@@ -228,7 +229,7 @@ Result<std::unique_ptr<Swapchain>> Swapchain::create(const Instance& instance, c
                                                      const SwapchainDesc& desc) {
     switch (device.api()) {
     case Api::Vulkan: return VulkanSwapchain::create(instance, device, desc);
-    case Api::D3D12: break;
+    case Api::D3D12: return D3D12Swapchain::create(instance, device, desc);
     }
     return Error{std::format("{} backend: Swapchain not implemented", apiName(device.api()))};
 }

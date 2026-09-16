@@ -1,6 +1,7 @@
 #include "rend/gpu/device.h"
 
 #include "vulkan/vulkan_types.h"
+#include "d3d12/d3d12_types.h"
 
 #include "rend/core/log.h"
 #include "rend/gpu/instance.h"
@@ -488,7 +489,7 @@ void VulkanDevice::waitIdle() const {
 Result<std::unique_ptr<Device>> Device::create(const Instance& instance, const FeatureSet& features) {
     switch (instance.api()) {
     case Api::Vulkan: return VulkanDevice::create(instance, features);
-    case Api::D3D12: break;
+    case Api::D3D12: return D3D12Device::create(instance, features);
     }
     return Error{std::format("{} backend: Device not implemented", apiName(instance.api()))};
 }

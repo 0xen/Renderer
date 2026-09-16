@@ -1,6 +1,7 @@
 #include "rend/gpu/buffer.h"
 
 #include "vulkan/vulkan_types.h"
+#include "d3d12/d3d12_types.h"
 
 #include "rend/gpu/device.h"
 #include "rend/gpu/memory_tracker.h"
@@ -137,7 +138,7 @@ VulkanBuffer::~VulkanBuffer() {
 Result<std::unique_ptr<Buffer>> Buffer::create(const Device& device, const BufferDesc& desc) {
     switch (device.api()) {
     case Api::Vulkan: return VulkanBuffer::create(device, desc);
-    case Api::D3D12: break;
+    case Api::D3D12: return D3D12Buffer::create(device, desc);
     }
     return Error{std::format("{} backend: Buffer not implemented", apiName(device.api()))};
 }

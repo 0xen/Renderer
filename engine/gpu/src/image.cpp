@@ -1,6 +1,7 @@
 #include "rend/gpu/image.h"
 
 #include "vulkan/vulkan_types.h"
+#include "d3d12/d3d12_types.h"
 
 #include "rend/gpu/device.h"
 #include "rend/gpu/memory_tracker.h"
@@ -170,7 +171,7 @@ VulkanImage::~VulkanImage() {
 Result<std::unique_ptr<Image>> Image::create(const Device& device, const ImageDesc& desc) {
     switch (device.api()) {
     case Api::Vulkan: return VulkanImage::create(device, desc);
-    case Api::D3D12: break;
+    case Api::D3D12: return D3D12Image::create(device, desc);
     }
     return Error{std::format("{} backend: Image not implemented", apiName(device.api()))};
 }
