@@ -27,26 +27,6 @@ namespace {
 constexpr std::uint64_t kWaitTimeoutNs = 2'000'000'000ull;
 constexpr int kMaxStalledWaits = 5;
 
-// Barrier helper: the swapchain image's previous contents are always
-// discarded (loadOp CLEAR), so the source layout is UNDEFINED every frame.
-VkImageMemoryBarrier2 imageBarrier(VkImage image, VkImageLayout oldLayout, VkImageLayout newLayout,
-                                   VkPipelineStageFlags2 srcStage, VkAccessFlags2 srcAccess,
-                                   VkPipelineStageFlags2 dstStage, VkAccessFlags2 dstAccess) {
-    VkImageMemoryBarrier2 barrier{};
-    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-    barrier.srcStageMask = srcStage;
-    barrier.srcAccessMask = srcAccess;
-    barrier.dstStageMask = dstStage;
-    barrier.dstAccessMask = dstAccess;
-    barrier.oldLayout = oldLayout;
-    barrier.newLayout = newLayout;
-    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.image = image;
-    barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-    return barrier;
-}
-
 } // namespace
 
 Result<std::unique_ptr<FrameRenderer>> FrameRenderer::create(const Device& device,
@@ -256,9 +236,6 @@ Result<void> FrameRenderer::recreateSwapchain() {
 Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex,
                                    std::uint32_t slot, const DrawBatch* batch,
                                    bool reusable) const {
-    // The bindless set every batch pass binds (VK_NULL_HANDLE = none).
-    const VkDescriptorSet descriptors =
-        (batch && batch->descriptors) ? batch->descriptors->set() : VK_NULL_HANDLE;
     REND_PROFILE_ZONE("RecordScene");
     VkCommandBufferBeginInfo begin{};
     begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -267,6 +244,39 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
         return Error{std::format("vkBeginCommandBuffer failed ({})", static_cast<int>(r))};
     }
 
+    CommandContext ctx(cmd);
+    recordFrame(ctx, imageIndex, slot, batch);
+
+    // The image stays in COLOR_ATTACHMENT_OPTIMAL: the per-frame overlay
+    // command buffer draws the UI on top and owns the present transition.
+    if (VkResult r = vkEndCommandBuffer(cmd); r != VK_SUCCESS) {
+        return Error{std::format("vkEndCommandBuffer failed ({})", static_cast<int>(r))};
+    }
+    return {};
+}
+
+// The whole scene frame, expressed through the neutral CommandContext so a
+// second backend records the same passes from the same code. Every barrier
+// below is the precise stage/access/layout scope the Vulkan version carried
+// — do not "simplify" one without re-running the sync-validation benches.
+void FrameRenderer::recordFrame(CommandContext& ctx, std::uint32_t imageIndex,
+                                std::uint32_t slot, const DrawBatch* batch) const {
+    // The bindless table every batch pass binds (null = none).
+    const DescriptorTable* table = batch ? batch->descriptors : nullptr;
+    auto bindTable = [&](const Pipeline& p) {
+        if (table != nullptr) {
+            ctx.bindDescriptorTable(p, *table);
+        }
+    };
+    // Fullscreen-triangle passes push {slot, 0} (the layout the scene
+    // passes share).
+    auto pushSlot = [&](const Pipeline& p) {
+        const std::uint32_t push[2] = {slot, 0};
+        ctx.pushConstants(p, push, sizeof(push));
+    };
+
+    const Image& swapchainImage = swapchain_->image(imageIndex);
+
     // Frame passes see the frame through this context; the per-point
     // fields (color attachment, depth) are filled in as the frame goes.
     PassContext passContext{};
@@ -274,9 +284,9 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
     passContext.imageIndex = imageIndex;
     passContext.width = swapchain_->width();
     passContext.height = swapchain_->height();
-    passContext.swapchainImage = &swapchain_->image(imageIndex);
+    passContext.swapchainImage = &swapchainImage;
     passContext.swapchainFormat = swapchain_->imageFormat();
-    recordPasses(cmd, PassPoint::BeforeScene, passContext);
+    recordPasses(ctx, PassPoint::BeforeScene, passContext);
 
     // Traced primary visibility replaces the raster pipeline: no shadow
     // cascades, no compaction, no indirect stream — one fullscreen triangle
@@ -294,51 +304,32 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
         // Pose animated vertices into this slot's pool regions. Order
         // against the previous frame's vertex fetches, then make the
         // writes visible to every consumer of the pool this frame.
-        VkMemoryBarrier2 toSkin{};
-        toSkin.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
         // COMPUTE in the source: the previous frame's OBB refine dispatch
         // reads the pool too (WAR — execution ordering is enough).
-        toSkin.srcStageMask = VK_PIPELINE_STAGE_2_VERTEX_ATTRIBUTE_INPUT_BIT |
-                              VK_PIPELINE_STAGE_2_INDEX_INPUT_BIT |
-                              VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-        toSkin.srcAccessMask = 0;
-        toSkin.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-        toSkin.dstAccessMask =
-            VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
-        VkDependencyInfo skinDependency{};
-        skinDependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-        skinDependency.memoryBarrierCount = 1;
-        skinDependency.pMemoryBarriers = &toSkin;
-        vkCmdPipelineBarrier2(cmd, &skinDependency);
+        ctx.memoryBarrier({.srcStage = PipelineStage::VertexAttributeInput |
+                                       PipelineStage::IndexInput | PipelineStage::ComputeShader,
+                           .srcAccess = Access::None,
+                           .dstStage = PipelineStage::ComputeShader,
+                           .dstAccess = Access::ShaderStorageRead | Access::ShaderStorageWrite});
 
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, batch->skinPipeline->handle());
-        if (descriptors != VK_NULL_HANDLE) {
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
-                                    batch->skinPipeline->layout(), 0, 1, &descriptors, 0,
-                                    nullptr);
-        }
+        ctx.bindPipeline(*batch->skinPipeline);
+        bindTable(*batch->skinPipeline);
         for (const DrawBatch::SkinDispatch& dispatch : batch->skinDispatches) {
             auto push = dispatch.push;
             push[DrawBatch::kSkinSlotPushIndex] = slot;
-            vkCmdPushConstants(cmd, batch->skinPipeline->layout(), VK_SHADER_STAGE_COMPUTE_BIT,
-                               0, sizeof(push), push.data());
-            vkCmdDispatch(cmd, (dispatch.vertexCount + 63) / 64, 1, 1);
+            ctx.pushConstants(*batch->skinPipeline, push.data(),
+                              static_cast<std::uint32_t>(sizeof(push)));
+            ctx.dispatch((dispatch.vertexCount + 63) / 64, 1, 1);
         }
 
-        VkMemoryBarrier2 fromSkin{};
-        fromSkin.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
-        fromSkin.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-        fromSkin.srcAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
         // COMPUTE in the destination: this frame's OBB refine dispatch
         // reads the pool (disjoint regions from the posed writes, but the
         // hazard tracking is buffer-wide).
-        fromSkin.dstStageMask = VK_PIPELINE_STAGE_2_VERTEX_ATTRIBUTE_INPUT_BIT |
-                                VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT |
-                                VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-        fromSkin.dstAccessMask =
-            VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
-        skinDependency.pMemoryBarriers = &fromSkin;
-        vkCmdPipelineBarrier2(cmd, &skinDependency);
+        ctx.memoryBarrier({.srcStage = PipelineStage::ComputeShader,
+                           .srcAccess = Access::ShaderStorageWrite,
+                           .dstStage = PipelineStage::VertexAttributeInput |
+                                       PipelineStage::FragmentShader | PipelineStage::ComputeShader,
+                           .dstAccess = Access::VertexAttributeRead | Access::ShaderStorageRead});
     }
 
     const bool blasRefit = batch && batch->refitBlas && slot < batch->refitGeometries.size() &&
@@ -350,49 +341,30 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
         // makes the skin writes visible to the build AND — queue-scoped,
         // so it reaches across submissions — orders it after the previous
         // frame in flight's ray queries reading the same structures.
-        VkDependencyInfo dependency{};
-        dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-        dependency.memoryBarrierCount = 1;
-
-        VkMemoryBarrier2 toBuild{};
-        toBuild.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
-        toBuild.srcStageMask =
-            VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
-        toBuild.srcAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
-        toBuild.dstStageMask = VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR;
-        toBuild.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT |
-                                VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR |
-                                VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
-        dependency.pMemoryBarriers = &toBuild;
-        vkCmdPipelineBarrier2(cmd, &dependency);
+        ctx.memoryBarrier({.srcStage = PipelineStage::ComputeShader | PipelineStage::FragmentShader,
+                           .srcAccess = Access::ShaderStorageWrite,
+                           .dstStage = PipelineStage::AccelerationStructureBuild,
+                           .dstAccess = Access::ShaderRead | Access::AccelerationStructureRead |
+                                        Access::AccelerationStructureWrite});
 
         if (blasRefit) {
-            batch->refitBlas->recordRefit(cmd, batch->refitGeometries[slot]);
-
+            batch->refitBlas->recordRefit(ctx, batch->refitGeometries[slot]);
             // The TLAS rebuild reads the refitted BLAS AABBs.
-            VkMemoryBarrier2 blasToTlas{};
-            blasToTlas.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
-            blasToTlas.srcStageMask = VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR;
-            blasToTlas.srcAccessMask = VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
-            blasToTlas.dstStageMask = VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR;
-            blasToTlas.dstAccessMask = VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR |
-                                       VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
-            dependency.pMemoryBarriers = &blasToTlas;
-            vkCmdPipelineBarrier2(cmd, &dependency);
+            ctx.memoryBarrier({.srcStage = PipelineStage::AccelerationStructureBuild,
+                               .srcAccess = Access::AccelerationStructureWrite,
+                               .dstStage = PipelineStage::AccelerationStructureBuild,
+                               .dstAccess = Access::AccelerationStructureRead |
+                                            Access::AccelerationStructureWrite});
         }
 
         if (batch->tlasRebuild) {
-            batch->tlasRebuild->recordRebuild(cmd, slot);
+            batch->tlasRebuild->recordRebuild(ctx, slot);
         }
 
-        VkMemoryBarrier2 toTrace{};
-        toTrace.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
-        toTrace.srcStageMask = VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR;
-        toTrace.srcAccessMask = VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
-        toTrace.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
-        toTrace.dstAccessMask = VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR;
-        dependency.pMemoryBarriers = &toTrace;
-        vkCmdPipelineBarrier2(cmd, &dependency);
+        ctx.memoryBarrier({.srcStage = PipelineStage::AccelerationStructureBuild,
+                           .srcAccess = Access::AccelerationStructureWrite,
+                           .dstStage = PipelineStage::FragmentShader,
+                           .dstAccess = Access::AccelerationStructureRead});
     }
 
     if (batch && (!rtDraw || fogCascades) && batch->cullPipeline &&
@@ -409,17 +381,14 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
         // exactly like scenes where this dispatch never ran.
         const std::uint32_t cullFlags = rtDraw ? (batch->cullFlags & ~4u) : batch->cullFlags;
         const bool occlusion = batch->occlusionPipeline != nullptr &&
-                               batch->occlusionVisibility != nullptr &&
-                               (cullFlags & 4u) != 0;
-        VkDependencyInfo cullDependency{};
-        cullDependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+                               batch->occlusionVisibility != nullptr && (cullFlags & 4u) != 0;
         // The visibility clear happens AFTER the cull dispatch below:
         // with two-slot hysteresis the dispatch reads BOTH regions (this
         // slot's still holds the frame-before-last's proxy results), so
         // this slot's region must survive until then before the proxy
         // pass at the end of this frame refills it.
-        vkCmdFillBuffer(cmd, batch->count->handle(), slot * batch->countRegionStride,
-                        batch->countRegionStride, 0);
+        ctx.fillBuffer(*batch->count, slot * batch->countRegionStride, batch->countRegionStride,
+                       0);
 
         // The fills must land before the dispatch reads/increments, and —
         // with occlusion — the previous frame's proxy-pass fragment
@@ -429,24 +398,21 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
         // frame's refine dispatch re-reads the counter and overwrites
         // rows the previous frame's consumers looked at.
         const bool obbRefine = batch->obbRefinePipeline != nullptr;
-        VkMemoryBarrier2 fillToCompute{};
-        fillToCompute.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
-        fillToCompute.srcStageMask = VK_PIPELINE_STAGE_2_CLEAR_BIT |
-                                     (occlusion ? VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT
-                                                : VkPipelineStageFlags2{0}) |
-                                     (obbRefine ? VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT |
-                                                      VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT
-                                                : VkPipelineStageFlags2{0});
-        fillToCompute.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT |
-                                      (occlusion || obbRefine
-                                           ? VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT
-                                           : VkAccessFlags2{0});
-        fillToCompute.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-        fillToCompute.dstAccessMask =
-            VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
-        cullDependency.memoryBarrierCount = 1;
-        cullDependency.pMemoryBarriers = &fillToCompute;
-        vkCmdPipelineBarrier2(cmd, &cullDependency);
+        PipelineStage fillSrc = PipelineStage::Clear;
+        if (occlusion) {
+            fillSrc = fillSrc | PipelineStage::FragmentShader;
+        }
+        if (obbRefine) {
+            fillSrc = fillSrc | PipelineStage::ComputeShader | PipelineStage::VertexShader;
+        }
+        Access fillSrcAccess = Access::TransferWrite;
+        if (occlusion || obbRefine) {
+            fillSrcAccess = fillSrcAccess | Access::ShaderStorageWrite;
+        }
+        ctx.memoryBarrier({.srcStage = fillSrc,
+                           .srcAccess = fillSrcAccess,
+                           .dstStage = PipelineStage::ComputeShader,
+                           .dstAccess = Access::ShaderStorageRead | Access::ShaderStorageWrite});
 
         if (obbRefine) {
             // Self-terminating OBB refinement: claims the next
@@ -454,90 +420,58 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
             // their oriented boxes; exits immediately once every entry
             // has been claimed. Baked like everything here — the counter
             // is the only state, so no recording ever changes.
-            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
-                              batch->obbRefinePipeline->handle());
-            if (descriptors != VK_NULL_HANDLE) {
-                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
-                                        batch->obbRefinePipeline->layout(), 0, 1,
-                                        &descriptors, 0, nullptr);
-            }
+            ctx.bindPipeline(*batch->obbRefinePipeline);
+            bindTable(*batch->obbRefinePipeline);
             const std::uint32_t obbPush[3] = {
                 batch->drawCount, slot,
                 static_cast<std::uint32_t>(batch->indirectRegionStride /
                                            sizeof(DrawIndexedIndirect))};
-            vkCmdPushConstants(cmd, batch->obbRefinePipeline->layout(),
-                               VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(obbPush), obbPush);
-            vkCmdDispatch(cmd, batch->obbRefineGroups, 1, 1);
+            ctx.pushConstants(*batch->obbRefinePipeline, obbPush, sizeof(obbPush));
+            ctx.dispatch(batch->obbRefineGroups, 1, 1);
 
             // The cull dispatch reads the rows the refine pass just wrote.
-            VkMemoryBarrier2 refineToCull{};
-            refineToCull.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
-            refineToCull.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-            refineToCull.srcAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
-            refineToCull.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-            refineToCull.dstAccessMask = VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
-            cullDependency.pMemoryBarriers = &refineToCull;
-            vkCmdPipelineBarrier2(cmd, &cullDependency);
+            ctx.memoryBarrier({.srcStage = PipelineStage::ComputeShader,
+                               .srcAccess = Access::ShaderStorageWrite,
+                               .dstStage = PipelineStage::ComputeShader,
+                               .dstAccess = Access::ShaderStorageRead});
         }
 
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, batch->cullPipeline->handle());
-        if (descriptors != VK_NULL_HANDLE) {
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
-                                    batch->cullPipeline->layout(), 0, 1, &descriptors, 0,
-                                    nullptr);
-        }
+        ctx.bindPipeline(*batch->cullPipeline);
+        bindTable(*batch->cullPipeline);
         // capacity = the per-slot region stride in entries; drawCount can
         // grow at runtime (model loads) while the regions stay put. The
         // fifth word is the LOD screen-size factor, a float in disguise.
         std::uint32_t push[5] = {
             batch->drawCount, slot,
-            static_cast<std::uint32_t>(batch->indirectRegionStride /
-                                       sizeof(DrawIndexedIndirect)),
+            static_cast<std::uint32_t>(batch->indirectRegionStride / sizeof(DrawIndexedIndirect)),
             cullFlags, 0};
         std::memcpy(&push[4], &batch->lodFactor, sizeof(float));
-        vkCmdPushConstants(cmd, batch->cullPipeline->layout(), VK_SHADER_STAGE_COMPUTE_BIT, 0,
-                           sizeof(push), push);
-        vkCmdDispatch(cmd, (batch->drawCount + 63) / 64, 1, 1);
+        ctx.pushConstants(*batch->cullPipeline, push, sizeof(push));
+        ctx.dispatch((batch->drawCount + 63) / 64, 1, 1);
 
-        VkMemoryBarrier2 computeToDraw{};
-        computeToDraw.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
-        computeToDraw.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-        computeToDraw.srcAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
         // The vertex stage also reads what the cull pass wrote: partially
         // visible draws' surviving instance rows land in the rows buffer's
         // per-slot scratch regions.
-        computeToDraw.dstStageMask =
-            VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT;
-        computeToDraw.dstAccessMask =
-            VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
-        cullDependency.pMemoryBarriers = &computeToDraw;
-        vkCmdPipelineBarrier2(cmd, &cullDependency);
+        ctx.memoryBarrier({.srcStage = PipelineStage::ComputeShader,
+                           .srcAccess = Access::ShaderStorageWrite,
+                           .dstStage = PipelineStage::DrawIndirect | PipelineStage::VertexShader,
+                           .dstAccess = Access::IndirectCommandRead | Access::ShaderStorageRead});
 
         if (occlusion) {
             // Now that the cull dispatch has read this slot's region
             // (hysteresis), zero it for the proxy pass at the end of THIS
             // frame. WAR against the dispatch, then make the clear
             // visible to the proxy fragments' visibility stores.
-            VkMemoryBarrier2 cullToClear{};
-            cullToClear.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
-            cullToClear.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-            cullToClear.srcAccessMask = VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
-            cullToClear.dstStageMask = VK_PIPELINE_STAGE_2_CLEAR_BIT;
-            cullToClear.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-            cullDependency.pMemoryBarriers = &cullToClear;
-            vkCmdPipelineBarrier2(cmd, &cullDependency);
-            vkCmdFillBuffer(cmd, batch->occlusionVisibility->handle(),
-                            slot * batch->occlusionRegionStride,
-                            batch->occlusionRegionStride, 0);
-            VkMemoryBarrier2 clearToProxy{};
-            clearToProxy.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
-            clearToProxy.srcStageMask = VK_PIPELINE_STAGE_2_CLEAR_BIT;
-            clearToProxy.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-            clearToProxy.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
-            clearToProxy.dstAccessMask =
-                VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
-            cullDependency.pMemoryBarriers = &clearToProxy;
-            vkCmdPipelineBarrier2(cmd, &cullDependency);
+            ctx.memoryBarrier({.srcStage = PipelineStage::ComputeShader,
+                               .srcAccess = Access::ShaderStorageRead,
+                               .dstStage = PipelineStage::Clear,
+                               .dstAccess = Access::TransferWrite});
+            ctx.fillBuffer(*batch->occlusionVisibility, slot * batch->occlusionRegionStride,
+                           batch->occlusionRegionStride, 0);
+            ctx.memoryBarrier({.srcStage = PipelineStage::Clear,
+                               .srcAccess = Access::TransferWrite,
+                               .dstStage = PipelineStage::FragmentShader,
+                               .dstAccess = Access::ShaderStorageRead | Access::ShaderStorageWrite});
         }
     }
 
@@ -548,55 +482,44 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
     // frustum-culled opaque list (when the batch carries one), 2 = the
     // frustum-culled transparent list.
     auto bindAndDraw = [&](const Pipeline& p, std::uint32_t cascade, std::uint32_t stream) {
-        const VkDeviceSize zero = 0;
-        if (descriptors != VK_NULL_HANDLE) {
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, p.layout(), 0, 1,
-                                    &descriptors, 0, nullptr);
-        }
-        const VkBuffer geometry = batch->geometry->handle();
-        vkCmdBindVertexBuffers(cmd, 0, 1, &geometry, &zero);
-        vkCmdBindIndexBuffer(cmd, geometry, 0, VK_INDEX_TYPE_UINT32);
+        bindTable(p);
+        ctx.bindVertexBuffer(*batch->geometry, 0);
+        ctx.bindIndexBuffer(*batch->geometry, 0);
         const std::uint32_t push[2] = {slot, cascade};
-        vkCmdPushConstants(cmd, p.layout(),
-                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-                           sizeof(push), push);
+        ctx.pushConstants(p, push, sizeof(push));
         // Counter layout per slot: [0] shadow, [1] opaque, [2] scratch
         // rows, [3] transparent.
-        VkBuffer streamBuffer = batch->indirect->handle();
+        const Buffer* streamBuffer = batch->indirect;
         std::uint64_t countOffset = 0;
         if (stream == 1 && batch->sceneIndirect != nullptr) {
-            streamBuffer = batch->sceneIndirect->handle();
+            streamBuffer = batch->sceneIndirect;
             countOffset = 1 * sizeof(std::uint32_t);
         } else if (stream == 2) {
-            streamBuffer = batch->transparentIndirect->handle();
+            streamBuffer = batch->transparentIndirect;
             countOffset = 3 * sizeof(std::uint32_t);
         }
         switch (batch->mode) {
         case DrawSubmitMode::IndirectCount:
-            vkCmdDrawIndexedIndirectCount(
-                cmd, streamBuffer, slot * batch->indirectRegionStride, batch->count->handle(),
-                slot * batch->countRegionStride + countOffset, batch->drawCount,
-                sizeof(DrawIndexedIndirect));
+            ctx.drawIndexedIndirectCount(*streamBuffer, slot * batch->indirectRegionStride,
+                                         *batch->count,
+                                         slot * batch->countRegionStride + countOffset,
+                                         batch->drawCount, sizeof(DrawIndexedIndirect));
             break;
         case DrawSubmitMode::Indirect:
-            vkCmdDrawIndexedIndirect(cmd, batch->indirect->handle(), slot * batch->indirectRegionStride,
-                                     batch->drawCount, sizeof(DrawIndexedIndirect));
+            ctx.drawIndexedIndirect(*batch->indirect, slot * batch->indirectRegionStride,
+                                    batch->drawCount, sizeof(DrawIndexedIndirect));
             break;
         case DrawSubmitMode::Direct:
             for (std::uint32_t i = 0; i < batch->drawCount; ++i) {
                 const DrawIndexedIndirect& draw = batch->cpuDraws[i];
                 if (draw.instanceCount != 0) {
-                    vkCmdDrawIndexed(cmd, draw.indexCount, draw.instanceCount, draw.firstIndex,
-                                     draw.vertexOffset, draw.firstInstance);
+                    ctx.drawIndexed(draw.indexCount, draw.instanceCount, draw.firstIndex,
+                                    draw.vertexOffset, draw.firstInstance);
                 }
             }
             break;
         }
     };
-
-    VkDependencyInfo shadowDependency{};
-    shadowDependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-    shadowDependency.imageMemoryBarrierCount = 1;
 
     if (batch && (!rtDraw || fogCascades) && batch->shadowPipeline && batch->cascadeCount > 0) {
         for (std::uint32_t c = 0; c < batch->cascadeCount; ++c) {
@@ -604,60 +527,35 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
             // Depth-only pass from the light's view. Contents are cleared,
             // so the old layout is UNDEFINED; the barrier orders against
             // the previous frame's sampling and depth writes.
-            VkImageMemoryBarrier2 toShadowWrite = imageBarrier(
-                map->handle(), VK_IMAGE_LAYOUT_UNDEFINED,
-                VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-                VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT |
-                    VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
-                VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-                VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
-                    VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
-                VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
-                    VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT);
-            toShadowWrite.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-            shadowDependency.pImageMemoryBarriers = &toShadowWrite;
-            vkCmdPipelineBarrier2(cmd, &shadowDependency);
+            ctx.imageBarrier({.image = map,
+                              .oldLayout = ImageLayout::Undefined,
+                              .newLayout = ImageLayout::DepthAttachment,
+                              .srcStage = PipelineStage::FragmentShader |
+                                          PipelineStage::LateFragmentTests,
+                              .srcAccess = Access::DepthStencilWrite,
+                              .dstStage = PipelineStage::EarlyFragmentTests |
+                                          PipelineStage::LateFragmentTests,
+                              .dstAccess = Access::DepthStencilRead | Access::DepthStencilWrite});
 
-            VkRenderingAttachmentInfo shadowDepth{};
-            shadowDepth.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-            shadowDepth.imageView = map->view();
-            shadowDepth.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-            shadowDepth.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-            shadowDepth.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-            shadowDepth.clearValue.depthStencil = {1.0f, 0};
-
-            const VkExtent2D shadowExtent{map->width(), map->height()};
-            VkRenderingInfo shadowRendering{};
-            shadowRendering.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-            shadowRendering.renderArea = {{0, 0}, shadowExtent};
-            shadowRendering.layerCount = 1;
-            shadowRendering.pDepthAttachment = &shadowDepth;
-            vkCmdBeginRendering(cmd, &shadowRendering);
-
-            const VkViewport shadowViewport{0.0f,
-                                            0.0f,
-                                            static_cast<float>(shadowExtent.width),
-                                            static_cast<float>(shadowExtent.height),
-                                            0.0f,
-                                            1.0f};
-            const VkRect2D shadowScissor{{0, 0}, shadowExtent};
-            vkCmdSetViewport(cmd, 0, 1, &shadowViewport);
-            vkCmdSetScissor(cmd, 0, 1, &shadowScissor);
-            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                              batch->shadowPipeline->handle());
+            const DepthTarget shadowDepth{
+                .image = map, .load = LoadOp::Clear, .store = true, .clear = 1.0f};
+            RenderingDesc shadowRendering{};
+            shadowRendering.width = map->width();
+            shadowRendering.height = map->height();
+            shadowRendering.depth = &shadowDepth;
+            ctx.beginRendering(shadowRendering);
+            ctx.bindPipeline(*batch->shadowPipeline);
             bindAndDraw(*batch->shadowPipeline, c, 0);
-            vkCmdEndRendering(cmd);
+            ctx.endRendering();
 
             // Written depth becomes sampleable by the main pass's fragments.
-            VkImageMemoryBarrier2 toShadowRead = imageBarrier(
-                map->handle(), VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
-                VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-                VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
-            toShadowRead.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-            shadowDependency.pImageMemoryBarriers = &toShadowRead;
-            vkCmdPipelineBarrier2(cmd, &shadowDependency);
+            ctx.imageBarrier({.image = map,
+                              .oldLayout = ImageLayout::DepthAttachment,
+                              .newLayout = ImageLayout::ShaderReadOnly,
+                              .srcStage = PipelineStage::LateFragmentTests,
+                              .srcAccess = Access::DepthStencilWrite,
+                              .dstStage = PipelineStage::FragmentShader,
+                              .dstAccess = Access::ShaderSampledRead});
         }
     }
 
@@ -665,107 +563,74 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
         // G-buffer pass: rasterize the opaque stream's surface attributes
         // into the four screen-sized targets plus depth. Target contents
         // are cleared, so old layouts are UNDEFINED; the barriers order
-        // against the previous frame's lighting-pass reads.
-        std::array<VkImageMemoryBarrier2, kGBufferTargets> toGBufferWrite{};
+        // against the previous frame's lighting-pass reads. Depth is
+        // cleared here and consumed by the composite pass's depth-tested
+        // draws (sky/transparent/proxy); its barrier orders against the
+        // previous frame's depth accesses.
+        std::array<ImageBarrierDesc, kGBufferTargets + 1> toGBufferWrite{};
         for (std::uint32_t i = 0; i < kGBufferTargets; ++i) {
-            toGBufferWrite[i] = imageBarrier(
-                gbuffer_[i]->handle(), VK_IMAGE_LAYOUT_UNDEFINED,
-                VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-                0, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+            toGBufferWrite[i] = {.image = gbuffer_[i].get(),
+                                 .oldLayout = ImageLayout::Undefined,
+                                 .newLayout = ImageLayout::ColorAttachment,
+                                 .srcStage = PipelineStage::FragmentShader,
+                                 .srcAccess = Access::None,
+                                 .dstStage = PipelineStage::ColorAttachmentOutput,
+                                 .dstAccess = Access::ColorAttachmentWrite};
         }
-        // Depth is cleared here and consumed by the composite pass's
-        // depth-tested draws (sky/transparent/proxy); the barrier orders
-        // against the previous frame's depth accesses.
-        VkImageMemoryBarrier2 toDepthWrite = imageBarrier(
-            depth_->handle(), VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-            VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
-            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-            VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
-            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
-                VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT);
-        toDepthWrite.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+        toGBufferWrite.back() = {
+            .image = depth_.get(),
+            .oldLayout = ImageLayout::Undefined,
+            .newLayout = ImageLayout::DepthAttachment,
+            .srcStage = PipelineStage::EarlyFragmentTests | PipelineStage::LateFragmentTests,
+            .srcAccess = Access::DepthStencilWrite,
+            .dstStage = PipelineStage::EarlyFragmentTests | PipelineStage::LateFragmentTests,
+            .dstAccess = Access::DepthStencilRead | Access::DepthStencilWrite};
+        ctx.barrier({}, toGBufferWrite);
 
-        std::array<VkImageMemoryBarrier2, kGBufferTargets + 1> gbufferBarriers{};
-        std::copy(toGBufferWrite.begin(), toGBufferWrite.end(), gbufferBarriers.begin());
-        gbufferBarriers.back() = toDepthWrite;
-        VkDependencyInfo gbufferDependency{};
-        gbufferDependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-        gbufferDependency.imageMemoryBarrierCount =
-            static_cast<std::uint32_t>(gbufferBarriers.size());
-        gbufferDependency.pImageMemoryBarriers = gbufferBarriers.data();
-        vkCmdPipelineBarrier2(cmd, &gbufferDependency);
-
-        std::array<VkRenderingAttachmentInfo, kGBufferTargets> gbufferColors{};
+        RenderingDesc gbufferRendering{};
+        gbufferRendering.width = swapchain_->width();
+        gbufferRendering.height = swapchain_->height();
         for (std::uint32_t i = 0; i < kGBufferTargets; ++i) {
-            gbufferColors[i].sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-            gbufferColors[i].imageView = gbuffer_[i]->view();
-            gbufferColors[i].imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-            gbufferColors[i].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-            gbufferColors[i].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
             // All-zero clears: the zeroed view-depth target is the
             // lighting pass's background sentinel.
-            gbufferColors[i].clearValue.color = {{0.0f, 0.0f, 0.0f, 0.0f}};
+            gbufferRendering.colors.push_back(ColorTarget{.image = gbuffer_[i].get(),
+                                                          .load = LoadOp::Clear,
+                                                          .store = true,
+                                                          .clear = {0.0f, 0.0f, 0.0f, 0.0f}});
         }
-        VkRenderingAttachmentInfo gbufferDepth{};
-        gbufferDepth.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        gbufferDepth.imageView = depth_->view();
-        gbufferDepth.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-        gbufferDepth.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        gbufferDepth.storeOp = VK_ATTACHMENT_STORE_OP_STORE; // composite pass loads it
-        gbufferDepth.clearValue.depthStencil = {1.0f, 0};
-
-        const VkExtent2D gbufferExtent{swapchain_->width(), swapchain_->height()};
-        VkRenderingInfo gbufferRendering{};
-        gbufferRendering.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-        gbufferRendering.renderArea = {{0, 0}, gbufferExtent};
-        gbufferRendering.layerCount = 1;
-        gbufferRendering.colorAttachmentCount = static_cast<std::uint32_t>(gbufferColors.size());
-        gbufferRendering.pColorAttachments = gbufferColors.data();
-        gbufferRendering.pDepthAttachment = &gbufferDepth;
-        vkCmdBeginRendering(cmd, &gbufferRendering);
-
-        const VkViewport gbufferViewport{0.0f,
-                                         0.0f,
-                                         static_cast<float>(gbufferExtent.width),
-                                         static_cast<float>(gbufferExtent.height),
-                                         0.0f,
-                                         1.0f};
-        const VkRect2D gbufferScissor{{0, 0}, gbufferExtent};
-        vkCmdSetViewport(cmd, 0, 1, &gbufferViewport);
-        vkCmdSetScissor(cmd, 0, 1, &gbufferScissor);
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, batch->gbufferPipeline->handle());
+        const DepthTarget gbufferDepth{.image = depth_.get(),
+                                       .load = LoadOp::Clear,
+                                       .store = true, // composite pass loads it
+                                       .clear = 1.0f};
+        gbufferRendering.depth = &gbufferDepth;
+        ctx.beginRendering(gbufferRendering);
+        ctx.bindPipeline(*batch->gbufferPipeline);
         bindAndDraw(*batch->gbufferPipeline, 0, 1);
-        vkCmdEndRendering(cmd);
+        ctx.endRendering();
 
         // Written targets become sampleable by the lighting triangle, and
         // the stored depth becomes testable by the composite pass's
         // depth-tested draws (sky/transparent/proxy).
-        std::array<VkImageMemoryBarrier2, kGBufferTargets + 1> toRead{};
+        std::array<ImageBarrierDesc, kGBufferTargets + 1> toRead{};
         for (std::uint32_t i = 0; i < kGBufferTargets; ++i) {
-            toRead[i] = imageBarrier(gbuffer_[i]->handle(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                                     VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                                     VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                                     VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-                                     VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-                                     VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
+            toRead[i] = {.image = gbuffer_[i].get(),
+                         .oldLayout = ImageLayout::ColorAttachment,
+                         .newLayout = ImageLayout::ShaderReadOnly,
+                         .srcStage = PipelineStage::ColorAttachmentOutput,
+                         .srcAccess = Access::ColorAttachmentWrite,
+                         .dstStage = PipelineStage::FragmentShader,
+                         .dstAccess = Access::ShaderSampledRead};
         }
-        VkImageMemoryBarrier2 depthToTest = imageBarrier(
-            depth_->handle(), VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-            VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
-            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-            VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
-            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT);
-        depthToTest.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-        toRead.back() = depthToTest;
-        VkDependencyInfo toReadDependency{};
-        toReadDependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-        toReadDependency.imageMemoryBarrierCount = static_cast<std::uint32_t>(toRead.size());
-        toReadDependency.pImageMemoryBarriers = toRead.data();
-        vkCmdPipelineBarrier2(cmd, &toReadDependency);
+        toRead.back() = {
+            .image = depth_.get(),
+            .oldLayout = ImageLayout::DepthAttachment,
+            .newLayout = ImageLayout::DepthAttachment,
+            .srcStage = PipelineStage::LateFragmentTests,
+            .srcAccess = Access::DepthStencilWrite,
+            .dstStage = PipelineStage::EarlyFragmentTests | PipelineStage::LateFragmentTests,
+            .dstAccess = Access::DepthStencilRead};
+        ctx.barrier({}, toRead);
     }
-
-    VkImage image = swapchain_->images()[imageIndex];
 
     // Post mode: the composite pass renders into the HDR scene-color
     // target and a final fullscreen pass (exposure + tonemap) maps it to
@@ -774,223 +639,143 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
     // targets the swapchain directly, exactly as before.
     const bool post = batch && batch->postPipeline != nullptr && sceneColor_ != nullptr;
 
-    VkDependencyInfo dependency{};
-    dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-    dependency.imageMemoryBarrierCount = 1;
     if (post) {
         // Scene color is cleared each frame (old layout UNDEFINED); order
         // against the previous frame's post-pass sampled reads.
-        VkImageMemoryBarrier2 toSceneColor = imageBarrier(
-            sceneColor_->handle(), VK_IMAGE_LAYOUT_UNDEFINED,
-            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, 0,
-            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-            VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
-        dependency.pImageMemoryBarriers = &toSceneColor;
-        vkCmdPipelineBarrier2(cmd, &dependency);
+        ctx.imageBarrier({.image = sceneColor_.get(),
+                          .oldLayout = ImageLayout::Undefined,
+                          .newLayout = ImageLayout::ColorAttachment,
+                          .srcStage = PipelineStage::FragmentShader,
+                          .srcAccess = Access::None,
+                          .dstStage = PipelineStage::ColorAttachmentOutput,
+                          .dstAccess = Access::ColorAttachmentWrite});
     } else {
-        VkImageMemoryBarrier2 toColor = imageBarrier(
-            image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, 0,
-            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-            VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
-        dependency.pImageMemoryBarriers = &toColor;
-        vkCmdPipelineBarrier2(cmd, &dependency);
+        ctx.imageBarrier({.image = &swapchainImage,
+                          .oldLayout = ImageLayout::Undefined,
+                          .newLayout = ImageLayout::ColorAttachment,
+                          .srcStage = PipelineStage::ColorAttachmentOutput,
+                          .srcAccess = Access::None,
+                          .dstStage = PipelineStage::ColorAttachmentOutput,
+                          .dstAccess = Access::ColorAttachmentWrite});
     }
 
-    VkRenderingAttachmentInfo color{};
-    color.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-    color.imageView = post ? sceneColor_->view() : swapchain_->imageViews()[imageIndex];
-    color.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    color.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    color.clearValue.color = {{clearColor_[0], clearColor_[1], clearColor_[2], clearColor_[3]}};
-
-    VkRenderingAttachmentInfo depth{};
-    depth.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-    depth.imageView = depth_ ? depth_->view() : VK_NULL_HANDLE;
-    depth.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+    const Image* compositeTarget = post ? sceneColor_.get() : &swapchainImage;
+    RenderingDesc composite{};
+    composite.width = swapchain_->width();
+    composite.height = swapchain_->height();
+    composite.colors.push_back(ColorTarget{.image = compositeTarget,
+                                           .load = LoadOp::Clear,
+                                           .store = true,
+                                           .clear = clearColor_});
     // Loads the G-buffer pass's stored depth — the sky/transparent/proxy
-    // draws test against it; nothing here writes it.
-    depth.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-    depth.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-
-    const VkExtent2D extent{swapchain_->width(), swapchain_->height()};
-    VkRenderingInfo rendering{};
-    rendering.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-    rendering.renderArea = {{0, 0}, extent};
-    rendering.layerCount = 1;
-    rendering.colorAttachmentCount = 1;
-    rendering.pColorAttachments = &color;
-    // Depth only when rasterizing a batch: the attachment set must match
-    // the pipeline's declared depthFormat (traced primary needs none).
-    rendering.pDepthAttachment = rasterScene ? &depth : nullptr;
-    vkCmdBeginRendering(cmd, &rendering);
-
-    const VkViewport viewport{0.0f, 0.0f, static_cast<float>(extent.width),
-                              static_cast<float>(extent.height), 0.0f, 1.0f};
-    const VkRect2D scissor{{0, 0}, extent};
-    vkCmdSetViewport(cmd, 0, 1, &viewport);
-    vkCmdSetScissor(cmd, 0, 1, &scissor);
+    // draws test against it; nothing here writes it. Depth only when
+    // rasterizing a batch: the attachment set must match the pipeline's
+    // declared depthFormat (traced primary needs none).
+    const DepthTarget compositeDepth{
+        .image = depth_.get(), .load = LoadOp::Load, .store = false, .clear = 1.0f};
+    composite.depth = rasterScene ? &compositeDepth : nullptr;
+    ctx.beginRendering(composite);
 
     if (rtDraw) {
         // Fullscreen traced pass: every pixel fires a camera ray in the
         // fragment shader; camera/light/slot data flow exactly as in the
         // raster path, so static recordings survive camera motion here too.
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                          batch->rtPrimaryPipeline->handle());
-        if (descriptors != VK_NULL_HANDLE) {
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    batch->rtPrimaryPipeline->layout(), 0, 1,
-                                    &descriptors, 0, nullptr);
-        }
-        const std::uint32_t push[2] = {slot, 0};
-        vkCmdPushConstants(cmd, batch->rtPrimaryPipeline->layout(),
-                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-                           sizeof(push), push);
-        vkCmdDraw(cmd, 3, 1, 0, 0);
+        ctx.bindPipeline(*batch->rtPrimaryPipeline);
+        bindTable(*batch->rtPrimaryPipeline);
+        pushSlot(*batch->rtPrimaryPipeline);
+        ctx.draw(3, 1, 0, 0);
     } else if (batch) {
         // Lighting: one fullscreen triangle Loads the G-buffer (bindings
         // 28-31) and shades every covered pixel; the opaque stream was
         // already rasterized in the G-buffer pass. Background pixels
         // discard, keeping the baked clear color for the sky pass to
         // overdraw.
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                          batch->lightingPipeline->handle());
-        if (descriptors != VK_NULL_HANDLE) {
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    batch->lightingPipeline->layout(), 0, 1,
-                                    &descriptors, 0, nullptr);
+        ctx.bindPipeline(*batch->lightingPipeline);
+        bindTable(*batch->lightingPipeline);
+        pushSlot(*batch->lightingPipeline);
+        ctx.draw(3, 1, 0, 0);
+        // Sky pass: fullscreen triangle at the far plane, depth test
+        // only — paints the per-slot skyColor over background pixels
+        // before the transparents blend on top of it.
+        if (batch->skyPipeline != nullptr) {
+            ctx.bindPipeline(*batch->skyPipeline);
+            bindTable(*batch->skyPipeline);
+            pushSlot(*batch->skyPipeline);
+            ctx.draw(3, 1, 0, 0);
         }
-        const std::uint32_t lightingPush[2] = {slot, 0};
-        vkCmdPushConstants(cmd, batch->lightingPipeline->layout(),
-                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-                           sizeof(lightingPush), lightingPush);
-        vkCmdDraw(cmd, 3, 1, 0, 0);
-        {
-            // Sky pass: fullscreen triangle at the far plane, depth test
-            // only — paints the per-slot skyColor over background pixels
-            // before the transparents blend on top of it.
-            if (batch->skyPipeline != nullptr) {
-                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                  batch->skyPipeline->handle());
-                if (descriptors != VK_NULL_HANDLE) {
-                    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                            batch->skyPipeline->layout(), 0, 1,
-                                            &descriptors, 0, nullptr);
-                }
-                const std::uint32_t skyPush[2] = {slot, 0};
-                vkCmdPushConstants(cmd, batch->skyPipeline->layout(),
-                                   VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                                   0, sizeof(skyPush), skyPush);
-                vkCmdDraw(cmd, 3, 1, 0, 0);
+        // Transparency pass: same rendering pass, blend pipeline,
+        // depth write off — the cull shader routed these entries out
+        // of the opaque stream. Unsorted for now (single-layer glass
+        // is fine; stacked transparents may blend out of order).
+        if (batch->transparentPipeline && batch->transparentIndirect != nullptr &&
+            batch->mode == DrawSubmitMode::IndirectCount) {
+            ctx.bindPipeline(*batch->transparentPipeline);
+            bindAndDraw(*batch->transparentPipeline, 0, 2);
+        }
+        // The proxy and debug passes push {slot, capacity}.
+        const std::uint32_t proxyPush[2] = {
+            slot,
+            static_cast<std::uint32_t>(batch->indirectRegionStride / sizeof(DrawIndexedIndirect))};
+        // Occlusion proxy pass: every template's world AABB as an
+        // instanced cube against the frame's finished depth (test
+        // only, color masked); survivors mark the visibility buffer
+        // the NEXT frame's cull dispatch consumes. Same rendering
+        // pass, so the scene's depth writes are already ordered.
+        if (batch->occlusionPipeline != nullptr && (batch->cullFlags & 4u) != 0 &&
+            batch->mode == DrawSubmitMode::IndirectCount) {
+            ctx.bindPipeline(*batch->occlusionPipeline);
+            bindTable(*batch->occlusionPipeline);
+            ctx.pushConstants(*batch->occlusionPipeline, proxyPush, sizeof(proxyPush));
+            ctx.draw(36, batch->drawCount, 0, 0);
+            // Per-instance proxy pass: one box per canonical instance
+            // row (dead/scene rows emit degenerate geometry). Same
+            // push constants and PS; marks the region's per-instance
+            // visibility slots.
+            if (batch->occlusionInstancePipeline != nullptr && batch->occlusionInstanceRows > 0) {
+                ctx.bindPipeline(*batch->occlusionInstancePipeline);
+                bindTable(*batch->occlusionInstancePipeline);
+                ctx.pushConstants(*batch->occlusionInstancePipeline, proxyPush,
+                                  sizeof(proxyPush));
+                ctx.draw(36, batch->occlusionInstanceRows, 0, 0);
             }
-            // Transparency pass: same rendering pass, blend pipeline,
-            // depth write off — the cull shader routed these entries out
-            // of the opaque stream. Unsorted for now (single-layer glass
-            // is fine; stacked transparents may blend out of order).
-            if (batch->transparentPipeline && batch->transparentIndirect != nullptr &&
-                batch->mode == DrawSubmitMode::IndirectCount) {
-                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                  batch->transparentPipeline->handle());
-                bindAndDraw(*batch->transparentPipeline, 0, 2);
-            }
-            // Occlusion proxy pass: every template's world AABB as an
-            // instanced cube against the frame's finished depth (test
-            // only, color masked); survivors mark the visibility buffer
-            // the NEXT frame's cull dispatch consumes. Same rendering
-            // pass, so the scene's depth writes are already ordered.
-            if (batch->occlusionPipeline != nullptr && (batch->cullFlags & 4u) != 0 &&
-                batch->mode == DrawSubmitMode::IndirectCount) {
-                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                  batch->occlusionPipeline->handle());
-                if (descriptors != VK_NULL_HANDLE) {
-                    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                            batch->occlusionPipeline->layout(), 0, 1,
-                                            &descriptors, 0, nullptr);
-                }
-                const std::uint32_t proxyPush[2] = {
-                    slot, static_cast<std::uint32_t>(batch->indirectRegionStride /
-                                                     sizeof(DrawIndexedIndirect))};
-                vkCmdPushConstants(cmd, batch->occlusionPipeline->layout(),
-                                   VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                                   0, sizeof(proxyPush), proxyPush);
-                vkCmdDraw(cmd, 36, batch->drawCount, 0, 0);
-                // Per-instance proxy pass: one box per canonical instance
-                // row (dead/scene rows emit degenerate geometry). Same
-                // push constants and PS; marks the region's per-instance
-                // visibility slots.
-                if (batch->occlusionInstancePipeline != nullptr &&
-                    batch->occlusionInstanceRows > 0) {
-                    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                      batch->occlusionInstancePipeline->handle());
-                    if (descriptors != VK_NULL_HANDLE) {
-                        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                                batch->occlusionInstancePipeline->layout(), 0,
-                                                1, &descriptors, 0, nullptr);
-                    }
-                    vkCmdPushConstants(cmd, batch->occlusionInstancePipeline->layout(),
-                                       VK_SHADER_STAGE_VERTEX_BIT |
-                                           VK_SHADER_STAGE_FRAGMENT_BIT,
-                                       0, sizeof(proxyPush), proxyPush);
-                    vkCmdDraw(cmd, 36, batch->occlusionInstanceRows, 0, 0);
-                }
-            }
-            // Occlusion-box debug overlay: the same instanced AABB cubes
-            // as translucent color (identical depth state, so the tinted
-            // fragments are exactly the proxy pass's survivors). Not
-            // gated on cullFlags bit 2 — the boxes are inspectable with
-            // occlusion culling toggled off.
-            if (batch->occlusionDebugPipeline != nullptr &&
-                batch->mode == DrawSubmitMode::IndirectCount) {
-                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                  batch->occlusionDebugPipeline->handle());
-                if (descriptors != VK_NULL_HANDLE) {
-                    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                            batch->occlusionDebugPipeline->layout(), 0, 1,
-                                            &descriptors, 0, nullptr);
-                }
-                const std::uint32_t debugPush[2] = {
-                    slot, static_cast<std::uint32_t>(batch->indirectRegionStride /
-                                                     sizeof(DrawIndexedIndirect))};
-                vkCmdPushConstants(cmd, batch->occlusionDebugPipeline->layout(),
-                                   VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                                   0, sizeof(debugPush), debugPush);
-                vkCmdDraw(cmd, 36, batch->drawCount, 0, 0);
-                // The instanced models' boxes, same overlay styling.
-                if (batch->occlusionInstanceDebugPipeline != nullptr &&
-                    batch->occlusionInstanceRows > 0) {
-                    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                      batch->occlusionInstanceDebugPipeline->handle());
-                    if (descriptors != VK_NULL_HANDLE) {
-                        vkCmdBindDescriptorSets(
-                            cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                            batch->occlusionInstanceDebugPipeline->layout(), 0, 1,
-                            &descriptors, 0, nullptr);
-                    }
-                    vkCmdPushConstants(cmd, batch->occlusionInstanceDebugPipeline->layout(),
-                                       VK_SHADER_STAGE_VERTEX_BIT |
-                                           VK_SHADER_STAGE_FRAGMENT_BIT,
-                                       0, sizeof(debugPush), debugPush);
-                    vkCmdDraw(cmd, 36, batch->occlusionInstanceRows, 0, 0);
-                }
+        }
+        // Occlusion-box debug overlay: the same instanced AABB cubes
+        // as translucent color (identical depth state, so the tinted
+        // fragments are exactly the proxy pass's survivors). Not
+        // gated on cullFlags bit 2 — the boxes are inspectable with
+        // occlusion culling toggled off.
+        if (batch->occlusionDebugPipeline != nullptr &&
+            batch->mode == DrawSubmitMode::IndirectCount) {
+            ctx.bindPipeline(*batch->occlusionDebugPipeline);
+            bindTable(*batch->occlusionDebugPipeline);
+            ctx.pushConstants(*batch->occlusionDebugPipeline, proxyPush, sizeof(proxyPush));
+            ctx.draw(36, batch->drawCount, 0, 0);
+            // The instanced models' boxes, same overlay styling.
+            if (batch->occlusionInstanceDebugPipeline != nullptr &&
+                batch->occlusionInstanceRows > 0) {
+                ctx.bindPipeline(*batch->occlusionInstanceDebugPipeline);
+                bindTable(*batch->occlusionInstanceDebugPipeline);
+                ctx.pushConstants(*batch->occlusionInstanceDebugPipeline, proxyPush,
+                                  sizeof(proxyPush));
+                ctx.draw(36, batch->occlusionInstanceRows, 0, 0);
             }
         }
     }
     // No batch: nothing draws — the cleared swapchain image (plus the
     // overlay pass) is the whole frame — unless InScene passes draw here.
-    passContext.color = post ? sceneColor_.get() : &swapchain_->image(imageIndex);
+    passContext.color = compositeTarget;
     passContext.colorFormat = post ? kSceneColorFormat : swapchain_->imageFormat();
     passContext.depthAttached = rasterScene;
     passContext.depth = rasterScene ? depth_.get() : nullptr;
-    recordPasses(cmd, PassPoint::InScene, passContext);
+    recordPasses(ctx, PassPoint::InScene, passContext);
 
-    vkCmdEndRendering(cmd);
+    ctx.endRendering();
 
     passContext.color = nullptr;
     passContext.colorFormat = Format::Undefined;
     passContext.depthAttached = false;
     passContext.depth = nullptr;
-    recordPasses(cmd, PassPoint::AfterScene, passContext);
+    recordPasses(ctx, PassPoint::AfterScene, passContext);
 
     if (post) {
         // With an AA module the post pass parks its tonemapped output in
@@ -1000,105 +785,81 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
         const bool aa = batch->aaPipeline != nullptr && batch->postLdrPipeline != nullptr &&
                         ldrColor_ != nullptr;
 
-        // Shared fullscreen-pass recorder: transition the target, bind,
-        // push {slot, 0}, draw one triangle.
-        auto fullscreenPass = [&](const Pipeline& p, VkImageView target) {
-            VkRenderingAttachmentInfo passColor{};
-            passColor.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-            passColor.imageView = target;
-            passColor.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-            // The triangle covers every pixel unconditionally.
-            passColor.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-            passColor.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-
-            VkRenderingInfo passRendering{};
-            passRendering.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-            passRendering.renderArea = {{0, 0}, extent};
-            passRendering.layerCount = 1;
-            passRendering.colorAttachmentCount = 1;
-            passRendering.pColorAttachments = &passColor;
-            vkCmdBeginRendering(cmd, &passRendering);
-            vkCmdSetViewport(cmd, 0, 1, &viewport);
-            vkCmdSetScissor(cmd, 0, 1, &scissor);
-            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, p.handle());
-            if (descriptors != VK_NULL_HANDLE) {
-                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, p.layout(), 0, 1,
-                                        &descriptors, 0, nullptr);
-            }
-            const std::uint32_t passPush[2] = {slot, 0};
-            vkCmdPushConstants(cmd, p.layout(),
-                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-                               sizeof(passPush), passPush);
-            vkCmdDraw(cmd, 3, 1, 0, 0);
-            vkCmdEndRendering(cmd);
+        // Shared fullscreen-pass recorder: bind, push {slot, 0}, draw one
+        // triangle into the target (which covers every pixel, so the old
+        // contents are never loaded).
+        auto fullscreenPass = [&](const Pipeline& p, const Image& target) {
+            RenderingDesc pass{};
+            pass.width = swapchain_->width();
+            pass.height = swapchain_->height();
+            pass.colors.push_back(
+                ColorTarget{.image = &target, .load = LoadOp::DontCare, .store = true});
+            ctx.beginRendering(pass);
+            ctx.bindPipeline(p);
+            bindTable(p);
+            pushSlot(p);
+            ctx.draw(3, 1, 0, 0);
+            ctx.endRendering();
         };
 
         // Scene color becomes sampleable and the post target (LDR
-        // intermediate or the swapchain) becomes an attachment.
-        std::array<VkImageMemoryBarrier2, 2> toPost{};
-        toPost[0] = imageBarrier(sceneColor_->handle(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                                 VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                                 VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-                                 VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-                                 VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
-        toPost[1] = imageBarrier(aa ? ldrColor_->handle() : image, VK_IMAGE_LAYOUT_UNDEFINED,
-                                 VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                                 // For the LDR image the unordered prior
-                                 // access is last frame's AA sampling.
-                                 aa ? VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT
-                                    : VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                                 0, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                                 VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
-        VkDependencyInfo postDependency{};
-        postDependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-        postDependency.imageMemoryBarrierCount = static_cast<std::uint32_t>(toPost.size());
-        postDependency.pImageMemoryBarriers = toPost.data();
-        vkCmdPipelineBarrier2(cmd, &postDependency);
+        // intermediate or the swapchain) becomes an attachment. For the
+        // LDR image the unordered prior access is last frame's AA
+        // sampling.
+        const std::array<ImageBarrierDesc, 2> toPost{
+            ImageBarrierDesc{.image = sceneColor_.get(),
+                             .oldLayout = ImageLayout::ColorAttachment,
+                             .newLayout = ImageLayout::ShaderReadOnly,
+                             .srcStage = PipelineStage::ColorAttachmentOutput,
+                             .srcAccess = Access::ColorAttachmentWrite,
+                             .dstStage = PipelineStage::FragmentShader,
+                             .dstAccess = Access::ShaderSampledRead},
+            ImageBarrierDesc{.image = aa ? ldrColor_.get() : &swapchainImage,
+                             .oldLayout = ImageLayout::Undefined,
+                             .newLayout = ImageLayout::ColorAttachment,
+                             .srcStage = aa ? PipelineStage::FragmentShader
+                                            : PipelineStage::ColorAttachmentOutput,
+                             .srcAccess = Access::None,
+                             .dstStage = PipelineStage::ColorAttachmentOutput,
+                             .dstAccess = Access::ColorAttachmentWrite}};
+        ctx.barrier({}, toPost);
 
         fullscreenPass(aa ? *batch->postLdrPipeline : *batch->postPipeline,
-                       aa ? ldrColor_->view() : swapchain_->imageViews()[imageIndex]);
+                       aa ? *ldrColor_ : swapchainImage);
 
         if (aa) {
             // LDR output becomes sampleable, the swapchain becomes the
             // attachment, and the AA module resolves onto it.
-            std::array<VkImageMemoryBarrier2, 2> toAa{};
-            toAa[0] = imageBarrier(ldrColor_->handle(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                                   VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                                   VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                                   VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-                                   VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-                                   VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
-            toAa[1] = imageBarrier(image, VK_IMAGE_LAYOUT_UNDEFINED,
-                                   VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                                   VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, 0,
-                                   VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                                   VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
-            postDependency.imageMemoryBarrierCount = static_cast<std::uint32_t>(toAa.size());
-            postDependency.pImageMemoryBarriers = toAa.data();
-            vkCmdPipelineBarrier2(cmd, &postDependency);
+            const std::array<ImageBarrierDesc, 2> toAa{
+                ImageBarrierDesc{.image = ldrColor_.get(),
+                                 .oldLayout = ImageLayout::ColorAttachment,
+                                 .newLayout = ImageLayout::ShaderReadOnly,
+                                 .srcStage = PipelineStage::ColorAttachmentOutput,
+                                 .srcAccess = Access::ColorAttachmentWrite,
+                                 .dstStage = PipelineStage::FragmentShader,
+                                 .dstAccess = Access::ShaderSampledRead},
+                ImageBarrierDesc{.image = &swapchainImage,
+                                 .oldLayout = ImageLayout::Undefined,
+                                 .newLayout = ImageLayout::ColorAttachment,
+                                 .srcStage = PipelineStage::ColorAttachmentOutput,
+                                 .srcAccess = Access::None,
+                                 .dstStage = PipelineStage::ColorAttachmentOutput,
+                                 .dstAccess = Access::ColorAttachmentWrite}};
+            ctx.barrier({}, toAa);
 
-            fullscreenPass(*batch->aaPipeline, swapchain_->imageViews()[imageIndex]);
+            fullscreenPass(*batch->aaPipeline, swapchainImage);
         }
     }
 
-    recordPasses(cmd, PassPoint::AfterPost, passContext);
-
-    // The image stays in COLOR_ATTACHMENT_OPTIMAL: the per-frame overlay
-    // command buffer draws the UI on top and owns the present transition.
-    if (VkResult r = vkEndCommandBuffer(cmd); r != VK_SUCCESS) {
-        return Error{std::format("vkEndCommandBuffer failed ({})", static_cast<int>(r))};
-    }
-    return {};
+    recordPasses(ctx, PassPoint::AfterPost, passContext);
 }
 
-void FrameRenderer::recordPasses(VkCommandBuffer cmd, PassPoint point,
+void FrameRenderer::recordPasses(CommandContext& ctx, PassPoint point,
                                  PassContext& context) const {
     context.point = point;
-    CommandContext recording(cmd);
     for (const FramePass& pass : framePasses_) {
         if (pass.point == point && pass.record) {
-            pass.record(recording, context);
+            pass.record(ctx, context);
         }
     }
 }
@@ -1118,62 +879,47 @@ Result<void> FrameRenderer::recordOverlay(VkCommandBuffer cmd, std::uint32_t ima
         return Error{std::format("vkBeginCommandBuffer (overlay) failed ({})", static_cast<int>(r))};
     }
 
-    VkImage image = swapchain_->images()[imageIndex];
-    VkDependencyInfo dependency{};
-    dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-    dependency.imageMemoryBarrierCount = 1;
-
-    if (overlayRecorder_) {
-        // Order against the scene buffer's color writes (same submission,
-        // no layout change) before loading the attachment.
-        VkImageMemoryBarrier2 sceneToOverlay = imageBarrier(
-            image, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-            VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
-        dependency.pImageMemoryBarriers = &sceneToOverlay;
-        vkCmdPipelineBarrier2(cmd, &dependency);
-
-        VkRenderingAttachmentInfo color{};
-        color.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        color.imageView = swapchain_->imageViews()[imageIndex];
-        color.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        color.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-        color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-
-        const VkExtent2D extent{swapchain_->width(), swapchain_->height()};
-        VkRenderingInfo rendering{};
-        rendering.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-        rendering.renderArea = {{0, 0}, extent};
-        rendering.layerCount = 1;
-        rendering.colorAttachmentCount = 1;
-        rendering.pColorAttachments = &color;
-        vkCmdBeginRendering(cmd, &rendering);
-
-        const VkViewport viewport{0.0f, 0.0f, static_cast<float>(extent.width),
-                                  static_cast<float>(extent.height), 0.0f, 1.0f};
-        const VkRect2D scissor{{0, 0}, extent};
-        vkCmdSetViewport(cmd, 0, 1, &viewport);
-        vkCmdSetScissor(cmd, 0, 1, &scissor);
-
-        CommandContext overlay(cmd);
-        overlayRecorder_(overlay);
-
-        vkCmdEndRendering(cmd);
-    }
-
-    VkImageMemoryBarrier2 toPresent = imageBarrier(
-        image, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-        VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, 0);
-    dependency.pImageMemoryBarriers = &toPresent;
-    vkCmdPipelineBarrier2(cmd, &dependency);
+    CommandContext ctx(cmd);
+    recordOverlayFrame(ctx, imageIndex);
 
     if (VkResult r = vkEndCommandBuffer(cmd); r != VK_SUCCESS) {
         return Error{std::format("vkEndCommandBuffer (overlay) failed ({})", static_cast<int>(r))};
     }
     return {};
+}
+
+// The overlay tail: the UI on top of the finished swapchain image, then
+// the present transition. Neutral like recordFrame.
+void FrameRenderer::recordOverlayFrame(CommandContext& ctx, std::uint32_t imageIndex) const {
+    const Image& image = swapchain_->image(imageIndex);
+
+    if (overlayRecorder_) {
+        // Order against the scene buffer's color writes (same submission,
+        // no layout change) before loading the attachment.
+        ctx.imageBarrier({.image = &image,
+                          .oldLayout = ImageLayout::ColorAttachment,
+                          .newLayout = ImageLayout::ColorAttachment,
+                          .srcStage = PipelineStage::ColorAttachmentOutput,
+                          .srcAccess = Access::ColorAttachmentWrite,
+                          .dstStage = PipelineStage::ColorAttachmentOutput,
+                          .dstAccess = Access::ColorAttachmentRead | Access::ColorAttachmentWrite});
+
+        RenderingDesc overlay{};
+        overlay.width = swapchain_->width();
+        overlay.height = swapchain_->height();
+        overlay.colors.push_back(ColorTarget{.image = &image, .load = LoadOp::Load, .store = true});
+        ctx.beginRendering(overlay);
+        overlayRecorder_(ctx);
+        ctx.endRendering();
+    }
+
+    ctx.imageBarrier({.image = &image,
+                      .oldLayout = ImageLayout::ColorAttachment,
+                      .newLayout = ImageLayout::Present,
+                      .srcStage = PipelineStage::ColorAttachmentOutput,
+                      .srcAccess = Access::ColorAttachmentWrite,
+                      .dstStage = PipelineStage::AllCommands,
+                      .dstAccess = Access::None});
 }
 
 void FrameRenderer::setStaticRecording(bool enabled) {

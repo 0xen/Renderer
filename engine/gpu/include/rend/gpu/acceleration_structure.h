@@ -8,11 +8,11 @@
 #include <span>
 
 typedef struct VkAccelerationStructureKHR_T* VkAccelerationStructureKHR;
-typedef struct VkCommandBuffer_T* VkCommandBuffer;
 
 namespace rend::gpu {
 
 class Buffer;
+class CommandContext;
 class Device;
 
 // One BLAS or TLAS plus its storage buffer — the ray-tracing sibling of
@@ -76,7 +76,7 @@ public:
 
     // Records an in-place full rebuild from the slot's instance region
     // (dynamic TLAS only). The caller owns the surrounding barriers.
-    void recordRebuild(VkCommandBuffer cmd, std::uint32_t slot) const;
+    void recordRebuild(CommandContext& cmd, std::uint32_t slot) const;
 
     // Records an in-place refit (mode UPDATE, src == dst) into cmd. The
     // BLAS overload takes fresh geometry ranges — same count and primitive
@@ -85,8 +85,8 @@ public:
     // from the build; call it after a BLAS refit so the instance AABBs
     // follow. Both require allowUpdate at build time; the caller owns the
     // barriers around the build stages.
-    void recordRefit(VkCommandBuffer cmd, std::span<const TriangleGeometry> geometries) const;
-    void recordRefit(VkCommandBuffer cmd) const;
+    void recordRefit(CommandContext& cmd, std::span<const TriangleGeometry> geometries) const;
+    void recordRefit(CommandContext& cmd) const;
 
     ~AccelerationStructure();
 

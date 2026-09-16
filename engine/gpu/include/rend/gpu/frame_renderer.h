@@ -407,13 +407,20 @@ private:
     Result<void> createGBuffer();
     Result<void> recreateSwapchain();
     Result<void> waitForFence(VkFence fence, const char* what) const;
+    // Vulkan frame-loop wrappers: begin/end the command buffer around the
+    // backend-neutral recording below.
     Result<void> record(VkCommandBuffer cmd, std::uint32_t imageIndex, std::uint32_t slot,
                         const DrawBatch* batch, bool reusable) const;
+    Result<void> recordOverlay(VkCommandBuffer cmd, std::uint32_t imageIndex) const;
+    // The frame itself, recorded through CommandContext only (every pass,
+    // barrier and draw the batch asks for). A second backend reuses this.
+    void recordFrame(CommandContext& ctx, std::uint32_t imageIndex, std::uint32_t slot,
+                     const DrawBatch* batch) const;
+    void recordOverlayFrame(CommandContext& ctx, std::uint32_t imageIndex) const;
     Result<void> prerecordStatic(const DrawBatch* batch);
     void invalidateStatic();
-    Result<void> recordOverlay(VkCommandBuffer cmd, std::uint32_t imageIndex) const;
     // Runs every frame pass registered for `point` (context.point is set).
-    void recordPasses(VkCommandBuffer cmd, PassPoint point, PassContext& context) const;
+    void recordPasses(CommandContext& ctx, PassPoint point, PassContext& context) const;
 
     struct FrameData {
         VkCommandBuffer commandBuffer = nullptr;

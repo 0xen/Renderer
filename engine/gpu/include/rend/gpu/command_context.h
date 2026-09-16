@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <span>
 #include <vector>
 
 namespace rend::gpu {
@@ -35,6 +36,73 @@ enum class Stage : std::uint32_t {
 constexpr Stage operator|(Stage a, Stage b) {
     return static_cast<Stage>(static_cast<std::uint32_t>(a) | static_cast<std::uint32_t>(b));
 }
+
+// Explicit synchronization vocabulary for the engine's own passes: a
+// one-to-one rendering of the API's stage/access/layout model, so a
+// barrier expressed here records exactly what a hand-written one would.
+// Frame-pass consumers normally use the simpler ImageState/Stage helpers
+// above; these are for recording code that needs precise scopes.
+enum class PipelineStage : std::uint32_t {
+    None = 0,
+    DrawIndirect = 1u << 0,
+    VertexAttributeInput = 1u << 1,
+    IndexInput = 1u << 2,
+    VertexShader = 1u << 3,
+    FragmentShader = 1u << 4,
+    EarlyFragmentTests = 1u << 5,
+    LateFragmentTests = 1u << 6,
+    ColorAttachmentOutput = 1u << 7,
+    ComputeShader = 1u << 8,
+    Clear = 1u << 9,
+    AccelerationStructureBuild = 1u << 10,
+    AllCommands = 1u << 11,
+};
+constexpr PipelineStage operator|(PipelineStage a, PipelineStage b) {
+    return static_cast<PipelineStage>(static_cast<std::uint32_t>(a) |
+                                      static_cast<std::uint32_t>(b));
+}
+
+enum class Access : std::uint32_t {
+    None = 0,
+    IndirectCommandRead = 1u << 0,
+    VertexAttributeRead = 1u << 1,
+    ShaderRead = 1u << 2,
+    ShaderSampledRead = 1u << 3,
+    ShaderStorageRead = 1u << 4,
+    ShaderStorageWrite = 1u << 5,
+    ColorAttachmentRead = 1u << 6,
+    ColorAttachmentWrite = 1u << 7,
+    DepthStencilRead = 1u << 8,
+    DepthStencilWrite = 1u << 9,
+    TransferWrite = 1u << 10,
+    AccelerationStructureRead = 1u << 11,
+    AccelerationStructureWrite = 1u << 12,
+};
+constexpr Access operator|(Access a, Access b) {
+    return static_cast<Access>(static_cast<std::uint32_t>(a) | static_cast<std::uint32_t>(b));
+}
+
+// Image layouts the engine's passes move images between. ShaderReadOnly
+// is the generic sampled layout for color AND depth images; Present is
+// what the swapchain image must be in when the frame ends.
+enum class ImageLayout { Undefined, ColorAttachment, DepthAttachment, ShaderReadOnly, Present };
+
+struct MemoryBarrierDesc {
+    PipelineStage srcStage = PipelineStage::None;
+    Access srcAccess = Access::None;
+    PipelineStage dstStage = PipelineStage::None;
+    Access dstAccess = Access::None;
+};
+
+struct ImageBarrierDesc {
+    const Image* image = nullptr; // mip 0, layer 0; aspect from the format
+    ImageLayout oldLayout = ImageLayout::Undefined;
+    ImageLayout newLayout = ImageLayout::Undefined;
+    PipelineStage srcStage = PipelineStage::None;
+    Access srcAccess = Access::None;
+    PipelineStage dstStage = PipelineStage::None;
+    Access dstAccess = Access::None;
+};
 
 enum class LoadOp { Clear, Load, DontCare };
 
@@ -81,6 +149,18 @@ public:
     // access in `to` (buffers written by one pass, read by the next).
     void memoryBarrier(Stage from, Stage to);
 
+    // Precise barriers (see the vocabulary above): one dependency carrying
+    // any number of global memory and image barriers.
+    void barrier(std::span<const MemoryBarrierDesc> memory,
+                 std::span<const ImageBarrierDesc> images);
+    void memoryBarrier(const MemoryBarrierDesc& desc) { barrier({&desc, 1}, {}); }
+    void imageBarrier(const ImageBarrierDesc& desc) { barrier({}, {&desc, 1}); }
+
+    // Fills `size` bytes of the buffer at `offset` with a 32-bit value
+    // (both multiples of 4); a transfer-stage write.
+    void fillBuffer(const Buffer& buffer, std::uint64_t offset, std::uint64_t size,
+                    std::uint32_t value);
+
     // Dynamic rendering into the given targets; also sets the viewport and
     // scissor to the full extent. Attachments must already be in their
     // attachment states (imageBarrier). Must be closed with endRendering.
@@ -109,6 +189,10 @@ public:
                       std::uint32_t stride = 0);
     void drawIndexedIndirect(const Buffer& buffer, std::uint64_t offset, std::uint32_t drawCount,
                              std::uint32_t stride = 0);
+    // GPU-supplied draw count (uint32 at countOffset), capped at maxDrawCount.
+    void drawIndexedIndirectCount(const Buffer& buffer, std::uint64_t offset,
+                                  const Buffer& count, std::uint64_t countOffset,
+                                  std::uint32_t maxDrawCount, std::uint32_t stride = 0);
     void dispatch(std::uint32_t x, std::uint32_t y = 1, std::uint32_t z = 1);
 
 private:

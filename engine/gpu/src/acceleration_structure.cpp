@@ -1,5 +1,7 @@
 #include "rend/gpu/acceleration_structure.h"
 
+#include "rend/gpu/command_context.h"
+
 #include "rend/core/log.h"
 #include "rend/core/profile.h"
 #include "rend/gpu/buffer.h"
@@ -409,7 +411,8 @@ void AccelerationStructure::writeInstances(std::uint32_t slot,
                 (capacity_ - i) * sizeof(VkAccelerationStructureInstanceKHR));
 }
 
-void AccelerationStructure::recordRebuild(VkCommandBuffer cmd, std::uint32_t slot) const {
+void AccelerationStructure::recordRebuild(CommandContext& ctx, std::uint32_t slot) const {
+    const VkCommandBuffer cmd = static_cast<VkCommandBuffer>(ctx.nativeHandle());
     VkAccelerationStructureGeometryKHR geo{};
     geo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
     geo.geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR;
@@ -435,8 +438,9 @@ void AccelerationStructure::recordRebuild(VkCommandBuffer cmd, std::uint32_t slo
     vkCmdBuildAccelerationStructuresKHR(cmd, 1, &build, &rangePtr);
 }
 
-void AccelerationStructure::recordRefit(VkCommandBuffer cmd,
+void AccelerationStructure::recordRefit(CommandContext& ctx,
                                         std::span<const TriangleGeometry> geometries) const {
+    const VkCommandBuffer cmd = static_cast<VkCommandBuffer>(ctx.nativeHandle());
     std::vector<VkAccelerationStructureGeometryKHR> geos;
     std::vector<VkAccelerationStructureBuildRangeInfoKHR> ranges;
     fillTriangleGeometries(*device_, geometries, geos, ranges);
@@ -457,7 +461,8 @@ void AccelerationStructure::recordRefit(VkCommandBuffer cmd,
     vkCmdBuildAccelerationStructuresKHR(cmd, 1, &build, &rangePtr);
 }
 
-void AccelerationStructure::recordRefit(VkCommandBuffer cmd) const {
+void AccelerationStructure::recordRefit(CommandContext& ctx) const {
+    const VkCommandBuffer cmd = static_cast<VkCommandBuffer>(ctx.nativeHandle());
     VkAccelerationStructureGeometryKHR geo{};
     geo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
     geo.geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR;
