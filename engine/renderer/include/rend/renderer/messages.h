@@ -105,6 +105,34 @@ struct SetSettingCmd {
     char value[kSettingOptionChars] = {}; // e.g. "raytraced", "on", "0.08"
 };
 
+// Animation clip selection. Model and clip are named rather than indexed
+// because a producer sees names, not the viewer's load order; an empty
+// model targets every animated model in the scene. A clip the model does
+// not have is logged and ignored (the mirrored AnimationState simply does
+// not change, which is how a script detects the miss).
+inline constexpr std::uint32_t kAnimationNameChars = 48;
+inline constexpr std::uint32_t kAnimationMaxClips = 16;
+
+// Which members of SetAnimationCmd the producer actually set. One command
+// carries the whole playback vocabulary, and the mask is what keeps
+// "change the speed" from also re-triggering the clip.
+enum AnimationField : std::uint32_t {
+    kAnimationFieldClip = 1u << 0,
+    kAnimationFieldSpeed = 1u << 1,
+    kAnimationFieldPaused = 1u << 2,
+    kAnimationFieldTime = 1u << 3,
+};
+
+struct SetAnimationCmd {
+    char model[kAnimationNameChars] = {}; // empty = every animated model
+    char clip[kAnimationNameChars] = {};
+    float blendSeconds = 0.25f; // cross-fade out of the running clip
+    float speed = 1.0f;         // time scale; 0 freezes, negative plays backwards
+    float time = 0.0f;          // seek target in seconds, wrapped into the clip
+    std::uint32_t paused = 0;
+    std::uint32_t fields = 0; // AnimationField bits
+};
+
 struct Command {
     enum class Type : std::uint32_t {
         LoadModel,
@@ -118,6 +146,7 @@ struct Command {
         SetPointLightScale,
         SetCamera,
         SetSetting,
+        SetAnimation,
     };
     Type type = Type::LoadModel;
     union {
@@ -132,6 +161,7 @@ struct Command {
         SetPointLightScaleCmd pointLightScale;
         SetCameraCmd camera;
         SetSettingCmd setting;
+        SetAnimationCmd animation;
     };
     Command() : load{} {}
 };
@@ -182,14 +212,40 @@ struct SettingRejectedEvent {
     char reason[160] = {};
 };
 
+// One animated model's clip state, broadcast at load and on every switch
+// (the same mirror idea as SettingState): `clip` is what is playing now,
+// `clips` the full menu. Models with more than kAnimationMaxClips clips
+// report the first kAnimationMaxClips — clipCount is the reported count,
+// not necessarily the model's total.
+struct AnimationStateEvent {
+    char model[kAnimationNameChars] = {};
+    char clip[kAnimationNameChars] = {};
+    float duration = 0.0f; // of the playing clip, seconds
+    // Playback time AT THE MOMENT OF THE BROADCAST. State broadcasts only
+    // on change, so this is exact right after a switch/seek and goes stale
+    // while the clip free-runs — it is a seek acknowledgement, not a clock.
+    float time = 0.0f;
+    float speed = 1.0f;
+    std::uint32_t paused = 0;
+    std::uint32_t clipCount = 0;
+    char clips[kAnimationMaxClips][kAnimationNameChars] = {};
+};
+
 struct Event {
-    enum class Type : std::uint32_t { ModelReady, SettingState, SettingRejected, CameraState };
+    enum class Type : std::uint32_t {
+        ModelReady,
+        SettingState,
+        SettingRejected,
+        CameraState,
+        AnimationState,
+    };
     Type type = Type::ModelReady;
     union {
         ModelReadyEvent ready;
         SettingStateEvent settingState;
         SettingRejectedEvent settingRejected;
         CameraStateEvent cameraState;
+        AnimationStateEvent animationState;
     };
     Event() : ready{} {}
 };

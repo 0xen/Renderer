@@ -92,6 +92,25 @@ triangles far away, chosen so the simplification error stays under about a pixel
 `lod="off"` locks the model to full detail (hero assets, close-up subjects); animated
 meshes and meshes under a size floor are always full detail regardless.
 
+`Model` may carry an optional `<Animation clip="name"/>` child naming which animation
+clip an animated model starts on:
+
+```xml
+<Model name="xbot">
+    <Shader path="pipelines/opaque.xml" />
+    <Mesh path="model/Xbot/Xbot.gltf" />
+    <Animation clip="idle" />
+</Model>
+```
+
+`clip` is a clip name as it appears in the source file (glTF `animations[].name`);
+omitting the element — or naming a clip the model does not have, which warns — starts
+the first clip, which is what every scene did before this element existed. Clips always
+loop. At runtime the number keys `1`-`9` switch the viewer to the first nine clips of
+every animated model, cross-fading over 0.25 s; the load log lists each animated
+model's clips with their key and duration. Python scripts switch clips through
+`rend.set_animation()` (see `pyhost/CLAUDE.md`).
+
 `ReflectionProbe position="x y z"` (optional, zero or more) marks where a probe-based
 renderer captures its environment cubemap at load time. Like lights it describes the
 scene, not the technique. Only the first probe is used for now (single probe, no

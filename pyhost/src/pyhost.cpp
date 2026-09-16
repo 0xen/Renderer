@@ -36,12 +36,25 @@ struct SettingMirror {
     std::vector<std::string> options;
 };
 
+// Mirrored animation state, one entry per animated model name: what is
+// playing and the full clip menu, refreshed by every AnimationState
+// broadcast. Same reasoning as SettingMirror — synchronous getters.
+struct AnimationMirror {
+    std::string clip;
+    std::vector<std::string> clips;
+    float duration = 0.0f;
+    float time = 0.0f; // as of the last broadcast, not a live clock
+    float speed = 1.0f;
+    bool paused = false;
+};
+
 struct HostState {
     renderer::MessageQueue* queue = nullptr;
     std::optional<renderer::Sender> sender;         // script-thread-only
     std::optional<renderer::EventReceiver> receiver; // script-thread-only
     std::vector<renderer::Event> eventCache; // polled but unconsumed events
     std::map<std::string, SettingMirror> settings;
+    std::map<std::string, AnimationMirror> animations;
     // Latest broadcast camera pose (same mirror idea as settings): the
     // viewer sends CameraState whenever the pose changes, get_camera
     // answers from here. Empty until the first broadcast lands.
@@ -75,6 +88,7 @@ py::dict eventToDict(const renderer::Event& event) {
         break;
     case renderer::Event::Type::SettingState:
     case renderer::Event::Type::CameraState:
+    case renderer::Event::Type::AnimationState:
         break; // absorbed into their mirrors, never surfaced raw
     }
     return out;
@@ -97,6 +111,18 @@ void refillEventCache() {
             }
         } else if (event.type == renderer::Event::Type::CameraState) {
             g_host.cameraMirror = event.cameraState;
+        } else if (event.type == renderer::Event::Type::AnimationState) {
+            AnimationMirror& mirror = g_host.animations[event.animationState.model];
+            mirror.clip = event.animationState.clip;
+            mirror.duration = event.animationState.duration;
+            mirror.time = event.animationState.time;
+            mirror.speed = event.animationState.speed;
+            mirror.paused = event.animationState.paused != 0;
+            mirror.clips.clear();
+            for (std::uint32_t i = 0;
+                 i < event.animationState.clipCount && i < renderer::kAnimationMaxClips; ++i) {
+                mirror.clips.emplace_back(event.animationState.clips[i]);
+            }
         } else {
             g_host.eventCache.push_back(event);
         }
@@ -379,6 +405,154 @@ PYBIND11_EMBEDDED_MODULE(rend, m) {
         "Name of the setting overriding this one (e.g. 'primary' while "
         "traced primary rays subsume the shadow choice); None when not "
         "overridden.");
+
+    // Every animation binding funnels through here: one command type with a
+    // field mask, so changing the speed never re-triggers the clip.
+    auto pushAnimation = [](const std::string& model, std::uint32_t fields,
+                            const std::string& clip, float blend, float speed, float time,
+                            bool paused) {
+        if (clip.size() >= renderer::kAnimationNameChars ||
+            model.size() >= renderer::kAnimationNameChars) {
+            throw py::value_error("model/clip name too long");
+        }
+        renderer::Command cmd;
+        cmd.type = renderer::Command::Type::SetAnimation;
+        cmd.animation = {};
+        std::snprintf(cmd.animation.model, sizeof(cmd.animation.model), "%s", model.c_str());
+        std::snprintf(cmd.animation.clip, sizeof(cmd.animation.clip), "%s", clip.c_str());
+        cmd.animation.blendSeconds = blend;
+        cmd.animation.speed = speed;
+        cmd.animation.time = time;
+        cmd.animation.paused = paused ? 1u : 0u;
+        cmd.animation.fields = fields;
+        pushCommand(cmd);
+    };
+
+    m.def(
+        "set_animation",
+        [pushAnimation](const std::string& clip, const std::string& model, float blend) {
+            pushAnimation(model, renderer::kAnimationFieldClip, clip, blend, 1.0f, 0.0f,
+                          false);
+        },
+        py::arg("clip"), py::arg("model") = std::string(), py::arg("blend") = 0.25f,
+        "Switch an animated model to the named clip, cross-fading out of "
+        "the running one over `blend` seconds (0 = snap). `model` is a "
+        "scene-XML <Model name>; the default empty string targets EVERY "
+        "animated model. Async like every command: a clip the model does "
+        "not have is logged viewer-side and ignored, so confirm with "
+        "get_animation() rather than assuming.");
+
+    m.def(
+        "set_animation_speed",
+        [pushAnimation](float speed, const std::string& model) {
+            pushAnimation(model, renderer::kAnimationFieldSpeed, {}, 0.0f, speed, 0.0f, false);
+        },
+        py::arg("speed"), py::arg("model") = std::string(),
+        "Playback time scale: 1.0 normal, 0.5 half speed, 0 freezes the "
+        "clip where it stands, negative plays it backwards (times wrap at "
+        "both ends). Leaves the clip and the pause flag alone.");
+
+    m.def(
+        "pause_animation",
+        [pushAnimation](bool paused, const std::string& model) {
+            pushAnimation(model, renderer::kAnimationFieldPaused, {}, 0.0f, 1.0f, 0.0f,
+                          paused);
+        },
+        py::arg("paused") = true, py::arg("model") = std::string(),
+        "Hold the clip (and any running cross-fade) at its current time. "
+        "The pose is still re-evaluated every frame, so a seek or a clip "
+        "switch while paused shows immediately. Unlike speed=0 this "
+        "remembers the speed to resume at.");
+
+    m.def(
+        "set_animation_time",
+        [pushAnimation](float seconds, const std::string& model) {
+            pushAnimation(model, renderer::kAnimationFieldTime, {}, 0.0f, 1.0f, seconds,
+                          false);
+        },
+        py::arg("seconds"), py::arg("model") = std::string(),
+        "Seek the playing clip, wrapping into [0, duration). Combine with "
+        "pause_animation() to step frame by frame; the resulting time "
+        "comes back in get_animation_state().");
+
+    m.def(
+        "list_animations",
+        [](const std::string& model) {
+            refillEventCache();
+            py::dict out;
+            for (const auto& [name, mirror] : g_host.animations) {
+                if (!model.empty() && name != model) {
+                    continue;
+                }
+                py::list clips;
+                for (const std::string& clip : mirror.clips) {
+                    clips.append(clip);
+                }
+                out[py::str(name)] = clips;
+            }
+            return out;
+        },
+        py::arg("model") = std::string(),
+        "{model name: [clip names]} for every animated model in the scene "
+        "(one entry when `model` names one). Mirrored state, so it answers "
+        "instantly — but it is EMPTY until the viewer's first broadcast "
+        "lands, exactly like the settings mirror.");
+
+    m.def(
+        "get_animation",
+        [](const std::string& model) -> py::object {
+            refillEventCache();
+            if (model.empty()) {
+                if (g_host.animations.size() == 1) {
+                    return py::str(g_host.animations.begin()->second.clip);
+                }
+                return py::none();
+            }
+            const auto it = g_host.animations.find(model);
+            return it != g_host.animations.end() ? py::object(py::str(it->second.clip))
+                                                 : py::none();
+        },
+        py::arg("model") = std::string(),
+        "The clip a model is playing now, from the mirror. With no model "
+        "name it answers only when the scene has exactly ONE animated "
+        "model; otherwise None (name the model).");
+
+    m.def(
+        "get_animation_state",
+        [](const std::string& model) -> py::object {
+            refillEventCache();
+            auto it = g_host.animations.end();
+            if (model.empty()) {
+                if (g_host.animations.size() == 1) {
+                    it = g_host.animations.begin();
+                }
+            } else {
+                it = g_host.animations.find(model);
+            }
+            if (it == g_host.animations.end()) {
+                return py::none();
+            }
+            py::list clips;
+            for (const std::string& clip : it->second.clips) {
+                clips.append(clip);
+            }
+            py::dict out;
+            out["model"] = it->first;
+            out["clip"] = it->second.clip;
+            out["clips"] = clips;
+            out["duration"] = it->second.duration;
+            out["time"] = it->second.time;
+            out["speed"] = it->second.speed;
+            out["paused"] = it->second.paused;
+            return out;
+        },
+        py::arg("model") = std::string(),
+        "Full mirrored playback state as a dict: model, clip, clips, "
+        "duration, time, speed, paused. NOTE `time` is the clip time at "
+        "the last state change (state broadcasts on change, not per "
+        "frame), so it is exact after a seek or switch and stale while a "
+        "clip free-runs. None when the name is unknown, or when the name "
+        "is omitted and the scene has more than one animated model.");
 
     m.def(
         "poll_events",

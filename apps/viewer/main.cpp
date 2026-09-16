@@ -370,17 +370,59 @@ struct AnimatedMeshEntry {
 };
 
 // CPU-side playback state for one animated model, sampled every frame.
+// One animated model's playback: which clip is running, and — while a
+// switch is cross-fading — the outgoing clip, which keeps advancing so the
+// blend is between two LIVE poses rather than a frozen one. Clip state is
+// pure CPU: joint matrices land in a per-slot host-visible buffer, so
+// switching clips never invalidates a static command recording.
 struct AnimatedModelState {
     const assetio::ModelData* data = nullptr;
     std::size_t modelIndex = 0;
     math::Mat4 modelMatrix{};
     std::uint32_t jointBase = 0; // into the shared joint matrix array
+    std::size_t clip = 0;        // into data->animations
     float time = 0.0f;
+    float speed = 1.0f; // time scale; 0 freezes, negative plays backwards
+    bool paused = false;
+    std::size_t fromClip = 0;  // outgoing clip; meaningful only while fading
+    float fromTime = 0.0f;
+    float fade = 0.0f;         // seconds of cross-fade left; 0 = not fading
+    float fadeDuration = 0.0f; // what `fade` started at
     std::vector<std::array<float, 3>> t;
     std::vector<std::array<float, 4>> r;
     std::vector<std::array<float, 3>> s;
+    // Outgoing pose during a cross-fade.
+    std::vector<std::array<float, 3>> fromT;
+    std::vector<std::array<float, 4>> fromR;
+    std::vector<std::array<float, 3>> fromS;
     std::vector<math::Mat4> world;
 };
+
+// Default cross-fade for a clip switch: long enough to hide the pose
+// discontinuity, short enough that the new clip reads as immediate.
+constexpr float kAnimationBlendSeconds = 0.25f;
+
+// Start clip `index` on `state`, cross-fading out of whatever is playing
+// over `fadeSeconds`. Re-selecting the running clip is a no-op so a held
+// key doesn't restart it. Returns false if the index is out of range.
+bool selectAnimationClip(AnimatedModelState& state, std::size_t index, float fadeSeconds) {
+    if (!state.data || index >= state.data->animations.size()) {
+        return false;
+    }
+    if (index == state.clip && state.fade <= 0.0f) {
+        return true;
+    }
+    // Switching mid-fade: the pose on screen is the blend, but blending a
+    // blend needs a pose stack. Fading from the outgoing clip instead is
+    // one frame of imprecision and keeps the state flat.
+    state.fromClip = state.clip;
+    state.fromTime = state.time;
+    state.clip = index;
+    state.time = 0.0f;
+    state.fade = fadeSeconds;
+    state.fadeDuration = fadeSeconds;
+    return true;
+}
 
 // Evaluate one channel at `time` into out[components]. Rotation lerps with
 // hemisphere correction; CubicSpline falls back to its value tuples.
@@ -1246,6 +1288,8 @@ int main(int argc, char** argv) {
     std::vector<AnimatedModelState> animatedStates;
     std::vector<math::Mat4> jointMatricesCpu;
     std::vector<float> morphWeightsFrame;
+    // Outgoing clip's morph weights while a cross-fade runs (same layout).
+    std::vector<float> morphWeightsFade;
     std::uint32_t totalJoints = 0;
     std::unique_ptr<gpu::Buffer> lightBuffer;  // one LightData per frame slot, CPU-written
     std::vector<std::unique_ptr<gpu::Image>> shadowMaps; // one per cascade
@@ -2114,6 +2158,21 @@ int main(int argc, char** argv) {
                 state.modelIndex = modelIndex;
                 state.modelMatrix = transformMatrix(model.desc.transform);
                 state.jointBase = totalJoints;
+                // <Animation clip="name"/> picks the starting clip; empty or
+                // unknown falls back to the first (the historical default).
+                if (!model.desc.animationClip.empty()) {
+                    const auto& clips = model.data.animations;
+                    const auto found = std::find_if(
+                        clips.begin(), clips.end(), [&](const assetio::AnimationData& a) {
+                            return a.name == model.desc.animationClip;
+                        });
+                    if (found != clips.end()) {
+                        state.clip = static_cast<std::size_t>(found - clips.begin());
+                    } else {
+                        log::warn("Model '{}': no animation clip named '{}'; using the first",
+                                  model.desc.name, model.desc.animationClip);
+                    }
+                }
                 totalJoints +=
                     static_cast<std::uint32_t>(model.data.skeleton.jointNodes.size());
                 animatedStates.push_back(std::move(state));
@@ -2171,6 +2230,23 @@ int main(int argc, char** argv) {
             }
             log::info("Animation ready: {} animated meshes, {} joints, {} morph weights",
                       animatedMeshes.size(), totalJoints, morphWeightsFrame.size());
+            for (const AnimatedModelState& state : animatedStates) {
+                const auto& clips = state.data->animations;
+                if (clips.empty()) {
+                    continue;
+                }
+                std::string list;
+                for (std::size_t i = 0; i < clips.size(); ++i) {
+                    if (i < 9) {
+                        list += std::format("{}[{}]={} ({:.2f}s) ", i == state.clip ? "*" : "",
+                                            i + 1, clips[i].name, clips[i].duration);
+                    } else {
+                        list += std::format("{} ({:.2f}s) ", clips[i].name, clips[i].duration);
+                    }
+                }
+                log::info("  '{}' clips (number keys 1-9 switch, * = playing): {}",
+                          scene->models[state.modelIndex].desc.name, list);
+            }
         }
 
         {
@@ -3668,6 +3744,40 @@ int main(int argc, char** argv) {
         event.cameraState = state;
         messageQueue.pushEvent(event);
     };
+    // Animation clip state broadcasts the same way settings do: one
+    // AnimationState per animated model at startup and after every switch,
+    // so a script's list_animations/get_animation answer from a mirror
+    // instead of a round trip. Set the flag; the frame loop sends.
+    bool animationStatesDirty = true;
+    auto broadcastAnimations = [&] {
+        if (!animationStatesDirty) {
+            return;
+        }
+        animationStatesDirty = false;
+        for (const AnimatedModelState& state : animatedStates) {
+            const auto& clips = state.data->animations;
+            if (clips.empty()) {
+                continue;
+            }
+            renderer::Event event;
+            event.type = renderer::Event::Type::AnimationState;
+            event.animationState = {};
+            renderer::AnimationStateEvent& out = event.animationState;
+            std::snprintf(out.model, sizeof(out.model), "%s",
+                          scene->models[state.modelIndex].desc.name.c_str());
+            std::snprintf(out.clip, sizeof(out.clip), "%s", clips[state.clip].name.c_str());
+            out.duration = clips[state.clip].duration;
+            out.time = state.time;
+            out.speed = state.speed;
+            out.paused = state.paused ? 1u : 0u;
+            out.clipCount = static_cast<std::uint32_t>(
+                std::min<std::size_t>(clips.size(), renderer::kAnimationMaxClips));
+            for (std::uint32_t i = 0; i < out.clipCount; ++i) {
+                std::snprintf(out.clips[i], sizeof(out.clips[i]), "%s", clips[i].name.c_str());
+            }
+            messageQueue.pushEvent(event);
+        }
+    };
     // Events broadcast to per-consumer receivers; the Python host holds
     // one. The viewer itself currently consumes none (a receiver nothing
     // polls would only accumulate, so don't create one idly).
@@ -4791,6 +4901,67 @@ int main(int argc, char** argv) {
                 flyRemaining = 0.0f;
                 break;
             }
+            case renderer::Command::Type::SetAnimation: {
+                // Named, not indexed: a script sees the scene's model names
+                // and the file's clip names, never the viewer's load order.
+                // An empty model name means every animated model.
+                const std::string wantModel = cmd.animation.model;
+                const std::string wantClip = cmd.animation.clip;
+                const float blend = std::max(cmd.animation.blendSeconds, 0.0f);
+                bool matchedModel = false;
+                for (AnimatedModelState& state : animatedStates) {
+                    const std::string& modelName = scene->models[state.modelIndex].desc.name;
+                    if (!wantModel.empty() && modelName != wantModel) {
+                        continue;
+                    }
+                    matchedModel = true;
+                    const auto& clips = state.data->animations;
+                    if ((cmd.animation.fields & renderer::kAnimationFieldSpeed) != 0) {
+                        state.speed = cmd.animation.speed;
+                        animationStatesDirty = true;
+                    }
+                    if ((cmd.animation.fields & renderer::kAnimationFieldPaused) != 0) {
+                        state.paused = cmd.animation.paused != 0;
+                        animationStatesDirty = true;
+                    }
+                    if ((cmd.animation.fields & renderer::kAnimationFieldClip) != 0) {
+                        const auto found =
+                            std::find_if(clips.begin(), clips.end(),
+                                         [&](const assetio::AnimationData& a) {
+                                             return a.name == wantClip;
+                                         });
+                        if (found == clips.end()) {
+                            log::warn("set_animation('{}', '{}'): model has no such clip",
+                                      modelName, wantClip);
+                            continue;
+                        }
+                        if (selectAnimationClip(
+                                state, static_cast<std::size_t>(found - clips.begin()),
+                                blend)) {
+                            animationStatesDirty = true;
+                        }
+                    }
+                    // Seek last so it wins over a clip switch's time reset.
+                    if ((cmd.animation.fields & renderer::kAnimationFieldTime) != 0 &&
+                        state.clip < clips.size()) {
+                        const float duration = clips[state.clip].duration;
+                        float t = cmd.animation.time;
+                        if (duration > 0.0f) {
+                            t = std::fmod(t, duration);
+                            if (t < 0.0f) {
+                                t += duration;
+                            }
+                        }
+                        state.time = t;
+                        animationStatesDirty = true;
+                    }
+                }
+                if (!matchedModel) {
+                    log::warn("set_animation('{}', '{}'): no animated model by that name",
+                              wantModel, wantClip);
+                }
+                break;
+            }
             case renderer::Command::Type::SetSetting: {
                 // Same authority the ImGui rows use; a refusal (unknown
                 // slot, unlisted option, overridden slot) answers with a
@@ -5057,6 +5228,27 @@ int main(int argc, char** argv) {
                     log::info("Switched to {} recording",
                               renderer->staticRecording() ? "static" : "per-frame");
                 }
+                // Number keys 1-9 select an animation clip on every
+                // animated model, cross-fading out of the current one.
+                // Joint matrices are per-slot host-visible data, so nothing
+                // baked into a static recording is affected.
+                if (event.key >= platform::Key::Num1 && event.key <= platform::Key::Num9 &&
+                    !animatedStates.empty()) {
+                    const auto clip = static_cast<std::size_t>(
+                        static_cast<int>(event.key) - static_cast<int>(platform::Key::Num1));
+                    for (AnimatedModelState& state : animatedStates) {
+                        if (clip >= state.data->animations.size()) {
+                            continue;
+                        }
+                        if (state.clip != clip &&
+                            selectAnimationClip(state, clip, kAnimationBlendSeconds)) {
+                            animationStatesDirty = true;
+                            log::info("Animation: '{}' -> clip {} '{}'",
+                                      scene->models[state.modelIndex].desc.name, clip + 1,
+                                      state.data->animations[clip].name);
+                        }
+                    }
+                }
                 if (event.key == platform::Key::G) {
                     if (collisionWorld.empty()) {
                         log::info("Walk mode unavailable: no collidable scene geometry");
@@ -5244,6 +5436,7 @@ int main(int argc, char** argv) {
             }
             processMessages(renderer->frameSlot());
             broadcastSettings();
+            broadcastAnimations();
             // After the drain so a scripted SetCamera is reflected in the
             // same frame's broadcast (input/fly-in ran above).
             broadcastCamera();
@@ -5320,38 +5513,111 @@ int main(int argc, char** argv) {
                         state.r[i] = skeleton.nodes[i].rotation;
                         state.s[i] = skeleton.nodes[i].scale;
                     }
-                    if (!state.data->animations.empty()) {
-                        const auto& anim = state.data->animations.front();
-                        if (anim.duration > 0.0f) {
-                            state.time = std::fmod(state.time + deltaSeconds, anim.duration);
-                        }
+                    // Evaluate one clip at one time into the given pose
+                    // arrays (the rest pose is already loaded, so nodes the
+                    // clip never targets keep it) plus the frame's morph
+                    // weights.
+                    auto evaluateClip = [&](std::size_t clipIndex, float clipTime,
+                                            std::vector<std::array<float, 3>>& outT,
+                                            std::vector<std::array<float, 4>>& outR,
+                                            std::vector<std::array<float, 3>>& outS,
+                                            std::vector<float>& outWeights) {
+                        const auto& anim = state.data->animations[clipIndex];
                         for (const auto& channel : anim.channels) {
                             switch (channel.path) {
                             case assetio::AnimationPath::Translation:
-                                sampleChannel(channel, state.time,
-                                              state.t[channel.node].data(), 3);
+                                sampleChannel(channel, clipTime, outT[channel.node].data(), 3);
                                 break;
                             case assetio::AnimationPath::Rotation:
-                                sampleChannel(channel, state.time,
-                                              state.r[channel.node].data(), 4);
+                                sampleChannel(channel, clipTime, outR[channel.node].data(), 4);
                                 break;
                             case assetio::AnimationPath::Scale:
-                                sampleChannel(channel, state.time,
-                                              state.s[channel.node].data(), 3);
+                                sampleChannel(channel, clipTime, outS[channel.node].data(), 3);
                                 break;
                             case assetio::AnimationPath::Weights:
                                 for (const AnimatedMeshEntry& entry : animatedMeshes) {
                                     if (entry.modelIndex == state.modelIndex &&
                                         entry.sourceNode == channel.node &&
-                                        entry.morphTargetCount > 0) {
-                                        sampleChannel(channel, state.time,
-                                                      morphWeightsFrame.data() +
+                                        entry.morphTargetCount > 0 && !outWeights.empty()) {
+                                        sampleChannel(channel, clipTime,
+                                                      outWeights.data() +
                                                           entry.morphWeightOffset,
                                                       entry.morphTargetCount);
                                     }
                                 }
                                 break;
                             }
+                        }
+                    };
+                    if (!state.data->animations.empty()) {
+                        if (state.clip >= state.data->animations.size()) {
+                            state.clip = 0;
+                        }
+                        // Paused freezes the clock but still re-evaluates
+                        // the pose, so a seek or a clip switch while paused
+                        // shows up immediately.
+                        const float step = state.paused ? 0.0f : deltaSeconds * state.speed;
+                        auto advance = [&](std::size_t clipIndex, float& clipTime) {
+                            const float duration = state.data->animations[clipIndex].duration;
+                            clipTime += step;
+                            if (duration > 0.0f) {
+                                clipTime = std::fmod(clipTime, duration);
+                                if (clipTime < 0.0f) {
+                                    clipTime += duration; // reverse playback wraps too
+                                }
+                            }
+                        };
+                        advance(state.clip, state.time);
+                        // Cross-fade: BOTH clips keep running and their poses
+                        // blend by w (0 the instant of the switch, 1 when the
+                        // fade ends), so the outgoing motion continues instead
+                        // of freezing at the pose it was caught in.
+                        if (state.fade > 0.0f && state.fadeDuration > 0.0f &&
+                            state.fromClip < state.data->animations.size()) {
+                            advance(state.fromClip, state.fromTime);
+                            state.fade = std::max(
+                                0.0f, state.fade - (state.paused ? 0.0f : deltaSeconds));
+                            const float w = 1.0f - state.fade / state.fadeDuration;
+                            state.fromT = state.t;
+                            state.fromR = state.r;
+                            state.fromS = state.s;
+                            morphWeightsFade = morphWeightsFrame;
+                            evaluateClip(state.fromClip, state.fromTime, state.fromT,
+                                         state.fromR, state.fromS, morphWeightsFade);
+                            evaluateClip(state.clip, state.time, state.t, state.r, state.s,
+                                         morphWeightsFrame);
+                            for (std::size_t i = 0; i < nodeCount; ++i) {
+                                for (int c = 0; c < 3; ++c) {
+                                    state.t[i][c] =
+                                        state.fromT[i][c] * (1.0f - w) + state.t[i][c] * w;
+                                    state.s[i][c] =
+                                        state.fromS[i][c] * (1.0f - w) + state.s[i][c] * w;
+                                }
+                                const float* a = state.fromR[i].data();
+                                float* b = state.r[i].data();
+                                const float dot =
+                                    a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
+                                const float sign = dot < 0.0f ? -1.0f : 1.0f; // shortest arc
+                                float len = 0.0f;
+                                for (int c = 0; c < 4; ++c) {
+                                    b[c] = a[c] * (1.0f - w) + b[c] * sign * w;
+                                    len += b[c] * b[c];
+                                }
+                                len = std::sqrt(len);
+                                if (len > 0.0f) {
+                                    for (int c = 0; c < 4; ++c) {
+                                        b[c] /= len;
+                                    }
+                                }
+                            }
+                            for (std::size_t i = 0; i < morphWeightsFrame.size(); ++i) {
+                                morphWeightsFrame[i] = morphWeightsFade[i] * (1.0f - w) +
+                                                       morphWeightsFrame[i] * w;
+                            }
+                        } else {
+                            state.fade = 0.0f;
+                            evaluateClip(state.clip, state.time, state.t, state.r, state.s,
+                                         morphWeightsFrame);
                         }
                     }
                     for (std::size_t i = 0; i < nodeCount; ++i) {

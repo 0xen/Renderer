@@ -183,6 +183,11 @@ struct ModelNodeDesc {
     // locks the model's meshes to full detail (no simplified chains are
     // built, the cull pass never swaps their index ranges).
     bool lodEnabled = true;
+    // Which animation clip an animated model starts on
+    // (<Animation clip="walk"/>): a ModelData::animations name. Empty =
+    // the first clip, the historical behaviour. An unknown name warns and
+    // falls back to the first clip.
+    std::string animationClip;
 };
 
 // Scene-wide asset-loading intent (<Scene loading=...>): how the app

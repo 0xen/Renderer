@@ -31,6 +31,15 @@ Key translateKey(SDL_Keycode code) {
     case SDLK_Q: return Key::Q;
     case SDLK_E: return Key::E;
     case SDLK_G: return Key::G;
+    case SDLK_1: return Key::Num1;
+    case SDLK_2: return Key::Num2;
+    case SDLK_3: return Key::Num3;
+    case SDLK_4: return Key::Num4;
+    case SDLK_5: return Key::Num5;
+    case SDLK_6: return Key::Num6;
+    case SDLK_7: return Key::Num7;
+    case SDLK_8: return Key::Num8;
+    case SDLK_9: return Key::Num9;
     case SDLK_LSHIFT: return Key::LeftShift;
     case SDLK_LCTRL: return Key::LeftCtrl;
     case SDLK_UP: return Key::Up;

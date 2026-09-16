@@ -165,6 +165,7 @@ Result<SceneDesc> parseScene(const std::filesystem::path& xmlFile) {
         desc.pipelinePath = model.child("Shader").attribute("path").as_string("");
         desc.reflective = model.attribute("reflective").as_bool(false);
         desc.lodEnabled = model.attribute("lod").as_bool(true);
+        desc.animationClip = model.child("Animation").attribute("clip").as_string("");
         const char* meshPath = model.child("Mesh").attribute("path").as_string("");
         if (*meshPath == '\0') {
             return Error{std::format("Model '{}' has no <Mesh path=...>", desc.name)};
