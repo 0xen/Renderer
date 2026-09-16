@@ -1,5 +1,7 @@
 #include "rend/gpu/texture_uploader.h"
 
+#include "vulkan/vulkan_types.h"
+
 #include "rend/core/profile.h"
 #include "rend/gpu/buffer.h"
 #include "rend/gpu/device.h"
@@ -47,8 +49,9 @@ void applyBarrier(VkCommandBuffer cmd, const VkImageMemoryBarrier2& barrier) {
 
 } // namespace
 
-Result<std::unique_ptr<TextureUploader>> TextureUploader::create(const Device& device) {
-    auto uploader = std::unique_ptr<TextureUploader>(new TextureUploader());
+Result<std::unique_ptr<TextureUploader>> VulkanTextureUploader::create(const Device& deviceBase) {
+    const VulkanDevice& device = vk(deviceBase);
+    auto uploader = std::unique_ptr<VulkanTextureUploader>(new VulkanTextureUploader());
     uploader->device_ = &device;
 
     VkCommandPoolCreateInfo poolInfo{};
@@ -77,10 +80,10 @@ Result<std::unique_ptr<TextureUploader>> TextureUploader::create(const Device& d
         r != VK_SUCCESS) {
         return Error{std::format("vkCreateFence failed ({})", static_cast<int>(r))};
     }
-    return uploader;
+    return std::unique_ptr<TextureUploader>(std::move(uploader));
 }
 
-TextureUploader::~TextureUploader() {
+VulkanTextureUploader::~VulkanTextureUploader() {
     if (!device_) {
         return;
     }
@@ -92,7 +95,7 @@ TextureUploader::~TextureUploader() {
     }
 }
 
-Result<void> TextureUploader::ensureStagingCapacity(std::uint64_t required) {
+Result<void> VulkanTextureUploader::ensureStagingCapacity(std::uint64_t required) {
     if (staging_ && staging_->size() >= required) {
         return {};
     }
@@ -108,7 +111,7 @@ Result<void> TextureUploader::ensureStagingCapacity(std::uint64_t required) {
     return {};
 }
 
-Result<std::unique_ptr<Image>> TextureUploader::upload(std::uint32_t width, std::uint32_t height,
+Result<std::unique_ptr<Image>> VulkanTextureUploader::upload(std::uint32_t width, std::uint32_t height,
                                                        const void* rgba8, bool srgb) {
     REND_PROFILE_ZONE("TextureUpload");
     const std::uint64_t byteSize = 4ull * width * height;
@@ -146,7 +149,7 @@ Result<std::unique_ptr<Image>> TextureUploader::upload(std::uint32_t width, std:
         return Error{std::format("vkBeginCommandBuffer failed ({})", static_cast<int>(r))};
     }
 
-    applyBarrier(cmd_, mipBarrier(image->handle(), 0, mipLevels, VK_IMAGE_LAYOUT_UNDEFINED,
+    applyBarrier(cmd_, mipBarrier(vk(*image).handle(), 0, mipLevels, VK_IMAGE_LAYOUT_UNDEFINED,
                                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                                   VK_PIPELINE_STAGE_2_NONE, 0, VK_PIPELINE_STAGE_2_TRANSFER_BIT,
                                   VK_ACCESS_2_TRANSFER_WRITE_BIT));
@@ -154,14 +157,14 @@ Result<std::unique_ptr<Image>> TextureUploader::upload(std::uint32_t width, std:
     VkBufferImageCopy region{};
     region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
     region.imageExtent = {width, height, 1};
-    vkCmdCopyBufferToImage(cmd_, staging_->handle(), image->handle(),
+    vkCmdCopyBufferToImage(cmd_, vk(*staging_).handle(), vk(*image).handle(),
                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
     // Blit chain: each mip becomes the source for the next.
     std::int32_t mipWidth = static_cast<std::int32_t>(width);
     std::int32_t mipHeight = static_cast<std::int32_t>(height);
     for (std::uint32_t mip = 1; mip < mipLevels; ++mip) {
-        applyBarrier(cmd_, mipBarrier(image->handle(), mip - 1, 1,
+        applyBarrier(cmd_, mipBarrier(vk(*image).handle(), mip - 1, 1,
                                       VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                                       VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                                       VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
@@ -174,8 +177,8 @@ Result<std::unique_ptr<Image>> TextureUploader::upload(std::uint32_t width, std:
         blit.srcOffsets[1] = {mipWidth, mipHeight, 1};
         blit.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, mip, 0, 1};
         blit.dstOffsets[1] = {nextWidth, nextHeight, 1};
-        vkCmdBlitImage(cmd_, image->handle(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                       image->handle(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit,
+        vkCmdBlitImage(cmd_, vk(*image).handle(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                       vk(*image).handle(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit,
                        VK_FILTER_LINEAR);
         mipWidth = nextWidth;
         mipHeight = nextHeight;
@@ -184,14 +187,14 @@ Result<std::unique_ptr<Image>> TextureUploader::upload(std::uint32_t width, std:
     // Mips 0..n-2 are TRANSFER_SRC, the last is TRANSFER_DST; both end as
     // SHADER_READ_ONLY.
     if (mipLevels > 1) {
-        applyBarrier(cmd_, mipBarrier(image->handle(), 0, mipLevels - 1,
+        applyBarrier(cmd_, mipBarrier(vk(*image).handle(), 0, mipLevels - 1,
                                       VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                                       VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                                       VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_READ_BIT,
                                       VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
                                       VK_ACCESS_2_SHADER_SAMPLED_READ_BIT));
     }
-    applyBarrier(cmd_, mipBarrier(image->handle(), mipLevels - 1, 1,
+    applyBarrier(cmd_, mipBarrier(vk(*image).handle(), mipLevels - 1, 1,
                                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                                   VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                                   VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
@@ -219,7 +222,7 @@ Result<std::unique_ptr<Image>> TextureUploader::upload(std::uint32_t width, std:
     return image;
 }
 
-Result<std::unique_ptr<Image>> TextureUploader::uploadCompressed(Format format,
+Result<std::unique_ptr<Image>> VulkanTextureUploader::uploadCompressed(Format format,
                                                                  const CompressedMip* mips,
                                                                  std::uint32_t mipCount,
                                                                  const void* bytes,
@@ -254,7 +257,7 @@ Result<std::unique_ptr<Image>> TextureUploader::uploadCompressed(Format format,
         return Error{std::format("vkBeginCommandBuffer failed ({})", static_cast<int>(r))};
     }
 
-    applyBarrier(cmd_, mipBarrier(image->handle(), 0, mipCount, VK_IMAGE_LAYOUT_UNDEFINED,
+    applyBarrier(cmd_, mipBarrier(vk(*image).handle(), 0, mipCount, VK_IMAGE_LAYOUT_UNDEFINED,
                                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                                   VK_PIPELINE_STAGE_2_NONE, 0, VK_PIPELINE_STAGE_2_TRANSFER_BIT,
                                   VK_ACCESS_2_TRANSFER_WRITE_BIT));
@@ -266,10 +269,10 @@ Result<std::unique_ptr<Image>> TextureUploader::uploadCompressed(Format format,
         regions[mip].imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, mip, 0, 1};
         regions[mip].imageExtent = {mips[mip].width, mips[mip].height, 1};
     }
-    vkCmdCopyBufferToImage(cmd_, staging_->handle(), image->handle(),
+    vkCmdCopyBufferToImage(cmd_, vk(*staging_).handle(), vk(*image).handle(),
                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, mipCount, regions.data());
 
-    applyBarrier(cmd_, mipBarrier(image->handle(), 0, mipCount,
+    applyBarrier(cmd_, mipBarrier(vk(*image).handle(), 0, mipCount,
                                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                                   VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                                   VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
@@ -295,6 +298,14 @@ Result<std::unique_ptr<Image>> TextureUploader::uploadCompressed(Format format,
     vkResetFences(device_->handle(), 1, &fence_);
     vkResetCommandBuffer(cmd_, 0);
     return image;
+}
+
+Result<std::unique_ptr<TextureUploader>> TextureUploader::create(const Device& device) {
+    switch (device.api()) {
+    case Api::Vulkan: return VulkanTextureUploader::create(device);
+    case Api::D3D12: break;
+    }
+    return Error{std::format("{} backend: TextureUploader not implemented", apiName(device.api()))};
 }
 
 } // namespace rend::gpu

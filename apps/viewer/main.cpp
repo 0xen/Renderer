@@ -5,6 +5,7 @@
 #include "rend/core/paths.h"
 #include "rend/core/profile.h"
 #include "rend/gpu/acceleration_structure.h"
+#include "rend/gpu/api.h"
 #include "rend/gpu/descriptor_table.h"
 #include "rend/gpu/texture_uploader.h"
 #include "rend/gpu/device.h"
@@ -989,6 +990,10 @@ int main(int argc, char** argv) {
     // to alpha 0, post/FXAA pass alpha through, swapchain asks the driver
     // for premultiplied compositing.
     bool transparentWindow = false;
+    // --backend: which gpu backend builds the object tree. Vulkan is the
+    // only implementation today; d3d12 is reserved for the transparent-
+    // window path and errors out until it lands.
+    gpu::Api backendApi = gpu::Api::Vulkan;
     // Streaming test harness: auto-spawn this model at random intervals
     // through the message queue.
     const char* spawnTestPath = nullptr;
@@ -1044,6 +1049,16 @@ int main(int argc, char** argv) {
             }
         } else if (arg == "--transparent") {
             transparentWindow = true;
+        } else if (arg == "--backend" && i + 1 < argc) {
+            const std::string_view name = argv[++i];
+            if (name == "vulkan") {
+                backendApi = gpu::Api::Vulkan;
+            } else if (name == "d3d12") {
+                backendApi = gpu::Api::D3D12;
+            } else {
+                log::error("Unknown --backend '{}' (vulkan|d3d12)", name);
+                return 1;
+            }
         } else if (arg == "--script" && i + 1 < argc) {
             cliScripts.emplace_back(argv[++i]);
         } else if (arg == "--spawn-test" && i + 1 < argc) {
@@ -1164,7 +1179,7 @@ int main(int argc, char** argv) {
     } else {
         log::info("No scene file given "
                   "(usage: viewer [--debug] [--novsync] [--static] [--bench N] [--walk] "
-                  "[--transparent] "
+                  "[--transparent] [--backend vulkan|d3d12] "
                   "[--draw-mode count|indirect|direct] [--spawn-test model.gltf] <scene.xml>)");
     }
 
@@ -1179,13 +1194,14 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    auto instanceResult = gpu::Instance::create({
+    auto instanceResult = gpu::Instance::create(backendApi, {
         .appName = "Renderer Viewer",
         .enableSyncValidation = debug,
         .extraExtensions = backend->requiredVulkanInstanceExtensions(),
     });
     if (!instanceResult) {
-        log::error("Vulkan instance creation failed: {}", instanceResult.error().message);
+        log::error("{} instance creation failed: {}", gpu::apiName(backendApi),
+                   instanceResult.error().message);
         return 1;
     }
     auto instance = std::move(instanceResult).value();
@@ -1194,7 +1210,8 @@ int main(int argc, char** argv) {
     features.requiredExtensions.push_back(gpu::kSwapchainExtension);
     auto deviceResult = gpu::Device::create(*instance, features);
     if (!deviceResult) {
-        log::error("Vulkan device creation failed: {}", deviceResult.error().message);
+        log::error("{} device creation failed: {}", gpu::apiName(backendApi),
+                   deviceResult.error().message);
         return 1;
     }
     auto device = std::move(deviceResult).value();
@@ -2586,7 +2603,8 @@ int main(int argc, char** argv) {
     }
     auto target = std::move(targetResult).value();
 
-    auto surfaceResult = backend->createVulkanSurface(instance->handle(), *target);
+    auto surfaceResult = backend->createVulkanSurface(
+        static_cast<VkInstance>(instance->nativeHandle()), *target);
     if (!surfaceResult) {
         log::error("Surface creation failed: {}", surfaceResult.error().message);
         return 1;
@@ -2595,7 +2613,7 @@ int main(int argc, char** argv) {
     const auto extent = target->sizeInPixels();
     auto swapchainResult = gpu::Swapchain::create(*instance, *device,
                                                   {
-                                                      .surface = surfaceResult.value(),
+                                                      .nativeSurface = surfaceResult.value(),
                                                       .width = extent.width,
                                                       .height = extent.height,
                                                       .transparent = transparentWindow,

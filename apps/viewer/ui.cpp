@@ -86,7 +86,9 @@ std::unique_ptr<Ui> Ui::create(const rend::gpu::Instance& instance,
         rend::log::error("UI: volkInitialize failed");
         return nullptr;
     }
-    volkLoadInstance(instance.handle());
+    // The gpu layer's native escapes are Vulkan handles for a Vulkan instance.
+    const auto vkInstance = static_cast<VkInstance>(instance.nativeHandle());
+    volkLoadInstance(vkInstance);
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -96,11 +98,11 @@ std::unique_ptr<Ui> Ui::create(const rend::gpu::Instance& instance,
 
     const VkFormat colorFormat = static_cast<VkFormat>(swapchain.imageFormat());
     ImGui_ImplVulkan_InitInfo info{};
-    info.Instance = instance.handle();
-    info.PhysicalDevice = device.physicalDevice();
-    info.Device = device.handle();
-    info.QueueFamily = device.graphicsQueue().familyIndex;
-    info.Queue = device.graphicsQueue().queue;
+    info.Instance = vkInstance;
+    info.PhysicalDevice = static_cast<VkPhysicalDevice>(device.nativePhysicalDevice());
+    info.Device = static_cast<VkDevice>(device.nativeHandle());
+    info.QueueFamily = device.graphicsQueueFamily();
+    info.Queue = static_cast<VkQueue>(device.nativeGraphicsQueue());
     info.DescriptorPoolSize = 8; // backend creates its own pool
     info.MinImageCount = 2;
     info.ImageCount = swapchain.imageCount();

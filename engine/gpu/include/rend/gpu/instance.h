@@ -1,14 +1,12 @@
 #pragma once
 
 #include "rend/core/result.h"
+#include "rend/gpu/api.h"
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
-
-// Forward declarations so gpu headers never force Vulkan headers on consumers.
-typedef struct VkInstance_T* VkInstance;
-typedef struct VkDebugUtilsMessengerEXT_T* VkDebugUtilsMessengerEXT;
 
 namespace rend::gpu {
 
@@ -22,29 +20,33 @@ struct InstanceDesc {
     // enableValidation and the installed layer to support it.
     bool enableSyncValidation = false;
     // Platform surface extensions etc., supplied by the caller (the
-    // platform layer's Vulkan seam feeds this from milestone 5 on).
+    // platform layer's Vulkan seam feeds this). Vulkan only.
     std::vector<const char*> extraExtensions;
 };
 
-// Owns volk initialization, the VkInstance, and the debug messenger.
+// The root of a backend's object tree: the API loader/instance/factory and
+// its debug hookup. Everything else is created from the Device built on it.
 class Instance {
 public:
-    static Result<std::unique_ptr<Instance>> create(const InstanceDesc& desc);
-    ~Instance();
+    static Result<std::unique_ptr<Instance>> create(Api api, const InstanceDesc& desc);
+    virtual ~Instance() = default;
 
     Instance(const Instance&) = delete;
     Instance& operator=(const Instance&) = delete;
 
-    VkInstance handle() const { return instance_; }
-    bool validationEnabled() const { return messenger_ != nullptr; }
-    std::uint32_t apiVersion() const { return apiVersion_; }
+    Api api() const { return api_; }
+    // Backend object behind this instance (VkInstance under Vulkan). For
+    // integrations that must talk to the API directly (surface creation,
+    // the ImGui backend); everything else stays API-neutral.
+    virtual void* nativeHandle() const = 0;
+    virtual bool validationEnabled() const = 0;
+    virtual std::uint32_t apiVersion() const = 0;
+
+protected:
+    explicit Instance(Api api) : api_(api) {}
 
 private:
-    Instance() = default;
-
-    VkInstance instance_ = nullptr;
-    VkDebugUtilsMessengerEXT messenger_ = nullptr;
-    std::uint32_t apiVersion_ = 0;
+    Api api_;
 };
 
 } // namespace rend::gpu

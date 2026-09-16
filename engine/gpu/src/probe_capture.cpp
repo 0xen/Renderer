@@ -1,5 +1,7 @@
 #include "rend/gpu/probe_capture.h"
 
+#include "vulkan/vulkan_types.h"
+
 #include "rend/gpu/buffer.h"
 #include "rend/gpu/descriptor_table.h"
 
@@ -49,8 +51,9 @@ void applyBarrier(VkCommandBuffer cmd, VkImageMemoryBarrier2 barrier) {
 
 } // namespace
 
-Result<std::unique_ptr<Image>> ProbeCapture::render(const Device& device,
+Result<std::unique_ptr<Image>> ProbeCapture::render(const Device& deviceBase,
                                                     const ProbeCaptureDesc& desc) {
+    const VulkanDevice& device = vk(deviceBase);
     REND_PROFILE_ZONE("ProbeCapture");
     if (!desc.pipeline || !desc.draws || desc.drawCount == 0 || desc.faceSize == 0) {
         return Error{"Probe capture needs a pipeline and a non-empty draw list"};
@@ -126,7 +129,7 @@ Result<std::unique_ptr<Image>> ProbeCapture::render(const Device& device,
         return Error{std::format("vkBeginCommandBuffer failed ({})", static_cast<int>(r))};
     }
 
-    applyBarrier(cmd, cubeBarrier(cube->handle(), 0, 1, VK_IMAGE_LAYOUT_UNDEFINED,
+    applyBarrier(cmd, cubeBarrier(vk(*cube).handle(), 0, 1, VK_IMAGE_LAYOUT_UNDEFINED,
                                   VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                                   VK_PIPELINE_STAGE_2_NONE, 0,
                                   VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
@@ -137,7 +140,7 @@ Result<std::unique_ptr<Image>> ProbeCapture::render(const Device& device,
         // Depth is cleared per face; UNDEFINED discards the previous face's
         // contents while the barrier orders the depth-write reuse.
         VkImageMemoryBarrier2 toDepth = cubeBarrier(
-            depth->handle(), 0, 1, VK_IMAGE_LAYOUT_UNDEFINED,
+            vk(*depth).handle(), 0, 1, VK_IMAGE_LAYOUT_UNDEFINED,
             VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
             VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
             VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
@@ -150,7 +153,7 @@ Result<std::unique_ptr<Image>> ProbeCapture::render(const Device& device,
 
         VkRenderingAttachmentInfo color{};
         color.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        color.imageView = cube->faceView(face);
+        color.imageView = vk(*cube).faceView(face);
         color.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         color.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -159,7 +162,7 @@ Result<std::unique_ptr<Image>> ProbeCapture::render(const Device& device,
 
         VkRenderingAttachmentInfo depthAttachment{};
         depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        depthAttachment.imageView = depth->view();
+        depthAttachment.imageView = vk(*depth).view();
         depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
         depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
@@ -179,18 +182,18 @@ Result<std::unique_ptr<Image>> ProbeCapture::render(const Device& device,
         const VkRect2D scissor{{0, 0}, extent};
         vkCmdSetViewport(cmd, 0, 1, &viewport);
         vkCmdSetScissor(cmd, 0, 1, &scissor);
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, desc.pipeline->handle());
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, vk(*desc.pipeline).handle());
         if (desc.descriptors != nullptr) {
-            const VkDescriptorSet set = desc.descriptors->set();
+            const VkDescriptorSet set = vk(*desc.descriptors).set();
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    desc.pipeline->layout(), 0, 1, &set, 0, nullptr);
+                                    vk(*desc.pipeline).layout(), 0, 1, &set, 0, nullptr);
         }
         const VkDeviceSize zero = 0;
-        const VkBuffer geometry = desc.geometry->handle();
+        const VkBuffer geometry = vk(*desc.geometry).handle();
         vkCmdBindVertexBuffers(cmd, 0, 1, &geometry, &zero);
         vkCmdBindIndexBuffer(cmd, geometry, 0, VK_INDEX_TYPE_UINT32);
         const std::uint32_t push[2] = {desc.cameraSlotBase + face, 0};
-        vkCmdPushConstants(cmd, desc.pipeline->layout(),
+        vkCmdPushConstants(cmd, vk(*desc.pipeline).layout(),
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                            sizeof(push), push);
         // One-shot capture: plain CPU-side draws, no compaction machinery.
@@ -206,7 +209,7 @@ Result<std::unique_ptr<Image>> ProbeCapture::render(const Device& device,
 
     // Blit chain over all six faces at once: mip 0 becomes the transfer
     // source, the rest fill top-down (TextureUploader's pattern, layered).
-    applyBarrier(cmd, cubeBarrier(cube->handle(), 0, 1,
+    applyBarrier(cmd, cubeBarrier(vk(*cube).handle(), 0, 1,
                                   VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                                   VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                                   VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
@@ -214,7 +217,7 @@ Result<std::unique_ptr<Image>> ProbeCapture::render(const Device& device,
                                   VK_PIPELINE_STAGE_2_TRANSFER_BIT,
                                   VK_ACCESS_2_TRANSFER_READ_BIT));
     if (mipLevels > 1) {
-        applyBarrier(cmd, cubeBarrier(cube->handle(), 1, mipLevels - 1,
+        applyBarrier(cmd, cubeBarrier(vk(*cube).handle(), 1, mipLevels - 1,
                                       VK_IMAGE_LAYOUT_UNDEFINED,
                                       VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                                       VK_PIPELINE_STAGE_2_NONE, 0,
@@ -229,9 +232,9 @@ Result<std::unique_ptr<Image>> ProbeCapture::render(const Device& device,
         blit.srcOffsets[1] = {mipSize, mipSize, 1};
         blit.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, mip, 0, 6};
         blit.dstOffsets[1] = {nextSize, nextSize, 1};
-        vkCmdBlitImage(cmd, cube->handle(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, cube->handle(),
+        vkCmdBlitImage(cmd, vk(*cube).handle(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, vk(*cube).handle(),
                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
-        applyBarrier(cmd, cubeBarrier(cube->handle(), mip, 1,
+        applyBarrier(cmd, cubeBarrier(vk(*cube).handle(), mip, 1,
                                       VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                                       VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                                       VK_PIPELINE_STAGE_2_TRANSFER_BIT,
@@ -240,7 +243,7 @@ Result<std::unique_ptr<Image>> ProbeCapture::render(const Device& device,
                                       VK_ACCESS_2_TRANSFER_READ_BIT));
         mipSize = nextSize;
     }
-    applyBarrier(cmd, cubeBarrier(cube->handle(), 0, mipLevels,
+    applyBarrier(cmd, cubeBarrier(vk(*cube).handle(), 0, mipLevels,
                                   VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                                   VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                                   VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_READ_BIT,

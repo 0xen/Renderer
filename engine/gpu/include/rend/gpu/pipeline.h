@@ -7,9 +7,6 @@
 #include <memory>
 #include <vector>
 
-typedef struct VkPipeline_T* VkPipeline;
-typedef struct VkPipelineLayout_T* VkPipelineLayout;
-
 namespace rend::gpu {
 
 class DescriptorTable;
@@ -87,22 +84,17 @@ public:
                                                             const GraphicsPipelineDesc& desc);
     static Result<std::unique_ptr<Pipeline>> createCompute(const Device& device,
                                                            const ComputePipelineDesc& desc);
-    ~Pipeline();
+    virtual ~Pipeline() = default;
 
     Pipeline(const Pipeline&) = delete;
     Pipeline& operator=(const Pipeline&) = delete;
 
-    VkPipeline handle() const { return pipeline_; }
-    VkPipelineLayout layout() const { return layout_; }
     // Which bind point the pipeline belongs to (CommandContext follows it).
     bool isCompute() const { return compute_; }
 
-private:
+protected:
     Pipeline() = default;
 
-    const Device* device_ = nullptr;
-    VkPipelineLayout layout_ = nullptr;
-    VkPipeline pipeline_ = nullptr;
     bool compute_ = false;
 };
 

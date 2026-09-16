@@ -4,11 +4,6 @@
 
 #include <cstdint>
 #include <memory>
-#include <vector>
-
-typedef struct VkCommandPool_T* VkCommandPool;
-typedef struct VkCommandBuffer_T* VkCommandBuffer;
-typedef struct VkFence_T* VkFence;
 
 namespace rend::gpu {
 
@@ -25,35 +20,19 @@ class Device;
 class TransferContext {
 public:
     static Result<std::unique_ptr<TransferContext>> create(const Device& device);
-    ~TransferContext();
+    virtual ~TransferContext() = default;
 
     TransferContext(const TransferContext&) = delete;
     TransferContext& operator=(const TransferContext&) = delete;
 
-    Result<void> stage(const Buffer& dst, std::uint64_t dstOffset, const void* data,
-                       std::uint64_t size);
-    Result<void> flush();
+    virtual Result<void> stage(const Buffer& dst, std::uint64_t dstOffset, const void* data,
+                               std::uint64_t size) = 0;
+    virtual Result<void> flush() = 0;
 
-    std::uint64_t pendingBytes() const { return stagingUsed_; }
+    virtual std::uint64_t pendingBytes() const = 0;
 
-private:
+protected:
     TransferContext() = default;
-    Result<void> ensureStagingCapacity(std::uint64_t required);
-
-    struct PendingCopy {
-        const Buffer* dst = nullptr;
-        std::uint64_t srcOffset = 0;
-        std::uint64_t dstOffset = 0;
-        std::uint64_t size = 0;
-    };
-
-    const Device* device_ = nullptr;
-    VkCommandPool pool_ = nullptr;
-    VkCommandBuffer cmd_ = nullptr;
-    VkFence fence_ = nullptr;
-    std::unique_ptr<Buffer> staging_;
-    std::uint64_t stagingUsed_ = 0;
-    std::vector<PendingCopy> pending_;
 };
 
 } // namespace rend::gpu

@@ -1,5 +1,7 @@
 #include "rend/gpu/image.h"
 
+#include "vulkan/vulkan_types.h"
+
 #include "rend/gpu/device.h"
 #include "rend/gpu/memory_tracker.h"
 
@@ -9,7 +11,9 @@
 
 namespace rend::gpu {
 
-Result<std::unique_ptr<Image>> Image::create(const Device& device, const ImageDesc& desc) {
+Result<std::unique_ptr<Image>> VulkanImage::create(const Device& deviceBase,
+                                                   const ImageDesc& desc) {
+    const VulkanDevice& device = vk(deviceBase);
     if (desc.width == 0 || desc.height == 0) {
         return Error{"Image extent must be non-zero"};
     }
@@ -114,7 +118,7 @@ Result<std::unique_ptr<Image>> Image::create(const Device& device, const ImageDe
         }
     }
 
-    auto out = std::unique_ptr<Image>(new Image());
+    auto out = std::unique_ptr<VulkanImage>(new VulkanImage());
     out->device_ = &device;
     out->image_ = image;
     out->memory_ = memory;
@@ -127,22 +131,22 @@ Result<std::unique_ptr<Image>> Image::create(const Device& device, const ImageDe
     out->layerCount_ = layers;
     out->allocatedBytes_ = requirements.size;
     MemoryTracker::onAlloc(MemoryTracker::Kind::Image, requirements.size);
-    return out;
+    return std::unique_ptr<Image>(std::move(out));
 }
 
-std::unique_ptr<Image> Image::wrapExternal(VkImage image, VkImageView view, Format format,
+std::unique_ptr<Image> VulkanImage::wrapExternal(VkImage image, VkImageView view, Format format,
                                            std::uint32_t width, std::uint32_t height) {
-    auto out = std::unique_ptr<Image>(new Image());
+    auto out = std::unique_ptr<VulkanImage>(new VulkanImage());
     out->image_ = image;
     out->view_ = view;
     out->format_ = format;
     out->width_ = width;
     out->height_ = height;
     out->owned_ = false;
-    return out;
+    return std::unique_ptr<Image>(std::move(out));
 }
 
-Image::~Image() {
+VulkanImage::~VulkanImage() {
     if (!device_ || !owned_) {
         return;
     }
@@ -161,6 +165,14 @@ Image::~Image() {
         vkFreeMemory(device_->handle(), memory_, nullptr);
         MemoryTracker::onFree(MemoryTracker::Kind::Image, allocatedBytes_);
     }
+}
+
+Result<std::unique_ptr<Image>> Image::create(const Device& device, const ImageDesc& desc) {
+    switch (device.api()) {
+    case Api::Vulkan: return VulkanImage::create(device, desc);
+    case Api::D3D12: break;
+    }
+    return Error{std::format("{} backend: Image not implemented", apiName(device.api()))};
 }
 
 } // namespace rend::gpu

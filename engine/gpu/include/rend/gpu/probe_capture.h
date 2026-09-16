@@ -7,9 +7,6 @@
 #include <cstdint>
 #include <memory>
 
-typedef struct VkBuffer_T* VkBuffer;
-typedef struct VkDescriptorSet_T* VkDescriptorSet;
-
 namespace rend::gpu {
 
 class Device;

@@ -1,5 +1,7 @@
 #include "rend/gpu/command_context.h"
 
+#include "vulkan/vulkan_types.h"
+
 #include "rend/gpu/buffer.h"
 #include "rend/gpu/descriptor_table.h"
 #include "rend/gpu/image.h"
@@ -10,8 +12,6 @@
 namespace rend::gpu {
 
 namespace {
-
-VkCommandBuffer vk(void* cmd) { return static_cast<VkCommandBuffer>(cmd); }
 
 struct StateInfo {
     VkImageLayout layout;
@@ -142,7 +142,7 @@ VkAttachmentLoadOp loadOp(LoadOp op) {
 
 } // namespace
 
-void CommandContext::imageBarrier(const Image& image, ImageState from, ImageState to) {
+void VulkanCommandContext::imageBarrier(const Image& image, ImageState from, ImageState to) {
     const bool depthAspect = isDepthFormat(image.format());
     const StateInfo src = stateInfo(from, depthAspect);
     const StateInfo dst = stateInfo(to, depthAspect);
@@ -156,7 +156,7 @@ void CommandContext::imageBarrier(const Image& image, ImageState from, ImageStat
     barrier.newLayout = dst.layout;
     barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.image = image.handle();
+    barrier.image = vk(image).handle();
     barrier.subresourceRange = {
         static_cast<VkImageAspectFlags>(depthAspect ? VK_IMAGE_ASPECT_DEPTH_BIT
                                                     : VK_IMAGE_ASPECT_COLOR_BIT),
@@ -165,10 +165,10 @@ void CommandContext::imageBarrier(const Image& image, ImageState from, ImageStat
     dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
     dependency.imageMemoryBarrierCount = 1;
     dependency.pImageMemoryBarriers = &barrier;
-    vkCmdPipelineBarrier2(vk(cmd_), &dependency);
+    vkCmdPipelineBarrier2(cmd_, &dependency);
 }
 
-void CommandContext::memoryBarrier(Stage from, Stage to) {
+void VulkanCommandContext::memoryBarrier(Stage from, Stage to) {
     VkMemoryBarrier2 barrier{};
     barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
     barrier.srcStageMask = stageMask(from);
@@ -179,10 +179,10 @@ void CommandContext::memoryBarrier(Stage from, Stage to) {
     dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
     dependency.memoryBarrierCount = 1;
     dependency.pMemoryBarriers = &barrier;
-    vkCmdPipelineBarrier2(vk(cmd_), &dependency);
+    vkCmdPipelineBarrier2(cmd_, &dependency);
 }
 
-void CommandContext::barrier(std::span<const MemoryBarrierDesc> memory,
+void VulkanCommandContext::barrier(std::span<const MemoryBarrierDesc> memory,
                              std::span<const ImageBarrierDesc> images) {
     std::vector<VkMemoryBarrier2> memoryBarriers(memory.size());
     for (std::size_t i = 0; i < memory.size(); ++i) {
@@ -206,7 +206,7 @@ void CommandContext::barrier(std::span<const MemoryBarrierDesc> memory,
         b.newLayout = layoutOf(d.newLayout);
         b.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        b.image = d.image->handle();
+        b.image = vk(*d.image).handle();
         b.subresourceRange = {
             static_cast<VkImageAspectFlags>(isDepthFormat(d.image->format())
                                                 ? VK_IMAGE_ASPECT_DEPTH_BIT
@@ -219,28 +219,28 @@ void CommandContext::barrier(std::span<const MemoryBarrierDesc> memory,
     dependency.pMemoryBarriers = memoryBarriers.data();
     dependency.imageMemoryBarrierCount = static_cast<std::uint32_t>(imageBarriers.size());
     dependency.pImageMemoryBarriers = imageBarriers.data();
-    vkCmdPipelineBarrier2(vk(cmd_), &dependency);
+    vkCmdPipelineBarrier2(cmd_, &dependency);
 }
 
-void CommandContext::fillBuffer(const Buffer& buffer, std::uint64_t offset, std::uint64_t size,
+void VulkanCommandContext::fillBuffer(const Buffer& buffer, std::uint64_t offset, std::uint64_t size,
                                 std::uint32_t value) {
-    vkCmdFillBuffer(vk(cmd_), buffer.handle(), offset, size, value);
+    vkCmdFillBuffer(cmd_, vk(buffer).handle(), offset, size, value);
 }
 
-void CommandContext::drawIndexedIndirectCount(const Buffer& buffer, std::uint64_t offset,
+void VulkanCommandContext::drawIndexedIndirectCount(const Buffer& buffer, std::uint64_t offset,
                                               const Buffer& count, std::uint64_t countOffset,
                                               std::uint32_t maxDrawCount, std::uint32_t stride) {
-    vkCmdDrawIndexedIndirectCount(vk(cmd_), buffer.handle(), offset, count.handle(), countOffset,
+    vkCmdDrawIndexedIndirectCount(cmd_, vk(buffer).handle(), offset, vk(count).handle(), countOffset,
                                   maxDrawCount,
                                   stride == 0 ? sizeof(VkDrawIndexedIndirectCommand) : stride);
 }
 
-void CommandContext::beginRendering(const RenderingDesc& desc) {
+void VulkanCommandContext::beginRendering(const RenderingDesc& desc) {
     std::vector<VkRenderingAttachmentInfo> colors(desc.colors.size());
     for (std::size_t i = 0; i < colors.size(); ++i) {
         const ColorTarget& target = desc.colors[i];
         colors[i].sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        colors[i].imageView = target.image->view();
+        colors[i].imageView = vk(*target.image).view();
         colors[i].imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         colors[i].loadOp = loadOp(target.load);
         colors[i].storeOp = target.store ? VK_ATTACHMENT_STORE_OP_STORE
@@ -251,7 +251,7 @@ void CommandContext::beginRendering(const RenderingDesc& desc) {
     VkRenderingAttachmentInfo depth{};
     if (desc.depth) {
         depth.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        depth.imageView = desc.depth->image->view();
+        depth.imageView = vk(*desc.depth->image).view();
         depth.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
         depth.loadOp = loadOp(desc.depth->load);
         depth.storeOp = desc.depth->store ? VK_ATTACHMENT_STORE_OP_STORE
@@ -266,83 +266,83 @@ void CommandContext::beginRendering(const RenderingDesc& desc) {
     rendering.colorAttachmentCount = static_cast<std::uint32_t>(colors.size());
     rendering.pColorAttachments = colors.data();
     rendering.pDepthAttachment = desc.depth ? &depth : nullptr;
-    vkCmdBeginRendering(vk(cmd_), &rendering);
+    vkCmdBeginRendering(cmd_, &rendering);
 
     setViewport(0.0f, 0.0f, static_cast<float>(desc.width), static_cast<float>(desc.height));
     setScissor(0, 0, desc.width, desc.height);
 }
 
-void CommandContext::endRendering() { vkCmdEndRendering(vk(cmd_)); }
+void VulkanCommandContext::endRendering() { vkCmdEndRendering(cmd_); }
 
-void CommandContext::setViewport(float x, float y, float width, float height) {
+void VulkanCommandContext::setViewport(float x, float y, float width, float height) {
     const VkViewport viewport{x, y, width, height, 0.0f, 1.0f};
-    vkCmdSetViewport(vk(cmd_), 0, 1, &viewport);
+    vkCmdSetViewport(cmd_, 0, 1, &viewport);
 }
 
-void CommandContext::setScissor(std::int32_t x, std::int32_t y, std::uint32_t width,
+void VulkanCommandContext::setScissor(std::int32_t x, std::int32_t y, std::uint32_t width,
                                 std::uint32_t height) {
     const VkRect2D scissor{{x, y}, {width, height}};
-    vkCmdSetScissor(vk(cmd_), 0, 1, &scissor);
+    vkCmdSetScissor(cmd_, 0, 1, &scissor);
 }
 
-void CommandContext::bindPipeline(const Pipeline& pipeline) {
-    vkCmdBindPipeline(vk(cmd_),
+void VulkanCommandContext::bindPipeline(const Pipeline& pipeline) {
+    vkCmdBindPipeline(cmd_,
                       pipeline.isCompute() ? VK_PIPELINE_BIND_POINT_COMPUTE
                                            : VK_PIPELINE_BIND_POINT_GRAPHICS,
-                      pipeline.handle());
+                      vk(pipeline).handle());
 }
 
-void CommandContext::bindDescriptorTable(const Pipeline& pipeline, const DescriptorTable& table) {
-    const VkDescriptorSet set = table.set();
-    vkCmdBindDescriptorSets(vk(cmd_),
+void VulkanCommandContext::bindDescriptorTable(const Pipeline& pipeline, const DescriptorTable& table) {
+    const VkDescriptorSet set = vk(table).set();
+    vkCmdBindDescriptorSets(cmd_,
                             pipeline.isCompute() ? VK_PIPELINE_BIND_POINT_COMPUTE
                                                  : VK_PIPELINE_BIND_POINT_GRAPHICS,
-                            pipeline.layout(), 0, 1, &set, 0, nullptr);
+                            vk(pipeline).layout(), 0, 1, &set, 0, nullptr);
 }
 
-void CommandContext::pushConstants(const Pipeline& pipeline, const void* data,
+void VulkanCommandContext::pushConstants(const Pipeline& pipeline, const void* data,
                                    std::uint32_t bytes) {
     const VkShaderStageFlags stages =
         pipeline.isCompute() ? VK_SHADER_STAGE_COMPUTE_BIT
                              : (VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
-    vkCmdPushConstants(vk(cmd_), pipeline.layout(), stages, 0, bytes, data);
+    vkCmdPushConstants(cmd_, vk(pipeline).layout(), stages, 0, bytes, data);
 }
 
-void CommandContext::bindVertexBuffer(const Buffer& buffer, std::uint64_t offset) {
+void VulkanCommandContext::bindVertexBuffer(const Buffer& buffer, std::uint64_t offset) {
     const VkDeviceSize vkOffset = offset;
-    const VkBuffer handle = buffer.handle();
-    vkCmdBindVertexBuffers(vk(cmd_), 0, 1, &handle, &vkOffset);
+    const VkBuffer handle = vk(buffer).handle();
+    vkCmdBindVertexBuffers(cmd_, 0, 1, &handle, &vkOffset);
 }
 
-void CommandContext::bindIndexBuffer(const Buffer& buffer, std::uint64_t offset) {
-    vkCmdBindIndexBuffer(vk(cmd_), buffer.handle(), offset, VK_INDEX_TYPE_UINT32);
+void VulkanCommandContext::bindIndexBuffer(const Buffer& buffer, std::uint64_t offset) {
+    vkCmdBindIndexBuffer(cmd_, vk(buffer).handle(), offset, VK_INDEX_TYPE_UINT32);
 }
 
-void CommandContext::draw(std::uint32_t vertexCount, std::uint32_t instanceCount,
+void VulkanCommandContext::draw(std::uint32_t vertexCount, std::uint32_t instanceCount,
                           std::uint32_t firstVertex, std::uint32_t firstInstance) {
-    vkCmdDraw(vk(cmd_), vertexCount, instanceCount, firstVertex, firstInstance);
+    vkCmdDraw(cmd_, vertexCount, instanceCount, firstVertex, firstInstance);
 }
 
-void CommandContext::drawIndexed(std::uint32_t indexCount, std::uint32_t instanceCount,
+void VulkanCommandContext::drawIndexed(std::uint32_t indexCount, std::uint32_t instanceCount,
                                  std::uint32_t firstIndex, std::int32_t vertexOffset,
                                  std::uint32_t firstInstance) {
-    vkCmdDrawIndexed(vk(cmd_), indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
+    vkCmdDrawIndexed(cmd_, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
 }
 
-void CommandContext::drawIndirect(const Buffer& buffer, std::uint64_t offset,
+void VulkanCommandContext::drawIndirect(const Buffer& buffer, std::uint64_t offset,
                                   std::uint32_t drawCount, std::uint32_t stride) {
-    vkCmdDrawIndirect(vk(cmd_), buffer.handle(), offset, drawCount,
+    vkCmdDrawIndirect(cmd_, vk(buffer).handle(), offset, drawCount,
                       stride == 0 ? sizeof(VkDrawIndirectCommand) : stride);
 }
 
-void CommandContext::drawIndexedIndirect(const Buffer& buffer, std::uint64_t offset,
+void VulkanCommandContext::drawIndexedIndirect(const Buffer& buffer, std::uint64_t offset,
                                          std::uint32_t drawCount, std::uint32_t stride) {
-    vkCmdDrawIndexedIndirect(vk(cmd_), buffer.handle(), offset, drawCount,
+    vkCmdDrawIndexedIndirect(cmd_, vk(buffer).handle(), offset, drawCount,
                              stride == 0 ? sizeof(VkDrawIndexedIndirectCommand) : stride);
 }
 
-void CommandContext::dispatch(std::uint32_t x, std::uint32_t y, std::uint32_t z) {
-    vkCmdDispatch(vk(cmd_), x, y, z);
+void VulkanCommandContext::dispatch(std::uint32_t x, std::uint32_t y, std::uint32_t z) {
+    vkCmdDispatch(cmd_, x, y, z);
 }
 
 } // namespace rend::gpu

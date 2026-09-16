@@ -1,5 +1,7 @@
 #include "rend/gpu/device.h"
 
+#include "vulkan/vulkan_types.h"
+
 #include "rend/core/log.h"
 #include "rend/gpu/instance.h"
 
@@ -287,7 +289,9 @@ FeatureSet FeatureSet::gpuDriven() {
     };
 }
 
-Result<std::unique_ptr<Device>> Device::create(const Instance& instance, const FeatureSet& request) {
+Result<std::unique_ptr<Device>> VulkanDevice::create(const Instance& instanceBase,
+                                                     const FeatureSet& request) {
+    const VulkanInstance& instance = vk(instanceBase);
     std::uint32_t count = 0;
     vkEnumeratePhysicalDevices(instance.handle(), &count, nullptr);
     if (count == 0) {
@@ -391,7 +395,7 @@ Result<std::unique_ptr<Device>> Device::create(const Instance& instance, const F
     }
     volkLoadDevice(handle);
 
-    auto device = std::unique_ptr<Device>(new Device());
+    auto device = std::unique_ptr<VulkanDevice>(new VulkanDevice());
     device->physical_ = best.pd;
     device->device_ = handle;
     device->adapterName_ = best.props.deviceName;
@@ -410,7 +414,7 @@ Result<std::unique_ptr<Device>> Device::create(const Instance& instance, const F
     log::info("Device created on '{}' (graphics family {}, transfer family {}{})", device->adapterName_,
               device->graphics_.familyIndex, device->transfer_.familyIndex,
               device->hasDedicatedTransfer() ? ", dedicated" : ", shared");
-    return device;
+    return std::unique_ptr<Device>(std::move(device));
 }
 
 const char* shadowTechniqueName(ShadowTechnique technique) {
@@ -468,11 +472,25 @@ std::vector<AntiAliasingTechnique> Device::supportedAntiAliasingTechniques() con
     return {AntiAliasingTechnique::None, AntiAliasingTechnique::Fxaa};
 }
 
-Device::~Device() {
+VulkanDevice::~VulkanDevice() {
     if (device_ != VK_NULL_HANDLE) {
         vkDestroyDevice(device_, nullptr);
         log::info("Device destroyed ('{}')", adapterName_);
     }
+}
+
+void VulkanDevice::waitIdle() const {
+    if (device_ != VK_NULL_HANDLE) {
+        vkDeviceWaitIdle(device_);
+    }
+}
+
+Result<std::unique_ptr<Device>> Device::create(const Instance& instance, const FeatureSet& features) {
+    switch (instance.api()) {
+    case Api::Vulkan: return VulkanDevice::create(instance, features);
+    case Api::D3D12: break;
+    }
+    return Error{std::format("{} backend: Device not implemented", apiName(instance.api()))};
 }
 
 } // namespace rend::gpu

@@ -1,5 +1,7 @@
 #include "rend/gpu/descriptor_table.h"
 
+#include "vulkan/vulkan_types.h"
+
 #include "rend/gpu/acceleration_structure.h"
 #include "rend/gpu/buffer.h"
 #include "rend/gpu/image.h"
@@ -13,9 +15,10 @@
 
 namespace rend::gpu {
 
-Result<std::unique_ptr<DescriptorTable>> DescriptorTable::create(const Device& device,
-                                                                 const DescriptorTableDesc& desc) {
-    auto table = std::unique_ptr<DescriptorTable>(new DescriptorTable());
+Result<std::unique_ptr<DescriptorTable>> VulkanDescriptorTable::create(
+    const Device& deviceBase, const DescriptorTableDesc& desc) {
+    const VulkanDevice& device = vk(deviceBase);
+    auto table = std::unique_ptr<VulkanDescriptorTable>(new VulkanDescriptorTable());
     table->device_ = &device;
     table->userStorageBuffers_ = desc.userStorageBuffers;
     table->userSampledImages_ = desc.userSampledImages;
@@ -347,10 +350,10 @@ Result<std::unique_ptr<DescriptorTable>> DescriptorTable::create(const Device& d
     vkUpdateDescriptorSets(device.handle(), static_cast<std::uint32_t>(writes.size()),
                            writes.data(), 0, nullptr);
 
-    return table;
+    return std::unique_ptr<DescriptorTable>(std::move(table));
 }
 
-DescriptorTable::~DescriptorTable() {
+VulkanDescriptorTable::~VulkanDescriptorTable() {
     if (!device_) {
         return;
     }
@@ -368,9 +371,9 @@ DescriptorTable::~DescriptorTable() {
     }
 }
 
-void DescriptorTable::writeObjectBuffer(const Buffer& buffer, std::uint64_t range) {
+void VulkanDescriptorTable::writeObjectBuffer(const Buffer& buffer, std::uint64_t range) {
     VkDescriptorBufferInfo info{
-        .buffer = buffer.handle(), .offset = 0, .range = range == 0 ? buffer.size() : range};
+        .buffer = vk(buffer).handle(), .offset = 0, .range = range == 0 ? buffer.size() : range};
     VkWriteDescriptorSet write{};
     write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     write.dstSet = set_;
@@ -381,10 +384,10 @@ void DescriptorTable::writeObjectBuffer(const Buffer& buffer, std::uint64_t rang
     vkUpdateDescriptorSets(device_->handle(), 1, &write, 0, nullptr);
 }
 
-void DescriptorTable::writeStorageBuffer(std::uint32_t binding, const Buffer& buffer,
+void VulkanDescriptorTable::writeStorageBuffer(std::uint32_t binding, const Buffer& buffer,
                                          std::uint64_t range) {
     VkDescriptorBufferInfo info{
-        .buffer = buffer.handle(), .offset = 0, .range = range == 0 ? buffer.size() : range};
+        .buffer = vk(buffer).handle(), .offset = 0, .range = range == 0 ? buffer.size() : range};
     VkWriteDescriptorSet write{};
     write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     write.dstSet = set_;
@@ -395,9 +398,9 @@ void DescriptorTable::writeStorageBuffer(std::uint32_t binding, const Buffer& bu
     vkUpdateDescriptorSets(device_->handle(), 1, &write, 0, nullptr);
 }
 
-void DescriptorTable::writeShadowMap(std::uint32_t cascade, const Image& image) {
+void VulkanDescriptorTable::writeShadowMap(std::uint32_t cascade, const Image& image) {
     VkDescriptorImageInfo info{};
-    info.imageView = image.view();
+    info.imageView = vk(image).view();
     info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     VkWriteDescriptorSet write{};
     write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -410,9 +413,9 @@ void DescriptorTable::writeShadowMap(std::uint32_t cascade, const Image& image) 
     vkUpdateDescriptorSets(device_->handle(), 1, &write, 0, nullptr);
 }
 
-void DescriptorTable::writePointShadowMap(std::uint32_t index, const Image& image) {
+void VulkanDescriptorTable::writePointShadowMap(std::uint32_t index, const Image& image) {
     VkDescriptorImageInfo info{};
-    info.imageView = image.view();
+    info.imageView = vk(image).view();
     info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     VkWriteDescriptorSet write{};
     write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -425,10 +428,10 @@ void DescriptorTable::writePointShadowMap(std::uint32_t index, const Image& imag
     vkUpdateDescriptorSets(device_->handle(), 1, &write, 0, nullptr);
 }
 
-void DescriptorTable::writeSampledImage(std::uint32_t binding, std::uint32_t index,
+void VulkanDescriptorTable::writeSampledImage(std::uint32_t binding, std::uint32_t index,
                                         const Image& image) {
     VkDescriptorImageInfo info{};
-    info.imageView = image.view();
+    info.imageView = vk(image).view();
     info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     VkWriteDescriptorSet write{};
     write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -441,9 +444,9 @@ void DescriptorTable::writeSampledImage(std::uint32_t binding, std::uint32_t ind
     vkUpdateDescriptorSets(device_->handle(), 1, &write, 0, nullptr);
 }
 
-void DescriptorTable::writeProbe(const Image& image) {
+void VulkanDescriptorTable::writeProbe(const Image& image) {
     VkDescriptorImageInfo info{};
-    info.imageView = image.view();
+    info.imageView = vk(image).view();
     info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     VkWriteDescriptorSet write{};
     write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -455,8 +458,8 @@ void DescriptorTable::writeProbe(const Image& image) {
     vkUpdateDescriptorSets(device_->handle(), 1, &write, 0, nullptr);
 }
 
-void DescriptorTable::writeAccelerationStructure(const AccelerationStructure& tlas) {
-    const VkAccelerationStructureKHR handle = tlas.handle();
+void VulkanDescriptorTable::writeAccelerationStructure(const AccelerationStructure& tlas) {
+    const VkAccelerationStructureKHR handle = vk(tlas).handle();
     VkWriteDescriptorSetAccelerationStructureKHR asInfo{};
     asInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
     asInfo.accelerationStructureCount = 1;
@@ -471,9 +474,9 @@ void DescriptorTable::writeAccelerationStructure(const AccelerationStructure& tl
     vkUpdateDescriptorSets(device_->handle(), 1, &write, 0, nullptr);
 }
 
-void DescriptorTable::writeTexture(std::uint32_t index, const Image& image) {
+void VulkanDescriptorTable::writeTexture(std::uint32_t index, const Image& image) {
     VkDescriptorImageInfo info{};
-    info.imageView = image.view();
+    info.imageView = vk(image).view();
     info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     VkWriteDescriptorSet write{};
     write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -484,6 +487,15 @@ void DescriptorTable::writeTexture(std::uint32_t index, const Image& image) {
     write.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
     write.pImageInfo = &info;
     vkUpdateDescriptorSets(device_->handle(), 1, &write, 0, nullptr);
+}
+
+Result<std::unique_ptr<DescriptorTable>> DescriptorTable::create(const Device& device,
+                                                               const DescriptorTableDesc& desc) {
+    switch (device.api()) {
+    case Api::Vulkan: return VulkanDescriptorTable::create(device, desc);
+    case Api::D3D12: break;
+    }
+    return Error{std::format("{} backend: DescriptorTable not implemented", apiName(device.api()))};
 }
 
 } // namespace rend::gpu

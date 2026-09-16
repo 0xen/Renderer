@@ -1,16 +1,13 @@
 #pragma once
 
 #include "rend/core/result.h"
+#include "rend/gpu/api.h"
 #include "rend/gpu/feature_set.h"
 
 #include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
-
-typedef struct VkPhysicalDevice_T* VkPhysicalDevice;
-typedef struct VkDevice_T* VkDevice;
-typedef struct VkQueue_T* VkQueue;
 
 namespace rend::gpu {
 
@@ -46,39 +43,41 @@ enum class AntiAliasingTechnique {
 
 const char* antiAliasingTechniqueName(AntiAliasingTechnique technique);
 
-struct QueueInfo {
-    VkQueue queue = nullptr;
-    std::uint32_t familyIndex = ~0u;
-    bool valid() const { return queue != nullptr; }
-};
-
-// Owns adapter selection (scored against the FeatureSet), the VkDevice,
+// Owns adapter selection (scored against the FeatureSet), the API device
 // and its queues. Reports which optional features were actually enabled —
 // the source the renderer's capability offers derive from.
 class Device {
 public:
     static Result<std::unique_ptr<Device>> create(const Instance& instance, const FeatureSet& features);
-    ~Device();
+    virtual ~Device() = default;
 
     Device(const Device&) = delete;
     Device& operator=(const Device&) = delete;
 
-    VkDevice handle() const { return device_; }
-    VkPhysicalDevice physicalDevice() const { return physical_; }
+    Api api() const { return api_; }
     const std::string& adapterName() const { return adapterName_; }
 
-    // Graphics queue also handles compute + present.
-    const QueueInfo& graphicsQueue() const { return graphics_; }
-    // Dedicated transfer-only family when the hardware has one (async
-    // streaming/defrag); falls back to the graphics queue otherwise.
-    const QueueInfo& transferQueue() const { return transfer_; }
-    bool hasDedicatedTransfer() const { return transfer_.familyIndex != graphics_.familyIndex; }
+    // Whether the hardware has a transfer-only queue family used for
+    // uploads (async streaming/defrag later).
+    virtual bool hasDedicatedTransfer() const = 0;
 
     bool isEnabled(Feature f) const { return (enabledMask_ & (1ull << static_cast<std::uint32_t>(f))) != 0; }
 
     // Adapter's max sampler anisotropy when the feature was enabled at
     // creation, 0 when unavailable (samplers must stay isotropic then).
     float maxSamplerAnisotropy() const { return maxSamplerAnisotropy_; }
+
+    // Blocks until every queue has drained. Used around non-update-after-
+    // bind descriptor rewrites and before destruction.
+    virtual void waitIdle() const = 0;
+
+    // Backend objects for integrations that must talk to the API directly
+    // (the ImGui backend): VkDevice / VkPhysicalDevice / VkQueue under
+    // Vulkan. Never used by the engine's own passes.
+    virtual void* nativeHandle() const = 0;
+    virtual void* nativePhysicalDevice() const = 0;
+    virtual void* nativeGraphicsQueue() const = 0;
+    virtual std::uint32_t graphicsQueueFamily() const = 0;
 
     // Capability offer: which shadow techniques this device can run,
     // derived from the features that were actually enabled.
@@ -91,16 +90,15 @@ public:
     // gate on their features here.
     std::vector<AntiAliasingTechnique> supportedAntiAliasingTechniques() const;
 
-private:
-    Device() = default;
+protected:
+    explicit Device(Api api) : api_(api) {}
 
-    VkPhysicalDevice physical_ = nullptr;
-    VkDevice device_ = nullptr;
-    QueueInfo graphics_;
-    QueueInfo transfer_;
     std::string adapterName_;
     std::uint64_t enabledMask_ = 0;
     float maxSamplerAnisotropy_ = 0.0f;
+
+private:
+    Api api_;
 };
 
 } // namespace rend::gpu

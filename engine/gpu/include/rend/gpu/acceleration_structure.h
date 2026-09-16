@@ -7,8 +7,6 @@
 #include <memory>
 #include <span>
 
-typedef struct VkAccelerationStructureKHR_T* VkAccelerationStructureKHR;
-
 namespace rend::gpu {
 
 class Buffer;
@@ -72,11 +70,11 @@ public:
     // Rewrites one slot's instance region (dynamic TLAS only). Call only
     // between the slot's fence wait and its submission; entries past
     // instances.size() up to capacity become inactive.
-    void writeInstances(std::uint32_t slot, std::span<const Instance> instances);
+    virtual void writeInstances(std::uint32_t slot, std::span<const Instance> instances) = 0;
 
     // Records an in-place full rebuild from the slot's instance region
     // (dynamic TLAS only). The caller owns the surrounding barriers.
-    void recordRebuild(CommandContext& cmd, std::uint32_t slot) const;
+    virtual void recordRebuild(CommandContext& cmd, std::uint32_t slot) const = 0;
 
     // Records an in-place refit (mode UPDATE, src == dst) into cmd. The
     // BLAS overload takes fresh geometry ranges — same count and primitive
@@ -85,37 +83,24 @@ public:
     // from the build; call it after a BLAS refit so the instance AABBs
     // follow. Both require allowUpdate at build time; the caller owns the
     // barriers around the build stages.
-    void recordRefit(CommandContext& cmd, std::span<const TriangleGeometry> geometries) const;
-    void recordRefit(CommandContext& cmd) const;
+    virtual void recordRefit(CommandContext& cmd,
+                             std::span<const TriangleGeometry> geometries) const = 0;
+    virtual void recordRefit(CommandContext& cmd) const = 0;
 
-    ~AccelerationStructure();
+    virtual ~AccelerationStructure() = default;
 
     AccelerationStructure(const AccelerationStructure&) = delete;
     AccelerationStructure& operator=(const AccelerationStructure&) = delete;
 
-    VkAccelerationStructureKHR handle() const { return as_; }
     // Device address of this structure (BLAS: what TLAS instances
     // reference). Cached at build so per-frame instance writes make no
-    // Vulkan calls.
+    // API calls.
     std::uint64_t deviceAddress() const { return deviceAddress_; }
 
-private:
+protected:
     AccelerationStructure() = default;
 
-    const Device* device_ = nullptr;
-    VkAccelerationStructureKHR as_ = nullptr;
-    std::unique_ptr<Buffer> storage_;
     std::uint64_t deviceAddress_ = 0;
-    // Refit state (allowUpdate builds only): scratch sized for UPDATE mode,
-    // and for a TLAS the live instance buffer the update rereads.
-    std::unique_ptr<Buffer> updateScratch_;
-    std::unique_ptr<Buffer> instances_;
-    std::uint32_t instanceCount_ = 0;
-    // Dynamic-TLAS state: BUILD-mode scratch kept for per-frame rebuilds
-    // plus the per-slot region geometry of the instance buffer.
-    std::unique_ptr<Buffer> buildScratch_;
-    std::uint32_t capacity_ = 0;
-    std::uint32_t slotCount_ = 0;
 };
 
 } // namespace rend::gpu

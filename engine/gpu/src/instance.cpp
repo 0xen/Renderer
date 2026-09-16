@@ -1,10 +1,13 @@
 #include "rend/gpu/instance.h"
 
+#include "vulkan/vulkan_types.h"
+
 #include "rend/core/log.h"
 
 #include <volk.h>
 
 #include <cstring>
+#include <format>
 
 namespace rend::gpu {
 
@@ -54,7 +57,7 @@ bool hasLayer(const char* name) {
 
 } // namespace
 
-Result<std::unique_ptr<Instance>> Instance::create(const InstanceDesc& desc) {
+Result<std::unique_ptr<Instance>> VulkanInstance::create(const InstanceDesc& desc) {
     static bool volkReady = false;
     if (!volkReady) {
         if (volkInitialize() != VK_SUCCESS) {
@@ -123,7 +126,7 @@ Result<std::unique_ptr<Instance>> Instance::create(const InstanceDesc& desc) {
     }
     volkLoadInstance(handle);
 
-    auto instance = std::unique_ptr<Instance>(new Instance());
+    auto instance = std::unique_ptr<VulkanInstance>(new VulkanInstance());
     instance->instance_ = handle;
     instance->apiVersion_ = supported;
 
@@ -141,10 +144,10 @@ Result<std::unique_ptr<Instance>> Instance::create(const InstanceDesc& desc) {
               VK_API_VERSION_MAJOR(supported), VK_API_VERSION_MINOR(supported),
               VK_API_VERSION_PATCH(supported), validation ? "on" : "off",
               syncValidation ? "on" : "off");
-    return instance;
+    return std::unique_ptr<Instance>(std::move(instance));
 }
 
-Instance::~Instance() {
+VulkanInstance::~VulkanInstance() {
     if (messenger_ != VK_NULL_HANDLE && vkDestroyDebugUtilsMessengerEXT) {
         vkDestroyDebugUtilsMessengerEXT(instance_, messenger_, nullptr);
     }
@@ -152,6 +155,14 @@ Instance::~Instance() {
         vkDestroyInstance(instance_, nullptr);
         log::info("Vulkan instance destroyed");
     }
+}
+
+Result<std::unique_ptr<Instance>> Instance::create(Api api, const InstanceDesc& desc) {
+    switch (api) {
+    case Api::Vulkan: return VulkanInstance::create(desc);
+    case Api::D3D12: break;
+    }
+    return Error{std::format("{} backend: not implemented", apiName(api))};
 }
 
 } // namespace rend::gpu

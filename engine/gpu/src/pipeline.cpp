@@ -1,5 +1,7 @@
 #include "rend/gpu/pipeline.h"
 
+#include "vulkan/vulkan_types.h"
+
 #include "rend/gpu/descriptor_table.h"
 
 #include "rend/core/log.h"
@@ -13,8 +15,9 @@
 
 namespace rend::gpu {
 
-Result<std::unique_ptr<Pipeline>> Pipeline::createCompute(const Device& device,
-                                                          const ComputePipelineDesc& desc) {
+Result<std::unique_ptr<Pipeline>> VulkanPipeline::createCompute(const Device& deviceBase,
+                                                                  const ComputePipelineDesc& desc) {
+    const VulkanDevice& device = vk(deviceBase);
     if (!desc.shader) {
         return Error{"Compute pipeline needs a shader"};
     }
@@ -30,7 +33,7 @@ Result<std::unique_ptr<Pipeline>> Pipeline::createCompute(const Device& device,
         layoutInfo.pPushConstantRanges = &pushRange;
     }
     const VkDescriptorSetLayout setLayout =
-        desc.descriptorTable ? desc.descriptorTable->layout() : VK_NULL_HANDLE;
+        desc.descriptorTable ? vk(*desc.descriptorTable).layout() : VK_NULL_HANDLE;
     if (setLayout != VK_NULL_HANDLE) {
         layoutInfo.setLayoutCount = 1;
         layoutInfo.pSetLayouts = &setLayout;
@@ -46,7 +49,7 @@ Result<std::unique_ptr<Pipeline>> Pipeline::createCompute(const Device& device,
     info.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
     info.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     info.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
-    info.stage.module = desc.shader->handle();
+    info.stage.module = vk(*desc.shader).handle();
     info.stage.pName = desc.entryPoint;
     info.layout = layout;
 
@@ -58,17 +61,18 @@ Result<std::unique_ptr<Pipeline>> Pipeline::createCompute(const Device& device,
         return Error{std::format("vkCreateComputePipelines failed ({})", static_cast<int>(r))};
     }
 
-    auto pipeline = std::unique_ptr<Pipeline>(new Pipeline());
+    auto pipeline = std::unique_ptr<VulkanPipeline>(new VulkanPipeline());
     pipeline->device_ = &device;
     pipeline->layout_ = layout;
     pipeline->pipeline_ = handle;
     pipeline->compute_ = true;
     log::info("Compute pipeline created");
-    return pipeline;
+    return std::unique_ptr<Pipeline>(std::move(pipeline));
 }
 
-Result<std::unique_ptr<Pipeline>> Pipeline::createGraphics(const Device& device,
-                                                           const GraphicsPipelineDesc& desc) {
+Result<std::unique_ptr<Pipeline>> VulkanPipeline::createGraphics(const Device& deviceBase,
+                                                                   const GraphicsPipelineDesc& desc) {
+    const VulkanDevice& device = vk(deviceBase);
     if (!desc.vertexShader || !desc.fragmentShader) {
         return Error{"Graphics pipeline needs a vertex and a fragment shader"};
     }
@@ -86,7 +90,7 @@ Result<std::unique_ptr<Pipeline>> Pipeline::createGraphics(const Device& device,
         layoutInfo.pPushConstantRanges = &pushRange;
     }
     const VkDescriptorSetLayout setLayout =
-        desc.descriptorTable ? desc.descriptorTable->layout() : VK_NULL_HANDLE;
+        desc.descriptorTable ? vk(*desc.descriptorTable).layout() : VK_NULL_HANDLE;
     if (setLayout != VK_NULL_HANDLE) {
         layoutInfo.setLayoutCount = 1;
         layoutInfo.pSetLayouts = &setLayout;
@@ -101,11 +105,11 @@ Result<std::unique_ptr<Pipeline>> Pipeline::createGraphics(const Device& device,
     std::array<VkPipelineShaderStageCreateInfo, 2> stages{};
     stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
-    stages[0].module = desc.vertexShader->handle();
+    stages[0].module = vk(*desc.vertexShader).handle();
     stages[0].pName = desc.vertexEntryPoint;
     stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-    stages[1].module = desc.fragmentShader->handle();
+    stages[1].module = vk(*desc.fragmentShader).handle();
     stages[1].pName = desc.fragmentEntryPoint;
 
     VkVertexInputBindingDescription binding{};
@@ -248,17 +252,17 @@ Result<std::unique_ptr<Pipeline>> Pipeline::createGraphics(const Device& device,
         return Error{std::format("vkCreateGraphicsPipelines failed ({})", static_cast<int>(r))};
     }
 
-    auto pipeline = std::unique_ptr<Pipeline>(new Pipeline());
+    auto pipeline = std::unique_ptr<VulkanPipeline>(new VulkanPipeline());
     pipeline->device_ = &device;
     pipeline->layout_ = layout;
     pipeline->pipeline_ = handle;
     log::info("Graphics pipeline created (dynamic rendering, {} color attachment(s), format {})",
               colorFormats.size(),
               colorFormats.empty() ? 0 : static_cast<int>(colorFormats.front()));
-    return pipeline;
+    return std::unique_ptr<Pipeline>(std::move(pipeline));
 }
 
-Pipeline::~Pipeline() {
+VulkanPipeline::~VulkanPipeline() {
     if (!device_) {
         return;
     }
@@ -268,6 +272,24 @@ Pipeline::~Pipeline() {
     if (layout_ != VK_NULL_HANDLE) {
         vkDestroyPipelineLayout(device_->handle(), layout_, nullptr);
     }
+}
+
+Result<std::unique_ptr<Pipeline>> Pipeline::createGraphics(const Device& device,
+                                                         const GraphicsPipelineDesc& desc) {
+    switch (device.api()) {
+    case Api::Vulkan: return VulkanPipeline::createGraphics(device, desc);
+    case Api::D3D12: break;
+    }
+    return Error{std::format("{} backend: Pipeline not implemented", apiName(device.api()))};
+}
+
+Result<std::unique_ptr<Pipeline>> Pipeline::createCompute(const Device& device,
+                                                        const ComputePipelineDesc& desc) {
+    switch (device.api()) {
+    case Api::Vulkan: return VulkanPipeline::createCompute(device, desc);
+    case Api::D3D12: break;
+    }
+    return Error{std::format("{} backend: Pipeline not implemented", apiName(device.api()))};
 }
 
 } // namespace rend::gpu

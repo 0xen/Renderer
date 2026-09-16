@@ -10,11 +10,6 @@
 #include <memory>
 #include <vector>
 
-typedef struct VkCommandPool_T* VkCommandPool;
-typedef struct VkCommandBuffer_T* VkCommandBuffer;
-typedef struct VkSemaphore_T* VkSemaphore;
-typedef struct VkFence_T* VkFence;
-
 namespace rend::gpu {
 
 class Buffer;
@@ -290,16 +285,18 @@ struct FramePass {
     std::function<void(CommandContext&, const PassContext&)> record;
 };
 
-// Per-frame-recorded baseline frame loop: acquire, record, submit, present,
-// with two frames in flight. Deliberately the naive re-record-every-frame
-// path — the static command buffer model (docs/ARCHITECTURE.md) is measured
-// against this in a later milestone.
+// The frame loop: acquire, record, submit, present, with two frames in
+// flight. This base holds everything backend-neutral — the frame's pass
+// structure (recordFrame), the depth/G-buffer/scene-color targets, static
+// recording policy, frame passes and the overlay — and leaves the command
+// buffers, fences, semaphores and presentation to the backend subclass.
 class FrameRenderer {
 public:
     static constexpr std::uint32_t kFramesInFlight = 2;
 
+    // Dispatches on device.api() to the backend's frame renderer.
     static Result<std::unique_ptr<FrameRenderer>> create(const Device& device, Swapchain& swapchain);
-    ~FrameRenderer();
+    virtual ~FrameRenderer() = default;
 
     FrameRenderer(const FrameRenderer&) = delete;
     FrameRenderer& operator=(const FrameRenderer&) = delete;
@@ -310,7 +307,7 @@ public:
     // presented — the app withholds the batch while a loading cover
     // hides the scene. Out-of-date/suboptimal swapchains are recreated
     // transparently.
-    Result<void> drawFrame(const DrawBatch* batch = nullptr);
+    virtual Result<void> drawFrame(const DrawBatch* batch = nullptr) = 0;
 
     // Static recording (the milestone-7 experiment): command buffers are
     // recorded once per (frame slot, swapchain image) and reused every
@@ -349,7 +346,7 @@ public:
     // making the slot's per-frame regions (see DrawBatch::
     // indirectRegionStride) safe to write. drawFrame's own wait then
     // returns immediately.
-    Result<void> waitFrameSlot();
+    virtual Result<void> waitFrameSlot() = 0;
     std::uint32_t frameSlot() const { return frameIndex_; }
 
     // CPU cost counters since the last take; the record/reset time is the
@@ -368,7 +365,7 @@ public:
     // The destructor only touches device-owned objects, so the swapchain may
     // be destroyed first (it retires presents still waiting on the per-image
     // semaphores destroyed here).
-    void waitIdle() const;
+    virtual void waitIdle() const = 0;
 
     void setClearColor(float r, float g, float b, float a = 1.0f) { clearColor_ = {r, g, b, a}; }
 
@@ -397,46 +394,30 @@ public:
     static constexpr Format kLdrColorFormat = Format::R8G8B8A8Srgb;
     Result<void> setDeferredTargets(DescriptorTable* table);
 
-private:
+protected:
     FrameRenderer() = default;
 
-    Result<void> createSyncObjects();
-    Result<void> createImageSemaphores();
-    void destroyImageSemaphores();
     Result<void> createDepthBuffer();
     Result<void> createGBuffer();
+    // Rebuilds the swapchain at the pending size, invalidates the static
+    // recordings, lets the backend refresh per-image state
+    // (onSwapchainRecreated) and recreates the extent-sized targets.
     Result<void> recreateSwapchain();
-    Result<void> waitForFence(VkFence fence, const char* what) const;
-    // Vulkan frame-loop wrappers: begin/end the command buffer around the
-    // backend-neutral recording below.
-    Result<void> record(VkCommandBuffer cmd, std::uint32_t imageIndex, std::uint32_t slot,
-                        const DrawBatch* batch, bool reusable) const;
-    Result<void> recordOverlay(VkCommandBuffer cmd, std::uint32_t imageIndex) const;
+    virtual Result<void> onSwapchainRecreated(std::uint32_t previousImageCount) = 0;
+    // Frees the backend's static recordings (device idle first) and
+    // clears staticValid_.
+    virtual void invalidateStatic() = 0;
     // The frame itself, recorded through CommandContext only (every pass,
-    // barrier and draw the batch asks for). A second backend reuses this.
+    // barrier and draw the batch asks for). Every backend records the
+    // same passes from this code.
     void recordFrame(CommandContext& ctx, std::uint32_t imageIndex, std::uint32_t slot,
                      const DrawBatch* batch) const;
     void recordOverlayFrame(CommandContext& ctx, std::uint32_t imageIndex) const;
-    Result<void> prerecordStatic(const DrawBatch* batch);
-    void invalidateStatic();
     // Runs every frame pass registered for `point` (context.point is set).
     void recordPasses(CommandContext& ctx, PassPoint point, PassContext& context) const;
 
-    struct FrameData {
-        VkCommandBuffer commandBuffer = nullptr;
-        // The per-frame UI/present-transition tail after the scene buffer.
-        VkCommandBuffer overlayCommandBuffer = nullptr;
-        VkSemaphore imageAvailable = nullptr;
-        VkFence inFlight = nullptr;
-    };
-
     const Device* device_ = nullptr;
     Swapchain* swapchain_ = nullptr;
-    VkCommandPool commandPool_ = nullptr;
-    std::array<FrameData, kFramesInFlight> frames_{};
-    // One per swapchain image, not per frame in flight: presentation may
-    // still be reading an image's semaphore when its frame slot comes round.
-    std::vector<VkSemaphore> renderFinished_;
     // Depth buffer at swapchain extent; recreated with it. One is enough
     // for both frames in flight: rendering is serialized by the barriers.
     std::unique_ptr<Image> depth_;
@@ -452,10 +433,6 @@ private:
     std::unique_ptr<Image> ldrColor_;
     DescriptorTable* deferredTable_ = nullptr;
 
-    // Static-mode recordings, indexed [slot * imageCount + imageIndex];
-    // empty while invalid. A (slot, image) pair is never in flight twice,
-    // so the buffers need no simultaneous-use flag.
-    std::vector<VkCommandBuffer> staticBuffers_;
     bool staticEnabled_ = false;
     bool staticValid_ = false;
 

@@ -1,5 +1,7 @@
 #include "rend/gpu/shader.h"
 
+#include "vulkan/vulkan_types.h"
+
 #include "rend/core/log.h"
 #include "rend/gpu/device.h"
 
@@ -9,10 +11,13 @@
 #include <fstream>
 #include <vector>
 
+#include <format>
+
 namespace rend::gpu {
 
-Result<std::unique_ptr<Shader>> Shader::createFromFile(const Device& device,
-                                                       const std::filesystem::path& path) {
+Result<std::unique_ptr<Shader>> VulkanShader::createFromFile(const Device& deviceBase,
+                                                            const std::filesystem::path& path) {
+    const VulkanDevice& device = vk(deviceBase);
     std::ifstream file(path, std::ios::binary | std::ios::ate);
     if (!file) {
         return Error{std::format("Shader file not found: {}", path.string())};
@@ -41,17 +46,26 @@ Result<std::unique_ptr<Shader>> Shader::createFromFile(const Device& device,
                                  path.string())};
     }
 
-    auto shader = std::unique_ptr<Shader>(new Shader());
+    auto shader = std::unique_ptr<VulkanShader>(new VulkanShader());
     shader->device_ = &device;
     shader->module_ = handle;
     log::trace("Shader loaded: {} ({} bytes)", path.filename().string(), static_cast<long long>(size));
-    return shader;
+    return std::unique_ptr<Shader>(std::move(shader));
 }
 
-Shader::~Shader() {
+VulkanShader::~VulkanShader() {
     if (device_ && module_ != VK_NULL_HANDLE) {
         vkDestroyShaderModule(device_->handle(), module_, nullptr);
     }
+}
+
+Result<std::unique_ptr<Shader>> Shader::createFromFile(const Device& device,
+                                                       const std::filesystem::path& path) {
+    switch (device.api()) {
+    case Api::Vulkan: return VulkanShader::createFromFile(device, path);
+    case Api::D3D12: break;
+    }
+    return Error{std::format("{} backend: Shader not implemented", apiName(device.api()))};
 }
 
 } // namespace rend::gpu

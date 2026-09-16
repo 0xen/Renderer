@@ -1,5 +1,7 @@
 #include "rend/gpu/transfer.h"
 
+#include "vulkan/vulkan_types.h"
+
 #include "rend/core/log.h"
 #include "rend/gpu/buffer.h"
 #include "rend/gpu/device.h"
@@ -16,8 +18,9 @@ constexpr std::uint64_t kInitialStagingBytes = 4ull * 1024 * 1024;
 constexpr std::uint64_t kFenceTimeoutNs = 10ull * 1000 * 1000 * 1000;
 } // namespace
 
-Result<std::unique_ptr<TransferContext>> TransferContext::create(const Device& device) {
-    auto context = std::unique_ptr<TransferContext>(new TransferContext());
+Result<std::unique_ptr<TransferContext>> VulkanTransferContext::create(const Device& deviceBase) {
+    const VulkanDevice& device = vk(deviceBase);
+    auto context = std::unique_ptr<VulkanTransferContext>(new VulkanTransferContext());
     context->device_ = &device;
 
     VkCommandPoolCreateInfo poolInfo{};
@@ -46,10 +49,10 @@ Result<std::unique_ptr<TransferContext>> TransferContext::create(const Device& d
         r != VK_SUCCESS) {
         return Error{std::format("vkCreateFence failed ({})", static_cast<int>(r))};
     }
-    return context;
+    return std::unique_ptr<TransferContext>(std::move(context));
 }
 
-TransferContext::~TransferContext() {
+VulkanTransferContext::~VulkanTransferContext() {
     if (!device_) {
         return;
     }
@@ -61,7 +64,7 @@ TransferContext::~TransferContext() {
     }
 }
 
-Result<void> TransferContext::ensureStagingCapacity(std::uint64_t required) {
+Result<void> VulkanTransferContext::ensureStagingCapacity(std::uint64_t required) {
     if (staging_ && staging_->size() >= required) {
         return {};
     }
@@ -86,7 +89,7 @@ Result<void> TransferContext::ensureStagingCapacity(std::uint64_t required) {
     return {};
 }
 
-Result<void> TransferContext::stage(const Buffer& dst, std::uint64_t dstOffset, const void* data,
+Result<void> VulkanTransferContext::stage(const Buffer& dst, std::uint64_t dstOffset, const void* data,
                                     std::uint64_t size) {
     if (size == 0) {
         return {};
@@ -104,7 +107,7 @@ Result<void> TransferContext::stage(const Buffer& dst, std::uint64_t dstOffset, 
     return {};
 }
 
-Result<void> TransferContext::flush() {
+Result<void> VulkanTransferContext::flush() {
     if (pending_.empty()) {
         return {};
     }
@@ -119,7 +122,7 @@ Result<void> TransferContext::flush() {
         VkBufferCopy region{.srcOffset = copy.srcOffset,
                             .dstOffset = copy.dstOffset,
                             .size = copy.size};
-        vkCmdCopyBuffer(cmd_, staging_->handle(), copy.dst->handle(), 1, &region);
+        vkCmdCopyBuffer(cmd_, vk(*staging_).handle(), vk(*copy.dst).handle(), 1, &region);
     }
     if (VkResult r = vkEndCommandBuffer(cmd_); r != VK_SUCCESS) {
         return Error{std::format("vkEndCommandBuffer failed ({})", static_cast<int>(r))};
@@ -144,6 +147,14 @@ Result<void> TransferContext::flush() {
     pending_.clear();
     stagingUsed_ = 0;
     return {};
+}
+
+Result<std::unique_ptr<TransferContext>> TransferContext::create(const Device& device) {
+    switch (device.api()) {
+    case Api::Vulkan: return VulkanTransferContext::create(device);
+    case Api::D3D12: break;
+    }
+    return Error{std::format("{} backend: TransferContext not implemented", apiName(device.api()))};
 }
 
 } // namespace rend::gpu

@@ -1,5 +1,7 @@
 #include "rend/gpu/buffer.h"
 
+#include "vulkan/vulkan_types.h"
+
 #include "rend/gpu/device.h"
 #include "rend/gpu/memory_tracker.h"
 
@@ -28,7 +30,9 @@ Result<std::uint32_t> findMemoryType(VkPhysicalDevice physical, std::uint32_t ty
 
 } // namespace
 
-Result<std::unique_ptr<Buffer>> Buffer::create(const Device& device, const BufferDesc& desc) {
+Result<std::unique_ptr<Buffer>> VulkanBuffer::create(const Device& deviceBase,
+                                                     const BufferDesc& desc) {
+    const VulkanDevice& device = vk(deviceBase);
     if (desc.size == 0) {
         return Error{"Buffer size must be non-zero"};
     }
@@ -100,7 +104,7 @@ Result<std::unique_ptr<Buffer>> Buffer::create(const Device& device, const Buffe
         }
     }
 
-    auto buffer = std::unique_ptr<Buffer>(new Buffer());
+    auto buffer = std::unique_ptr<VulkanBuffer>(new VulkanBuffer());
     buffer->device_ = &device;
     buffer->buffer_ = handle;
     buffer->memory_ = memory;
@@ -111,10 +115,10 @@ Result<std::unique_ptr<Buffer>> Buffer::create(const Device& device, const Buffe
                              ? MemoryTracker::Kind::DeviceBuffer
                              : MemoryTracker::Kind::HostBuffer;
     MemoryTracker::onAlloc(buffer->trackKind_, requirements.size);
-    return buffer;
+    return std::unique_ptr<Buffer>(std::move(buffer));
 }
 
-Buffer::~Buffer() {
+VulkanBuffer::~VulkanBuffer() {
     if (!device_) {
         return;
     }
@@ -128,6 +132,14 @@ Buffer::~Buffer() {
         vkFreeMemory(device_->handle(), memory_, nullptr);
         MemoryTracker::onFree(trackKind_, allocatedBytes_);
     }
+}
+
+Result<std::unique_ptr<Buffer>> Buffer::create(const Device& device, const BufferDesc& desc) {
+    switch (device.api()) {
+    case Api::Vulkan: return VulkanBuffer::create(device, desc);
+    case Api::D3D12: break;
+    }
+    return Error{std::format("{} backend: Buffer not implemented", apiName(device.api()))};
 }
 
 } // namespace rend::gpu

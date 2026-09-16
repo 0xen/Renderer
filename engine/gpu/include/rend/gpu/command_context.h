@@ -136,67 +136,66 @@ struct RenderingDesc {
 // which backend is active to interpret it.
 class CommandContext {
 public:
-    // Backend-internal: wraps the API command buffer being recorded.
-    explicit CommandContext(void* nativeCommandBuffer) : cmd_(nativeCommandBuffer) {}
+    virtual ~CommandContext() = default;
 
     // The backend's command buffer (VkCommandBuffer under Vulkan).
-    void* nativeHandle() const { return cmd_; }
+    virtual void* nativeHandle() const = 0;
 
     // Layout + memory barrier for a whole image (mip 0, one layer); the
     // depth aspect follows the image's format.
-    void imageBarrier(const Image& image, ImageState from, ImageState to);
+    virtual void imageBarrier(const Image& image, ImageState from, ImageState to) = 0;
     // Global memory barrier: every write in `from` is visible to every
     // access in `to` (buffers written by one pass, read by the next).
-    void memoryBarrier(Stage from, Stage to);
+    virtual void memoryBarrier(Stage from, Stage to) = 0;
 
     // Precise barriers (see the vocabulary above): one dependency carrying
     // any number of global memory and image barriers.
-    void barrier(std::span<const MemoryBarrierDesc> memory,
-                 std::span<const ImageBarrierDesc> images);
+    virtual void barrier(std::span<const MemoryBarrierDesc> memory,
+                 std::span<const ImageBarrierDesc> images) = 0;
     void memoryBarrier(const MemoryBarrierDesc& desc) { barrier({&desc, 1}, {}); }
     void imageBarrier(const ImageBarrierDesc& desc) { barrier({}, {&desc, 1}); }
 
     // Fills `size` bytes of the buffer at `offset` with a 32-bit value
     // (both multiples of 4); a transfer-stage write.
-    void fillBuffer(const Buffer& buffer, std::uint64_t offset, std::uint64_t size,
-                    std::uint32_t value);
+    virtual void fillBuffer(const Buffer& buffer, std::uint64_t offset, std::uint64_t size,
+                    std::uint32_t value) = 0;
 
     // Dynamic rendering into the given targets; also sets the viewport and
     // scissor to the full extent. Attachments must already be in their
     // attachment states (imageBarrier). Must be closed with endRendering.
-    void beginRendering(const RenderingDesc& desc);
-    void endRendering();
-    void setViewport(float x, float y, float width, float height);
-    void setScissor(std::int32_t x, std::int32_t y, std::uint32_t width, std::uint32_t height);
+    virtual void beginRendering(const RenderingDesc& desc) = 0;
+    virtual void endRendering() = 0;
+    virtual void setViewport(float x, float y, float width, float height) = 0;
+    virtual void setScissor(std::int32_t x, std::int32_t y, std::uint32_t width, std::uint32_t height) = 0;
 
     // Bind point follows the pipeline's kind (graphics or compute).
-    void bindPipeline(const Pipeline& pipeline);
-    void bindDescriptorTable(const Pipeline& pipeline, const DescriptorTable& table);
+    virtual void bindPipeline(const Pipeline& pipeline) = 0;
+    virtual void bindDescriptorTable(const Pipeline& pipeline, const DescriptorTable& table) = 0;
     // Push-constant range at offset 0, all stages the pipeline declared.
-    void pushConstants(const Pipeline& pipeline, const void* data, std::uint32_t bytes);
+    virtual void pushConstants(const Pipeline& pipeline, const void* data, std::uint32_t bytes) = 0;
 
-    void bindVertexBuffer(const Buffer& buffer, std::uint64_t offset = 0);
-    void bindIndexBuffer(const Buffer& buffer, std::uint64_t offset = 0); // uint32 indices
+    virtual void bindVertexBuffer(const Buffer& buffer, std::uint64_t offset = 0) = 0;
+    virtual void bindIndexBuffer(const Buffer& buffer, std::uint64_t offset = 0) = 0; // uint32 indices
 
-    void draw(std::uint32_t vertexCount, std::uint32_t instanceCount = 1,
-              std::uint32_t firstVertex = 0, std::uint32_t firstInstance = 0);
-    void drawIndexed(std::uint32_t indexCount, std::uint32_t instanceCount = 1,
+    virtual void draw(std::uint32_t vertexCount, std::uint32_t instanceCount = 1,
+              std::uint32_t firstVertex = 0, std::uint32_t firstInstance = 0) = 0;
+    virtual void drawIndexed(std::uint32_t indexCount, std::uint32_t instanceCount = 1,
                      std::uint32_t firstIndex = 0, std::int32_t vertexOffset = 0,
-                     std::uint32_t firstInstance = 0);
+                     std::uint32_t firstInstance = 0) = 0;
     // Entries are the API's draw-indirect (16 B) / indexed (20 B,
     // DrawIndexedIndirect in frame_renderer.h) records; stride 0 = packed.
-    void drawIndirect(const Buffer& buffer, std::uint64_t offset, std::uint32_t drawCount,
-                      std::uint32_t stride = 0);
-    void drawIndexedIndirect(const Buffer& buffer, std::uint64_t offset, std::uint32_t drawCount,
-                             std::uint32_t stride = 0);
+    virtual void drawIndirect(const Buffer& buffer, std::uint64_t offset, std::uint32_t drawCount,
+                      std::uint32_t stride = 0) = 0;
+    virtual void drawIndexedIndirect(const Buffer& buffer, std::uint64_t offset, std::uint32_t drawCount,
+                             std::uint32_t stride = 0) = 0;
     // GPU-supplied draw count (uint32 at countOffset), capped at maxDrawCount.
-    void drawIndexedIndirectCount(const Buffer& buffer, std::uint64_t offset,
+    virtual void drawIndexedIndirectCount(const Buffer& buffer, std::uint64_t offset,
                                   const Buffer& count, std::uint64_t countOffset,
-                                  std::uint32_t maxDrawCount, std::uint32_t stride = 0);
-    void dispatch(std::uint32_t x, std::uint32_t y = 1, std::uint32_t z = 1);
+                                  std::uint32_t maxDrawCount, std::uint32_t stride = 0) = 0;
+    virtual void dispatch(std::uint32_t x, std::uint32_t y = 1, std::uint32_t z = 1) = 0;
 
-private:
-    void* cmd_ = nullptr;
+protected:
+    CommandContext() = default;
 };
 
 } // namespace rend::gpu

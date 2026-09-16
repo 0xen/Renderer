@@ -1,5 +1,7 @@
 #include "rend/gpu/acceleration_structure.h"
 
+#include "vulkan/vulkan_types.h"
+
 #include "rend/gpu/command_context.h"
 
 #include "rend/core/log.h"
@@ -19,7 +21,7 @@ namespace rend::gpu {
 
 namespace {
 
-VkDeviceAddress bufferAddress(const Device& device, VkBuffer buffer) {
+VkDeviceAddress bufferAddress(const VulkanDevice& device, VkBuffer buffer) {
     VkBufferDeviceAddressInfo info{};
     info.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
     info.buffer = buffer;
@@ -27,7 +29,7 @@ VkDeviceAddress bufferAddress(const Device& device, VkBuffer buffer) {
 }
 
 // Synchronous one-shot on the graphics queue (load-time builds only).
-Result<void> submitOnce(const Device& device, void (*record)(VkCommandBuffer, const void*),
+Result<void> submitOnce(const VulkanDevice& device, void (*record)(VkCommandBuffer, const void*),
                         const void* userData) {
     VkCommandPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
@@ -94,7 +96,7 @@ struct Built {
     std::unique_ptr<Buffer> buildScratch; // only when keepBuildScratch
 };
 
-VkDeviceAddress asDeviceAddress(const Device& device, VkAccelerationStructureKHR handle) {
+VkDeviceAddress asDeviceAddress(const VulkanDevice& device, VkAccelerationStructureKHR handle) {
     VkAccelerationStructureDeviceAddressInfoKHR info{};
     info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
     info.accelerationStructure = handle;
@@ -103,7 +105,7 @@ VkDeviceAddress asDeviceAddress(const Device& device, VkAccelerationStructureKHR
 
 // Caller Instance -> Vulkan instance record. A null BLAS makes the entry
 // inactive (address 0) — the dynamic TLAS keeps unused capacity that way.
-VkAccelerationStructureInstanceKHR fillInstance(const AccelerationStructure::Instance& in) {
+VkAccelerationStructureInstanceKHR fillInstance(const VulkanAccelerationStructure::Instance& in) {
     VkAccelerationStructureInstanceKHR inst{};
     // Column-major 4x4 -> Vulkan's row-major 3x4 (translation in [r][3]).
     for (int r = 0; r < 3; ++r) {
@@ -121,7 +123,7 @@ VkAccelerationStructureInstanceKHR fillInstance(const AccelerationStructure::Ins
 // Converts caller geometry ranges into the Vulkan build structures —
 // shared by the load-time build and per-frame refits (which pass the same
 // ranges with different vertex addresses).
-void fillTriangleGeometries(const Device& device,
+void fillTriangleGeometries(const VulkanDevice& device,
                             std::span<const AccelerationStructure::TriangleGeometry> geometries,
                             std::vector<VkAccelerationStructureGeometryKHR>& geos,
                             std::vector<VkAccelerationStructureBuildRangeInfoKHR>& ranges) {
@@ -129,7 +131,7 @@ void fillTriangleGeometries(const Device& device,
     ranges.resize(geometries.size());
     for (std::size_t i = 0; i < geometries.size(); ++i) {
         const AccelerationStructure::TriangleGeometry& g = geometries[i];
-        const VkDeviceAddress base = bufferAddress(device, g.buffer->handle());
+        const VkDeviceAddress base = bufferAddress(device, vk(*g.buffer).handle());
         auto& geo = geos[i];
         geo = {};
         geo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
@@ -152,7 +154,7 @@ void fillTriangleGeometries(const Device& device,
 // handle, run the build. allowUpdate also sizes and keeps the UPDATE
 // scratch so the structure can be refitted later.
 Result<Built> buildCommon(
-    const Device& device, VkAccelerationStructureTypeKHR type,
+    const VulkanDevice& device, VkAccelerationStructureTypeKHR type,
     VkAccelerationStructureBuildGeometryInfoKHR& build,
     const std::vector<VkAccelerationStructureBuildRangeInfoKHR>& ranges,
     const std::vector<std::uint32_t>& primitiveCounts, bool allowUpdate,
@@ -204,7 +206,7 @@ Result<Built> buildCommon(
 
     VkAccelerationStructureCreateInfoKHR createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
-    createInfo.buffer = storageResult.value()->handle();
+    createInfo.buffer = vk(*storageResult.value()).handle();
     createInfo.size = sizes.accelerationStructureSize;
     createInfo.type = type;
     VkAccelerationStructureKHR handle = VK_NULL_HANDLE;
@@ -216,7 +218,7 @@ Result<Built> buildCommon(
     }
 
     build.dstAccelerationStructure = handle;
-    build.scratchData.deviceAddress = bufferAddress(device, scratchResult.value()->handle());
+    build.scratchData.deviceAddress = bufferAddress(device, vk(*scratchResult.value()).handle());
 
     BuildJob job{build, ranges.data()};
     if (auto r = submitOnce(device, recordBuild, &job); !r) {
@@ -232,8 +234,9 @@ Result<Built> buildCommon(
 
 } // namespace
 
-Result<std::unique_ptr<AccelerationStructure>> AccelerationStructure::buildBottomLevel(
-    const Device& device, std::span<const TriangleGeometry> geometries, bool allowUpdate) {
+Result<std::unique_ptr<AccelerationStructure>> VulkanAccelerationStructure::buildBottomLevel(
+    const Device& deviceBase, std::span<const TriangleGeometry> geometries, bool allowUpdate) {
+    const VulkanDevice& device = vk(deviceBase);
     REND_PROFILE_ZONE("BuildBLAS");
     if (geometries.empty()) {
         return Error{"BLAS build needs at least one geometry"};
@@ -254,18 +257,19 @@ Result<std::unique_ptr<AccelerationStructure>> AccelerationStructure::buildBotto
     if (!result) {
         return result.error();
     }
-    auto as = std::unique_ptr<AccelerationStructure>(new AccelerationStructure());
+    auto as = std::unique_ptr<VulkanAccelerationStructure>(new VulkanAccelerationStructure());
     as->device_ = &device;
     as->as_ = result.value().handle;
     as->storage_ = std::move(result.value().storage);
     as->updateScratch_ = std::move(result.value().updateScratch);
     as->deviceAddress_ = asDeviceAddress(device, as->as_);
     log::info("BLAS built: {} geometries{}", geos.size(), allowUpdate ? " (updatable)" : "");
-    return as;
+    return std::unique_ptr<AccelerationStructure>(std::move(as));
 }
 
-Result<std::unique_ptr<AccelerationStructure>> AccelerationStructure::buildTopLevel(
-    const Device& device, std::span<const Instance> instances, bool allowUpdate) {
+Result<std::unique_ptr<AccelerationStructure>> VulkanAccelerationStructure::buildTopLevel(
+    const Device& deviceBase, std::span<const Instance> instances, bool allowUpdate) {
+    const VulkanDevice& device = vk(deviceBase);
     REND_PROFILE_ZONE("BuildTLAS");
     if (instances.empty()) {
         return Error{"TLAS build needs at least one instance"};
@@ -294,7 +298,7 @@ Result<std::unique_ptr<AccelerationStructure>> AccelerationStructure::buildTopLe
     geo.geometry.instances.sType =
         VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR;
     geo.geometry.instances.data.deviceAddress =
-        bufferAddress(device, instanceBuffer->handle());
+        bufferAddress(device, vk(*instanceBuffer).handle());
 
     std::vector<VkAccelerationStructureBuildRangeInfoKHR> ranges(1);
     ranges[0].primitiveCount = static_cast<std::uint32_t>(data.size());
@@ -309,7 +313,7 @@ Result<std::unique_ptr<AccelerationStructure>> AccelerationStructure::buildTopLe
     if (!result) {
         return result.error();
     }
-    auto as = std::unique_ptr<AccelerationStructure>(new AccelerationStructure());
+    auto as = std::unique_ptr<VulkanAccelerationStructure>(new VulkanAccelerationStructure());
     as->device_ = &device;
     as->as_ = result.value().handle;
     as->storage_ = std::move(result.value().storage);
@@ -321,12 +325,13 @@ Result<std::unique_ptr<AccelerationStructure>> AccelerationStructure::buildTopLe
         as->instanceCount_ = static_cast<std::uint32_t>(data.size());
     }
     log::info("TLAS built: {} instances{}", data.size(), allowUpdate ? " (updatable)" : "");
-    return as;
+    return std::unique_ptr<AccelerationStructure>(std::move(as));
 }
 
-Result<std::unique_ptr<AccelerationStructure>> AccelerationStructure::buildTopLevelDynamic(
-    const Device& device, std::span<const Instance> initial, std::uint32_t capacity,
+Result<std::unique_ptr<AccelerationStructure>> VulkanAccelerationStructure::buildTopLevelDynamic(
+    const Device& deviceBase, std::span<const Instance> initial, std::uint32_t capacity,
     std::uint32_t slotCount) {
+    const VulkanDevice& device = vk(deviceBase);
     REND_PROFILE_ZONE("BuildTLAS");
     if (capacity == 0 || slotCount == 0 || initial.size() > capacity) {
         return Error{"dynamic TLAS needs 0 < initial <= capacity and slots > 0"};
@@ -361,7 +366,7 @@ Result<std::unique_ptr<AccelerationStructure>> AccelerationStructure::buildTopLe
     geo.geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR;
     geo.geometry.instances.sType =
         VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR;
-    geo.geometry.instances.data.deviceAddress = bufferAddress(device, instanceBuffer->handle());
+    geo.geometry.instances.data.deviceAddress = bufferAddress(device, vk(*instanceBuffer).handle());
 
     // Size and build for the FULL capacity — the per-frame rebuild records
     // the same primitive count forever, inactive rows costing ~nothing.
@@ -377,7 +382,7 @@ Result<std::unique_ptr<AccelerationStructure>> AccelerationStructure::buildTopLe
     if (!result) {
         return result.error();
     }
-    auto as = std::unique_ptr<AccelerationStructure>(new AccelerationStructure());
+    auto as = std::unique_ptr<VulkanAccelerationStructure>(new VulkanAccelerationStructure());
     as->device_ = &device;
     as->as_ = result.value().handle;
     as->storage_ = std::move(result.value().storage);
@@ -388,10 +393,10 @@ Result<std::unique_ptr<AccelerationStructure>> AccelerationStructure::buildTopLe
     as->slotCount_ = slotCount;
     log::info("Dynamic TLAS built: {} initial instances, capacity {} x {} slots",
               initial.size(), capacity, slotCount);
-    return as;
+    return std::unique_ptr<AccelerationStructure>(std::move(as));
 }
 
-void AccelerationStructure::writeInstances(std::uint32_t slot,
+void VulkanAccelerationStructure::writeInstances(std::uint32_t slot,
                                            std::span<const Instance> instances) {
     if (slot >= slotCount_ || instances.size() > capacity_) {
         log::warn("writeInstances: slot {} / count {} out of range ({} slots, capacity {})",
@@ -411,7 +416,7 @@ void AccelerationStructure::writeInstances(std::uint32_t slot,
                 (capacity_ - i) * sizeof(VkAccelerationStructureInstanceKHR));
 }
 
-void AccelerationStructure::recordRebuild(CommandContext& ctx, std::uint32_t slot) const {
+void VulkanAccelerationStructure::recordRebuild(CommandContext& ctx, std::uint32_t slot) const {
     const VkCommandBuffer cmd = static_cast<VkCommandBuffer>(ctx.nativeHandle());
     VkAccelerationStructureGeometryKHR geo{};
     geo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
@@ -419,7 +424,7 @@ void AccelerationStructure::recordRebuild(CommandContext& ctx, std::uint32_t slo
     geo.geometry.instances.sType =
         VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR;
     geo.geometry.instances.data.deviceAddress =
-        bufferAddress(*device_, instances_->handle()) +
+        bufferAddress(*device_, vk(*instances_).handle()) +
         std::uint64_t{slot} * capacity_ * sizeof(VkAccelerationStructureInstanceKHR);
 
     VkAccelerationStructureBuildGeometryInfoKHR build{};
@@ -430,7 +435,7 @@ void AccelerationStructure::recordRebuild(CommandContext& ctx, std::uint32_t slo
     build.dstAccelerationStructure = as_;
     build.geometryCount = 1;
     build.pGeometries = &geo;
-    build.scratchData.deviceAddress = bufferAddress(*device_, buildScratch_->handle());
+    build.scratchData.deviceAddress = bufferAddress(*device_, vk(*buildScratch_).handle());
 
     VkAccelerationStructureBuildRangeInfoKHR range{};
     range.primitiveCount = capacity_;
@@ -438,7 +443,7 @@ void AccelerationStructure::recordRebuild(CommandContext& ctx, std::uint32_t slo
     vkCmdBuildAccelerationStructuresKHR(cmd, 1, &build, &rangePtr);
 }
 
-void AccelerationStructure::recordRefit(CommandContext& ctx,
+void VulkanAccelerationStructure::recordRefit(CommandContext& ctx,
                                         std::span<const TriangleGeometry> geometries) const {
     const VkCommandBuffer cmd = static_cast<VkCommandBuffer>(ctx.nativeHandle());
     std::vector<VkAccelerationStructureGeometryKHR> geos;
@@ -455,20 +460,20 @@ void AccelerationStructure::recordRefit(CommandContext& ctx,
     build.dstAccelerationStructure = as_;
     build.geometryCount = static_cast<std::uint32_t>(geos.size());
     build.pGeometries = geos.data();
-    build.scratchData.deviceAddress = bufferAddress(*device_, updateScratch_->handle());
+    build.scratchData.deviceAddress = bufferAddress(*device_, vk(*updateScratch_).handle());
 
     const VkAccelerationStructureBuildRangeInfoKHR* rangePtr = ranges.data();
     vkCmdBuildAccelerationStructuresKHR(cmd, 1, &build, &rangePtr);
 }
 
-void AccelerationStructure::recordRefit(CommandContext& ctx) const {
+void VulkanAccelerationStructure::recordRefit(CommandContext& ctx) const {
     const VkCommandBuffer cmd = static_cast<VkCommandBuffer>(ctx.nativeHandle());
     VkAccelerationStructureGeometryKHR geo{};
     geo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
     geo.geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR;
     geo.geometry.instances.sType =
         VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR;
-    geo.geometry.instances.data.deviceAddress = bufferAddress(*device_, instances_->handle());
+    geo.geometry.instances.data.deviceAddress = bufferAddress(*device_, vk(*instances_).handle());
 
     VkAccelerationStructureBuildGeometryInfoKHR build{};
     build.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
@@ -480,7 +485,7 @@ void AccelerationStructure::recordRefit(CommandContext& ctx) const {
     build.dstAccelerationStructure = as_;
     build.geometryCount = 1;
     build.pGeometries = &geo;
-    build.scratchData.deviceAddress = bufferAddress(*device_, updateScratch_->handle());
+    build.scratchData.deviceAddress = bufferAddress(*device_, vk(*updateScratch_).handle());
 
     VkAccelerationStructureBuildRangeInfoKHR range{};
     range.primitiveCount = instanceCount_;
@@ -488,10 +493,41 @@ void AccelerationStructure::recordRefit(CommandContext& ctx) const {
     vkCmdBuildAccelerationStructuresKHR(cmd, 1, &build, &rangePtr);
 }
 
-AccelerationStructure::~AccelerationStructure() {
+VulkanAccelerationStructure::~VulkanAccelerationStructure() {
     if (device_ && as_ != VK_NULL_HANDLE) {
         vkDestroyAccelerationStructureKHR(device_->handle(), as_, nullptr);
     }
+}
+
+Result<std::unique_ptr<AccelerationStructure>> AccelerationStructure::buildBottomLevel(
+    const Device& device, std::span<const TriangleGeometry> geometries, bool allowUpdate) {
+    switch (device.api()) {
+    case Api::Vulkan: return VulkanAccelerationStructure::buildBottomLevel(device, geometries, allowUpdate);
+    case Api::D3D12: break;
+    }
+    return Error{std::format("{} backend: AccelerationStructure not implemented",
+                             apiName(device.api()))};
+}
+
+Result<std::unique_ptr<AccelerationStructure>> AccelerationStructure::buildTopLevel(
+    const Device& device, std::span<const Instance> instances, bool allowUpdate) {
+    switch (device.api()) {
+    case Api::Vulkan: return VulkanAccelerationStructure::buildTopLevel(device, instances, allowUpdate);
+    case Api::D3D12: break;
+    }
+    return Error{std::format("{} backend: AccelerationStructure not implemented",
+                             apiName(device.api()))};
+}
+
+Result<std::unique_ptr<AccelerationStructure>> AccelerationStructure::buildTopLevelDynamic(
+    const Device& device, std::span<const Instance> initial, std::uint32_t capacity,
+    std::uint32_t slotCount) {
+    switch (device.api()) {
+    case Api::Vulkan: return VulkanAccelerationStructure::buildTopLevelDynamic(device, initial, capacity, slotCount);
+    case Api::D3D12: break;
+    }
+    return Error{std::format("{} backend: AccelerationStructure not implemented",
+                             apiName(device.api()))};
 }
 
 } // namespace rend::gpu

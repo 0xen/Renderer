@@ -5,10 +5,6 @@
 #include <cstdint>
 #include <memory>
 
-typedef struct VkDescriptorSetLayout_T* VkDescriptorSetLayout;
-typedef struct VkDescriptorSet_T* VkDescriptorSet;
-typedef struct VkDescriptorPool_T* VkDescriptorPool;
-typedef struct VkSampler_T* VkSampler;
 
 namespace rend::gpu {
 
@@ -85,10 +81,10 @@ public:
                                                            std::uint32_t maxTextures) {
         return create(device, DescriptorTableDesc{.maxTextures = maxTextures});
     }
-    ~DescriptorTable();
+    virtual ~DescriptorTable() = default;
 
     // Binding numbers of the caller-declared bindings; write them with
-    // writeStorageBuffer / writeSampledImage(binding, 0, view).
+    // writeStorageBuffer / writeSampledImage(binding, 0, image).
     std::uint32_t userStorageBinding(std::uint32_t index) const {
         return kUserBindingBase + index;
     }
@@ -101,37 +97,29 @@ public:
     DescriptorTable(const DescriptorTable&) = delete;
     DescriptorTable& operator=(const DescriptorTable&) = delete;
 
-    VkDescriptorSetLayout layout() const { return layout_; }
-    VkDescriptorSet set() const { return set_; }
-
     // Buffer bindings take the whole buffer unless `range` (bytes) is given.
-    void writeObjectBuffer(const Buffer& buffer, std::uint64_t range = 0);
-    void writeTexture(std::uint32_t index, const Image& image);
+    virtual void writeObjectBuffer(const Buffer& buffer, std::uint64_t range = 0) = 0;
+    virtual void writeTexture(std::uint32_t index, const Image& image) = 0;
     // Storage-buffer bindings; binding picks which, see class comment.
-    void writeStorageBuffer(std::uint32_t binding, const Buffer& buffer, std::uint64_t range = 0);
+    virtual void writeStorageBuffer(std::uint32_t binding, const Buffer& buffer,
+                                    std::uint64_t range = 0) = 0;
     // Binding 8: one cascade's depth image the scene pass samples.
-    void writeShadowMap(std::uint32_t cascade, const Image& image);
+    virtual void writeShadowMap(std::uint32_t cascade, const Image& image) = 0;
     // Binding 18: the reflection probe's cube image.
-    void writeProbe(const Image& image);
+    virtual void writeProbe(const Image& image) = 0;
     // Binding 27: one point light's shadow-distance cube (index = the
     // light's slot, 0..15). Not update-after-bind — idle around writes.
-    void writePointShadowMap(std::uint32_t index, const Image& image);
-    // Any SAMPLED_IMAGE binding/array element (SHADER_READ_ONLY layout);
-    // used for the G-buffer targets 28-31. Not update-after-bind — idle
-    // around writes.
-    void writeSampledImage(std::uint32_t binding, std::uint32_t index, const Image& image);
+    virtual void writePointShadowMap(std::uint32_t index, const Image& image) = 0;
+    // Any sampled-image binding/array element; used for the G-buffer
+    // targets 28-31. Not update-after-bind — idle around writes.
+    virtual void writeSampledImage(std::uint32_t binding, std::uint32_t index,
+                                   const Image& image) = 0;
     // Binding 10 (RayQuery devices only): the scene TLAS.
-    void writeAccelerationStructure(const AccelerationStructure& tlas);
+    virtual void writeAccelerationStructure(const AccelerationStructure& tlas) = 0;
 
-private:
+protected:
     DescriptorTable() = default;
 
-    const Device* device_ = nullptr;
-    VkDescriptorPool pool_ = nullptr;
-    VkDescriptorSetLayout layout_ = nullptr;
-    VkDescriptorSet set_ = nullptr;
-    VkSampler sampler_ = nullptr;
-    VkSampler shadowSampler_ = nullptr; // comparison (PCF) sampler, binding 9
     std::uint32_t userStorageBuffers_ = 0;
     std::uint32_t userSampledImages_ = 0;
 };

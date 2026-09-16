@@ -1,5 +1,7 @@
 #include "rend/gpu/swapchain.h"
 
+#include "vulkan/vulkan_types.h"
+
 #include "rend/core/log.h"
 #include "rend/gpu/device.h"
 #include "rend/gpu/image.h"
@@ -8,6 +10,7 @@
 #include <volk.h>
 
 #include <algorithm>
+#include <format>
 
 namespace rend::gpu {
 
@@ -78,29 +81,33 @@ VkCompositeAlphaFlagBitsKHR chooseCompositeAlpha(const VkSurfaceCapabilitiesKHR&
 
 } // namespace
 
-Result<std::unique_ptr<Swapchain>> Swapchain::create(const Instance& instance, const Device& device,
-                                                     const SwapchainDesc& desc) {
+Result<std::unique_ptr<Swapchain>> VulkanSwapchain::create(const Instance& instanceBase,
+                                                           const Device& deviceBase,
+                                                           const SwapchainDesc& desc) {
+    const VulkanInstance& instance = vk(instanceBase);
+    const VulkanDevice& device = vk(deviceBase);
+    const auto surface = static_cast<VkSurfaceKHR>(desc.nativeSurface);
     VkBool32 presentable = VK_FALSE;
     vkGetPhysicalDeviceSurfaceSupportKHR(device.physicalDevice(), device.graphicsQueue().familyIndex,
-                                         desc.surface, &presentable);
+                                         surface, &presentable);
     if (!presentable) {
         return Error{"Graphics queue family cannot present to this surface"};
     }
 
-    auto swapchain = std::unique_ptr<Swapchain>(new Swapchain());
+    auto swapchain = std::unique_ptr<VulkanSwapchain>(new VulkanSwapchain());
     swapchain->instance_ = &instance;
     swapchain->device_ = &device;
-    swapchain->surface_ = desc.surface;
+    swapchain->surface_ = surface;
     swapchain->transparent_ = desc.transparent;
     swapchain->vsync_ = desc.vsync;
 
     if (auto r = swapchain->build(desc.width, desc.height, VK_NULL_HANDLE); !r) {
         return r.error();
     }
-    return swapchain;
+    return std::unique_ptr<Swapchain>(std::move(swapchain));
 }
 
-Result<void> Swapchain::build(std::uint32_t width, std::uint32_t height, VkSwapchainKHR old) {
+Result<void> VulkanSwapchain::build(std::uint32_t width, std::uint32_t height, VkSwapchainKHR old) {
     VkPhysicalDevice pd = device_->physicalDevice();
 
     VkSurfaceCapabilitiesKHR caps{};
@@ -176,7 +183,7 @@ Result<void> Swapchain::build(std::uint32_t width, std::uint32_t height, VkSwapc
     }
     wrapped_.clear();
     for (std::uint32_t i = 0; i < actualCount; ++i) {
-        wrapped_.push_back(Image::wrapExternal(images_[i], views_[i], format_, width_, height_));
+        wrapped_.push_back(VulkanImage::wrapExternal(images_[i], views_[i], format_, width_, height_));
     }
 
     log::info("Swapchain {}x{}: {} images, format {}, present mode {}, composite alpha {}", width_,
@@ -185,7 +192,7 @@ Result<void> Swapchain::build(std::uint32_t width, std::uint32_t height, VkSwapc
     return {};
 }
 
-Result<void> Swapchain::recreate(std::uint32_t width, std::uint32_t height) {
+Result<void> VulkanSwapchain::recreate(std::uint32_t width, std::uint32_t height) {
     vkDeviceWaitIdle(device_->handle());
     destroyViews();
     VkSwapchainKHR old = swapchain_;
@@ -193,7 +200,7 @@ Result<void> Swapchain::recreate(std::uint32_t width, std::uint32_t height) {
     return build(width, height, old);
 }
 
-void Swapchain::destroyViews() {
+void VulkanSwapchain::destroyViews() {
     for (VkImageView view : views_) {
         if (view != VK_NULL_HANDLE) {
             vkDestroyImageView(device_->handle(), view, nullptr);
@@ -203,7 +210,7 @@ void Swapchain::destroyViews() {
     images_.clear();
 }
 
-Swapchain::~Swapchain() {
+VulkanSwapchain::~VulkanSwapchain() {
     if (device_ && device_->handle()) {
         vkDeviceWaitIdle(device_->handle());
         destroyViews();
@@ -215,6 +222,15 @@ Swapchain::~Swapchain() {
         vkDestroySurfaceKHR(instance_->handle(), surface_, nullptr);
         log::info("Swapchain and surface destroyed");
     }
+}
+
+Result<std::unique_ptr<Swapchain>> Swapchain::create(const Instance& instance, const Device& device,
+                                                     const SwapchainDesc& desc) {
+    switch (device.api()) {
+    case Api::Vulkan: return VulkanSwapchain::create(instance, device, desc);
+    case Api::D3D12: break;
+    }
+    return Error{std::format("{} backend: Swapchain not implemented", apiName(device.api()))};
 }
 
 } // namespace rend::gpu
