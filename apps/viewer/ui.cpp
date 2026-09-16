@@ -1,6 +1,7 @@
 #include "ui.h"
 
 #include "rend/core/log.h"
+#include "rend/gpu/command_context.h"
 #include "rend/gpu/device.h"
 #include "rend/gpu/instance.h"
 #include "rend/gpu/memory_tracker.h"
@@ -102,7 +103,7 @@ std::unique_ptr<Ui> Ui::create(const rend::gpu::Instance& instance,
     info.Queue = device.graphicsQueue().queue;
     info.DescriptorPoolSize = 8; // backend creates its own pool
     info.MinImageCount = 2;
-    info.ImageCount = static_cast<std::uint32_t>(swapchain.images().size());
+    info.ImageCount = swapchain.imageCount();
     info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
     info.UseDynamicRendering = true;
     info.PipelineRenderingCreateInfo = {};
@@ -282,12 +283,13 @@ void Ui::buildFrame(std::uint32_t width, std::uint32_t height, float deltaSecond
     frameBuilt_ = true;
 }
 
-void Ui::render(VkCommandBuffer cmd) {
+void Ui::render(rend::gpu::CommandContext& cmd) {
     if (!frameBuilt_) {
         return; // drawFrame without a built frame (shouldn't happen)
     }
     ImGui::Render();
-    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
+    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(),
+                                    static_cast<VkCommandBuffer>(cmd.nativeHandle()));
     frameBuilt_ = false;
 }
 

@@ -5,9 +5,8 @@
 #include <cstdint>
 #include <memory>
 
-typedef struct VkCommandBuffer_T* VkCommandBuffer;
-
 namespace rend::gpu {
+class CommandContext;
 class Device;
 class Instance;
 class Swapchain;
@@ -69,7 +68,7 @@ public:
 
     // The FrameRenderer overlay recorder: finalizes the ImGui frame and
     // records its draw data. Runs inside an active rendering pass.
-    void render(VkCommandBuffer cmd);
+    void render(rend::gpu::CommandContext& cmd);
 
 private:
     Ui() = default;

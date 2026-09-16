@@ -14,8 +14,6 @@ typedef struct VkCommandPool_T* VkCommandPool;
 typedef struct VkCommandBuffer_T* VkCommandBuffer;
 typedef struct VkSemaphore_T* VkSemaphore;
 typedef struct VkFence_T* VkFence;
-typedef struct VkImage_T* VkImage;
-typedef struct VkImageView_T* VkImageView;
 
 namespace rend::gpu {
 
@@ -272,14 +270,13 @@ struct PassContext {
     std::uint32_t imageIndex = 0; // swapchain image being recorded for
     std::uint32_t width = 0;      // swapchain extent
     std::uint32_t height = 0;
-    VkImage swapchainImage = nullptr;
-    VkImageView swapchainView = nullptr;
+    const Image* swapchainImage = nullptr; // this frame's presentable image
     Format swapchainFormat = Format::Undefined;
     // InScene only: what the active rendering pass attaches.
-    VkImageView colorView = nullptr; // swapchain or scene-color view
+    const Image* color = nullptr; // swapchain image or the scene-color target
     Format colorFormat = Format::Undefined; // format of that attachment
     bool depthAttached = false;
-    VkImageView depthView = nullptr; // the frame depth image, when attached
+    const Image* depth = nullptr; // the frame depth image, when attached
 };
 
 class CommandContext;
@@ -335,7 +332,7 @@ public:
     // records e.g. ImGui draw data. Recorded every frame regardless of
     // static mode — overlay content is inherently dynamic; the prerecorded
     // scene buffers stay untouched. Null disables the pass.
-    using OverlayRecorder = std::function<void(VkCommandBuffer)>;
+    using OverlayRecorder = std::function<void(CommandContext&)>;
     void setOverlayRecorder(OverlayRecorder recorder) { overlayRecorder_ = std::move(recorder); }
 
     // Frame passes: caller-recorded work spliced into the frame at fixed

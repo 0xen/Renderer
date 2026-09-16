@@ -3236,7 +3236,7 @@ int main(int argc, char** argv) {
     // which stays per-frame even when the scene buffers are static.
     auto ui = viewer::Ui::create(*instance, *device, *swapchain);
     if (ui) {
-        renderer->setOverlayRecorder([&ui](VkCommandBuffer cmd) { ui->render(cmd); });
+        renderer->setOverlayRecorder([&ui](gpu::CommandContext& cmd) { ui->render(cmd); });
     } else {
         log::warn("Debug UI unavailable; continuing without it");
     }

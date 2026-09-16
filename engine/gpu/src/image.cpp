@@ -130,8 +130,20 @@ Result<std::unique_ptr<Image>> Image::create(const Device& device, const ImageDe
     return out;
 }
 
+std::unique_ptr<Image> Image::wrapExternal(VkImage image, VkImageView view, Format format,
+                                           std::uint32_t width, std::uint32_t height) {
+    auto out = std::unique_ptr<Image>(new Image());
+    out->image_ = image;
+    out->view_ = view;
+    out->format_ = format;
+    out->width_ = width;
+    out->height_ = height;
+    out->owned_ = false;
+    return out;
+}
+
 Image::~Image() {
-    if (!device_) {
+    if (!device_ || !owned_) {
         return;
     }
     for (VkImageView faceView : faceViews_) {

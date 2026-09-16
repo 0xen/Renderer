@@ -2,6 +2,7 @@
 
 #include "rend/core/log.h"
 #include "rend/gpu/device.h"
+#include "rend/gpu/image.h"
 #include "rend/gpu/instance.h"
 
 #include <volk.h>
@@ -172,6 +173,10 @@ Result<void> Swapchain::build(std::uint32_t width, std::uint32_t height, VkSwapc
             r != VK_SUCCESS) {
             return Error{std::format("vkCreateImageView failed ({})", static_cast<int>(r))};
         }
+    }
+    wrapped_.clear();
+    for (std::uint32_t i = 0; i < actualCount; ++i) {
+        wrapped_.push_back(Image::wrapExternal(images_[i], views_[i], format_, width_, height_));
     }
 
     log::info("Swapchain {}x{}: {} images, format {}, present mode {}, composite alpha {}", width_,

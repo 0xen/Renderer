@@ -41,6 +41,10 @@ struct ImageDesc {
 class Image {
 public:
     static Result<std::unique_ptr<Image>> create(const Device& device, const ImageDesc& desc);
+    // Backend-internal: a non-owning view of an image the backend does
+    // not allocate itself (swapchain images). Destroys nothing.
+    static std::unique_ptr<Image> wrapExternal(VkImage image, VkImageView view, Format format,
+                                               std::uint32_t width, std::uint32_t height);
     ~Image();
 
     Image(const Image&) = delete;
@@ -72,6 +76,7 @@ private:
     // Alignment-padded allocation cost reported to the MemoryTracker; the
     // destructor releases the same figure.
     std::uint64_t allocatedBytes_ = 0;
+    bool owned_ = true;
 };
 
 } // namespace rend::gpu

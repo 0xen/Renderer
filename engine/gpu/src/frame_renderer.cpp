@@ -274,8 +274,7 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
     passContext.imageIndex = imageIndex;
     passContext.width = swapchain_->width();
     passContext.height = swapchain_->height();
-    passContext.swapchainImage = swapchain_->images()[imageIndex];
-    passContext.swapchainView = swapchain_->imageViews()[imageIndex];
+    passContext.swapchainImage = &swapchain_->image(imageIndex);
     passContext.swapchainFormat = swapchain_->imageFormat();
     recordPasses(cmd, PassPoint::BeforeScene, passContext);
 
@@ -979,18 +978,18 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
     }
     // No batch: nothing draws — the cleared swapchain image (plus the
     // overlay pass) is the whole frame — unless InScene passes draw here.
-    passContext.colorView = color.imageView;
+    passContext.color = post ? sceneColor_.get() : &swapchain_->image(imageIndex);
     passContext.colorFormat = post ? kSceneColorFormat : swapchain_->imageFormat();
     passContext.depthAttached = rasterScene;
-    passContext.depthView = rasterScene ? depth.imageView : VK_NULL_HANDLE;
+    passContext.depth = rasterScene ? depth_.get() : nullptr;
     recordPasses(cmd, PassPoint::InScene, passContext);
 
     vkCmdEndRendering(cmd);
 
-    passContext.colorView = VK_NULL_HANDLE;
+    passContext.color = nullptr;
     passContext.colorFormat = Format::Undefined;
     passContext.depthAttached = false;
-    passContext.depthView = VK_NULL_HANDLE;
+    passContext.depth = nullptr;
     recordPasses(cmd, PassPoint::AfterScene, passContext);
 
     if (post) {
@@ -1158,7 +1157,8 @@ Result<void> FrameRenderer::recordOverlay(VkCommandBuffer cmd, std::uint32_t ima
         vkCmdSetViewport(cmd, 0, 1, &viewport);
         vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-        overlayRecorder_(cmd);
+        CommandContext overlay(cmd);
+        overlayRecorder_(overlay);
 
         vkCmdEndRendering(cmd);
     }

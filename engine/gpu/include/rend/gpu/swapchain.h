@@ -14,8 +14,9 @@ typedef struct VkImageView_T* VkImageView;
 
 namespace rend::gpu {
 
-class Instance;
 class Device;
+class Image;
+class Instance;
 
 struct SwapchainDesc {
     VkSurfaceKHR surface = nullptr; // ownership transfers to the Swapchain
@@ -50,6 +51,10 @@ public:
     Format imageFormat() const { return format_; }
     std::uint32_t width() const { return width_; }
     std::uint32_t height() const { return height_; }
+    std::uint32_t imageCount() const { return static_cast<std::uint32_t>(images_.size()); }
+    // Swapchain image `index` as a (non-owning) Image: what frame passes
+    // and the frame renderer render into and barrier.
+    const Image& image(std::uint32_t index) const { return *wrapped_[index]; }
     const std::vector<VkImage>& images() const { return images_; }
     const std::vector<VkImageView>& imageViews() const { return views_; }
 
@@ -64,6 +69,7 @@ private:
     VkSwapchainKHR swapchain_ = nullptr;
     std::vector<VkImage> images_;
     std::vector<VkImageView> views_;
+    std::vector<std::unique_ptr<Image>> wrapped_;
     Format format_ = Format::Undefined;
     std::uint32_t width_ = 0;
     std::uint32_t height_ = 0;
