@@ -1,6 +1,7 @@
 #include "rend/gpu/shader.h"
 
 #include "vulkan/vulkan_types.h"
+#include "d3d12/d3d12_types.h"
 
 #include "rend/core/log.h"
 #include "rend/gpu/device.h"
@@ -63,7 +64,7 @@ Result<std::unique_ptr<Shader>> Shader::createFromFile(const Device& device,
                                                        const std::filesystem::path& path) {
     switch (device.api()) {
     case Api::Vulkan: return VulkanShader::createFromFile(device, path);
-    case Api::D3D12: break;
+    case Api::D3D12: return D3D12Shader::createFromFile(device, path);
     }
     return Error{std::format("{} backend: Shader not implemented", apiName(device.api()))};
 }

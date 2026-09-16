@@ -38,16 +38,16 @@ struct SkinVertex {
     float weight2;
     float weight3;
 };
-[[vk::binding(14, 0)]] StructuredBuffer<SkinVertex> skinVertices REND_U(14);
+[[vk::binding(14, 0)]] StructuredBuffer<SkinVertex> skinVertices REND_B(14);
 
 struct JointMatrix {
     column_major float4x4 m; // model * world[joint] * inverseBind
 };
-[[vk::binding(15, 0)]] StructuredBuffer<JointMatrix> joints REND_U(15);
+[[vk::binding(15, 0)]] StructuredBuffer<JointMatrix> joints REND_B(15);
 
 // 6 floats per vertex per target: position delta xyz, normal delta xyz.
-[[vk::binding(16, 0)]] StructuredBuffer<float> morphDeltas REND_U(16);
-[[vk::binding(17, 0)]] StructuredBuffer<float> morphWeights REND_U(17);
+[[vk::binding(16, 0)]] StructuredBuffer<float> morphDeltas REND_B(16);
+[[vk::binding(17, 0)]] StructuredBuffer<float> morphWeights REND_B(17);
 
 [numthreads(64, 1, 1)]
 void CSMain(uint3 id : SV_DispatchThreadID) {

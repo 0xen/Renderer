@@ -11,9 +11,12 @@ namespace rend::gpu {
 namespace {
 
 // Composition swapchains reject sRGB formats, so both paths present
-// through an UNORM BGRA8 surface; sRGB encoding is the post pass's job on
-// this backend.
-constexpr Format kSurfaceFormat = Format::B8G8R8A8Unorm;
+// through an UNORM BGRA8 surface viewed through sRGB render-target views
+// (the documented flip-model trick): pipelines declare the sRGB format
+// and the hardware encodes on write.
+constexpr DXGI_FORMAT kSurfaceFormat = DXGI_FORMAT_B8G8R8A8_UNORM;
+constexpr DXGI_FORMAT kViewFormat = DXGI_FORMAT_B8G8R8A8_UNORM_SRGB;
+constexpr Format kImageFormat = Format::B8G8R8A8Srgb;
 constexpr std::uint32_t kCompositionBuffers = 2;
 constexpr std::uint32_t kHwndBuffers = 3;
 
@@ -35,7 +38,7 @@ Result<std::unique_ptr<Swapchain>> D3D12Swapchain::create(const Instance& instan
     swapchain->hwnd_ = hwnd;
     swapchain->transparent_ = desc.transparent;
     swapchain->vsync_ = desc.vsync;
-    swapchain->format_ = kSurfaceFormat;
+    swapchain->format_ = kImageFormat;
 
     if (desc.transparent) {
         // The desktop shows through only when the window has NO
@@ -71,11 +74,12 @@ Result<void> D3D12Swapchain::build(std::uint32_t width, std::uint32_t height) {
     DXGI_SWAP_CHAIN_DESC1 desc{};
     desc.Width = width;
     desc.Height = height;
-    desc.Format = toDxgi(format_);
+    desc.Format = kSurfaceFormat;
     desc.SampleDesc.Count = 1;
     desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
     desc.BufferCount = bufferCount_;
     desc.Scaling = DXGI_SCALING_STRETCH;
+    desc.Flags = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
     IDXGIFactory6* factory = instance_->factory();
 
     ComPtr<IDXGISwapChain1> created;
@@ -91,6 +95,16 @@ Result<void> D3D12Swapchain::build(std::uint32_t width, std::uint32_t height) {
     } else {
         desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
         desc.AlphaMode = DXGI_ALPHA_MODE_IGNORE;
+        BOOL allowTearing = FALSE;
+        ComPtr<IDXGIFactory5> factory5;
+        if (SUCCEEDED(factory->QueryInterface(IID_PPV_ARGS(&factory5)))) {
+            factory5->CheckFeatureSupport(DXGI_FEATURE_PRESENT_ALLOW_TEARING, &allowTearing,
+                                          sizeof(allowTearing));
+        }
+        tearing_ = allowTearing == TRUE;
+        if (tearing_) {
+            desc.Flags |= DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;
+        }
         if (HRESULT hr = factory->CreateSwapChainForHwnd(device_->graphicsQueue(), hwnd_, &desc,
                                                          nullptr, nullptr, &created);
             FAILED(hr)) {
@@ -102,6 +116,11 @@ Result<void> D3D12Swapchain::build(std::uint32_t width, std::uint32_t height) {
     if (HRESULT hr = created.As(&swapchain_); FAILED(hr)) {
         return Error{std::format("IDXGISwapChain3 unavailable (0x{:08x})", static_cast<unsigned>(hr))};
     }
+    swapchain_->SetMaximumFrameLatency(FrameRenderer::kFramesInFlight);
+    if (waitable_) {
+        CloseHandle(waitable_);
+    }
+    waitable_ = swapchain_->GetFrameLatencyWaitableObject();
 
     if (transparent_) {
         // DirectComposition binds the swapchain to the window as a visual
@@ -140,9 +159,10 @@ Result<void> D3D12Swapchain::build(std::uint32_t width, std::uint32_t height) {
     if (auto r = acquireBuffers(); !r) {
         return r.error();
     }
-    log::info("Swapchain {}x{}: {} images, format {}, {}, vsync {}", width_, height_, bufferCount_,
+    log::info("Swapchain {}x{}: {} images, format {}, {}, vsync {}{}", width_, height_, bufferCount_,
               formatName(format_),
-              transparent_ ? "composition (premultiplied alpha)" : "hwnd flip", vsync_ ? "on" : "off");
+              transparent_ ? "composition (premultiplied alpha)" : "hwnd flip", vsync_ ? "on" : "off",
+              tearing_ ? ", tearing allowed" : "");
     return {};
 }
 
@@ -153,7 +173,10 @@ Result<void> D3D12Swapchain::acquireBuffers() {
         if (HRESULT hr = swapchain_->GetBuffer(i, IID_PPV_ARGS(&buffer)); FAILED(hr)) {
             return Error{std::format("GetBuffer({}) failed (0x{:08x})", i, static_cast<unsigned>(hr))};
         }
-        device_->handle()->CreateRenderTargetView(buffer.Get(), nullptr, rtv);
+        D3D12_RENDER_TARGET_VIEW_DESC rtvDesc{};
+        rtvDesc.Format = kViewFormat;
+        rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
+        device_->handle()->CreateRenderTargetView(buffer.Get(), &rtvDesc, rtv);
         wrapped_.push_back(D3D12Image::wrapExternal(buffer.Get(), rtv, format_, width_, height_));
         buffers_.push_back(std::move(buffer));
         rtv.ptr += device_->rtvDescriptorSize();
@@ -170,7 +193,9 @@ void D3D12Swapchain::releaseBuffers() {
 Result<void> D3D12Swapchain::recreate(std::uint32_t width, std::uint32_t height) {
     device_->waitIdle();
     releaseBuffers();
-    if (HRESULT hr = swapchain_->ResizeBuffers(bufferCount_, width, height, DXGI_FORMAT_UNKNOWN, 0);
+    const UINT flags = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT |
+                       (tearing_ ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0);
+    if (HRESULT hr = swapchain_->ResizeBuffers(bufferCount_, width, height, DXGI_FORMAT_UNKNOWN, flags);
         FAILED(hr)) {
         return Error{std::format("ResizeBuffers failed (0x{:08x})", static_cast<unsigned>(hr))};
     }
@@ -191,6 +216,10 @@ D3D12Swapchain::~D3D12Swapchain() {
     compositionVisual_.Reset();
     compositionTarget_.Reset();
     compositionDevice_.Reset();
+    if (waitable_) {
+        CloseHandle(waitable_);
+        waitable_ = nullptr;
+    }
     if (swapchain_) {
         log::info("Swapchain destroyed");
     }

@@ -1,6 +1,7 @@
 #include "rend/gpu/texture_uploader.h"
 
 #include "vulkan/vulkan_types.h"
+#include "d3d12/d3d12_types.h"
 
 #include "rend/core/profile.h"
 #include "rend/gpu/buffer.h"
@@ -303,7 +304,7 @@ Result<std::unique_ptr<Image>> VulkanTextureUploader::uploadCompressed(Format fo
 Result<std::unique_ptr<TextureUploader>> TextureUploader::create(const Device& device) {
     switch (device.api()) {
     case Api::Vulkan: return VulkanTextureUploader::create(device);
-    case Api::D3D12: break;
+    case Api::D3D12: return D3D12TextureUploader::create(device);
     }
     return Error{std::format("{} backend: TextureUploader not implemented", apiName(device.api()))};
 }

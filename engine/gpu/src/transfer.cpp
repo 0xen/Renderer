@@ -1,6 +1,7 @@
 #include "rend/gpu/transfer.h"
 
 #include "vulkan/vulkan_types.h"
+#include "d3d12/d3d12_types.h"
 
 #include "rend/core/log.h"
 #include "rend/gpu/buffer.h"
@@ -152,7 +153,7 @@ Result<void> VulkanTransferContext::flush() {
 Result<std::unique_ptr<TransferContext>> TransferContext::create(const Device& device) {
     switch (device.api()) {
     case Api::Vulkan: return VulkanTransferContext::create(device);
-    case Api::D3D12: break;
+    case Api::D3D12: return D3D12TransferContext::create(device);
     }
     return Error{std::format("{} backend: TransferContext not implemented", apiName(device.api()))};
 }

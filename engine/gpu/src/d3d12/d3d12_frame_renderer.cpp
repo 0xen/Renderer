@@ -110,6 +110,12 @@ Result<void> D3D12FrameRenderer::drawFrame(const DrawBatch* batch) {
     if (auto r = waitForValue(slotValues_[slot], "Previous frame"); !r) {
         return r.error();
     }
+    // Presentation pacing: block until the swapchain has room for another
+    // frame (max latency kFramesInFlight) instead of stalling in Present.
+    if (HANDLE waitable = dxSwapchain_->frameLatencyWaitable()) {
+        REND_PROFILE_ZONE("WaitPresent");
+        WaitForSingleObjectEx(waitable, 1000, TRUE);
+    }
 
     const std::uint32_t imageIndex = dxSwapchain_->currentBackBufferIndex();
 
@@ -124,7 +130,9 @@ Result<void> D3D12FrameRenderer::drawFrame(const DrawBatch* batch) {
     }
     {
         REND_PROFILE_ZONE("RecordScene");
-        D3D12CommandContext ctx(list_.Get());
+        // Buffers decayed to COMMON when the previous list finished.
+        dxDevice_->resetBufferStates();
+        D3D12CommandContext ctx(list_.Get(), *dxDevice_);
         recordFrame(ctx, imageIndex, slot, batch);
         // The overlay tail (UI + present transition) follows in the same
         // list: one submission per frame on this backend.
@@ -146,7 +154,9 @@ Result<void> D3D12FrameRenderer::drawFrame(const DrawBatch* batch) {
     }
     {
         REND_PROFILE_ZONE("Present");
-        const HRESULT presented = dxSwapchain_->handle()->Present(swapchain_->vsync() ? 1 : 0, 0);
+        const bool vsync = swapchain_->vsync();
+        const UINT flags = (!vsync && dxSwapchain_->tearing()) ? DXGI_PRESENT_ALLOW_TEARING : 0;
+        const HRESULT presented = dxSwapchain_->handle()->Present(vsync ? 1 : 0, flags);
         if (presented == DXGI_ERROR_DEVICE_REMOVED || presented == DXGI_ERROR_DEVICE_RESET) {
             return Error{std::format("Present: device removed (0x{:08x})",
                                      static_cast<unsigned>(dxDevice_->handle()->GetDeviceRemovedReason()))};

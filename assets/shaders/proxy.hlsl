@@ -49,16 +49,16 @@ REND_PUSH(ProxyPush, push);
 static const uint kTransformCapacity = 4096;
 static const uint kInstanceRowCapacity = 4096;
 
-[[vk::binding(6, 0)]] StructuredBuffer<CameraData> cameras REND_U(6);
-[[vk::binding(19, 0)]] StructuredBuffer<column_major float4x4> objectTransforms REND_U(19);
-[[vk::binding(20, 0)]] StructuredBuffer<InstanceRow> instanceRows REND_U(20);
-[[vk::binding(22, 0)]] StructuredBuffer<ObjectBounds> bounds REND_U(22);
+[[vk::binding(6, 0)]] StructuredBuffer<CameraData> cameras REND_B(6);
+[[vk::binding(19, 0)]] StructuredBuffer<column_major float4x4> objectTransforms REND_B(19);
+[[vk::binding(20, 0)]] REND_SHARED_BUFFER(InstanceRow) instanceRows REND_U(20);
+[[vk::binding(22, 0)]] StructuredBuffer<ObjectBounds> bounds REND_B(22);
 [[vk::binding(26, 0)]] RWStructuredBuffer<uint> visibility REND_U(26);
 // Canonical-row -> draw-entry map (the viewer maintains it beside the
 // instance rows): 0xffffffff = the row is dead or belongs to a scene
 // entry (covered by the per-entry pass). Lets VSInstances find a row's
 // local bounds without any per-frame CPU work.
-[[vk::binding(34, 0)]] StructuredBuffer<uint> rowEntries REND_U(34);
+[[vk::binding(34, 0)]] StructuredBuffer<uint> rowEntries REND_B(34);
 // GPU-refined oriented bounding boxes (must match obb.hlsl / cull.hlsl /
 // the viewer): row e at 16 + e*64 = float4 center (w = ready flag) +
 // three float4 {unit axis, half extent}. Once an entry's row is ready the
@@ -67,7 +67,7 @@ static const uint kInstanceRowCapacity = 4096;
 // camera-inside bypass switches with it, keeping test and box matched.
 static const uint kObbHeaderBytes = 16u;
 static const uint kObbRowBytes = 64u;
-[[vk::binding(33, 0)]] ByteAddressBuffer obbs REND_U(33);
+[[vk::binding(33, 0)]] REND_SHARED_BYTES obbs REND_U(33);
 
 struct VSOutput {
     float4 position : SV_Position;

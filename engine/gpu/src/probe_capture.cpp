@@ -53,6 +53,13 @@ void applyBarrier(VkCommandBuffer cmd, VkImageMemoryBarrier2 barrier) {
 
 Result<std::unique_ptr<Image>> ProbeCapture::render(const Device& deviceBase,
                                                     const ProbeCaptureDesc& desc) {
+    if (deviceBase.api() != Api::Vulkan) {
+        // Records straight into a VkCommandBuffer (optional seam step 5
+        // would move it onto CommandContext); callers treat the failure
+        // as "no probe" and keep going.
+        return Error{std::format("{} backend: ProbeCapture not implemented",
+                                 apiName(deviceBase.api()))};
+    }
     const VulkanDevice& device = vk(deviceBase);
     REND_PROFILE_ZONE("ProbeCapture");
     if (!desc.pipeline || !desc.draws || desc.drawCount == 0 || desc.faceSize == 0) {

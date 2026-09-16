@@ -4,6 +4,7 @@
 
 #include "rend/core/log.h"
 
+#include <cstring>
 #include <format>
 #include <string>
 
@@ -51,7 +52,10 @@ bool supports(ID3D12Device* device, Feature f) {
         return false;
     case Feature::AccelerationStructure:
     case Feature::RayQuery:
-        return options5.RaytracingTier >= D3D12_RAYTRACING_TIER_1_1;
+        // DXR lands in slice 4; reporting the features absent keeps the
+        // viewer on the raster path (it never calls the AS factories).
+        (void)options5;
+        return false;
     case Feature::Count:
         break;
     }
@@ -166,6 +170,14 @@ Result<std::unique_ptr<Device>> D3D12Device::create(const Instance& instanceBase
             // log once per frame instead (drainDebugMessages).
             device->infoQueue_->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, FALSE);
             device->infoQueue_->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR, FALSE);
+            // Colour targets carry no optimized clear value (their clears
+            // differ per pass); silence the per-clear performance note.
+            D3D12_MESSAGE_ID denied[] = {D3D12_MESSAGE_ID_CLEARRENDERTARGETVIEW_MISMATCHINGCLEARVALUE,
+                                         D3D12_MESSAGE_ID_CLEARDEPTHSTENCILVIEW_MISMATCHINGCLEARVALUE};
+            D3D12_INFO_QUEUE_FILTER filter{};
+            filter.DenyList.NumIDs = 2;
+            filter.DenyList.pIDList = denied;
+            device->infoQueue_->AddStorageFilterEntries(&filter);
         }
     }
 
@@ -214,10 +226,92 @@ Result<std::unique_ptr<Device>> D3D12Device::create(const Instance& instanceBase
     }
     device->rtvSize_ = device->device_->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
     device->dsvSize_ = device->device_->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
+    device->cbvSrvUavSize_ =
+        device->device_->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+    device->samplerSize_ =
+        device->device_->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
+
+    // Host-visible buffers the GPU also writes/reads as indirect arguments:
+    // a GPU upload heap (VRAM the CPU writes through the resizable BAR —
+    // what the Vulkan backend's host-visible|device-local memory is) when
+    // the runtime offers one, else CPU-visible memory with the UPLOAD
+    // heap's page properties as a CUSTOM heap so its buffers may take any
+    // resource state.
+    D3D12_FEATURE_DATA_D3D12_OPTIONS16 options16{};
+    if (SUCCEEDED(device->device_->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS16, &options16,
+                                                       sizeof(options16))) &&
+        options16.GPUUploadHeapSupported) {
+        device->hostHeap_ = {};
+        device->hostHeap_.Type = D3D12_HEAP_TYPE_GPU_UPLOAD;
+        log::info("Host-visible buffers: GPU upload heap (VRAM, CPU-visible)");
+    } else {
+        device->hostHeap_ = device->device_->GetCustomHeapProperties(0, D3D12_HEAP_TYPE_UPLOAD);
+        log::info("Host-visible buffers: custom heap (system memory, CPU-visible)");
+    }
+
+    // The zero source for fillBuffer: an upload-heap buffer memset to 0.
+    {
+        D3D12_HEAP_PROPERTIES heap{};
+        heap.Type = D3D12_HEAP_TYPE_UPLOAD;
+        D3D12_RESOURCE_DESC desc{};
+        desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+        desc.Width = kZeroBytes;
+        desc.Height = 1;
+        desc.DepthOrArraySize = 1;
+        desc.MipLevels = 1;
+        desc.SampleDesc.Count = 1;
+        desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+        if (HRESULT hr = device->device_->CreateCommittedResource(
+                &heap, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
+                IID_PPV_ARGS(&device->zero_));
+            FAILED(hr)) {
+            return hrError("CreateCommittedResource (zero buffer)", hr);
+        }
+        void* mapped = nullptr;
+        const D3D12_RANGE noRead{0, 0};
+        if (HRESULT hr = device->zero_->Map(0, &noRead, &mapped); FAILED(hr)) {
+            return hrError("Map (zero buffer)", hr);
+        }
+        std::memset(mapped, 0, kZeroBytes);
+        device->zero_->Unmap(0, nullptr);
+    }
 
     log::info("Device created on '{}' (D3D12 feature level 12.0, direct + copy queues)",
               device->adapterName_);
     return std::unique_ptr<Device>(std::move(device));
+}
+
+void D3D12Device::registerBuffer(const D3D12Buffer* buffer) const { tracked_.push_back(buffer); }
+
+void D3D12Device::unregisterBuffer(const D3D12Buffer* buffer) const {
+    std::erase(tracked_, buffer);
+}
+
+void D3D12Device::resetBufferStates() const {
+    for (const D3D12Buffer* buffer : tracked_) {
+        buffer->setState(D3D12_RESOURCE_STATE_COMMON);
+    }
+}
+
+Result<ID3D12CommandSignature*> D3D12Device::drawSignature(std::uint32_t stride) const {
+    for (const auto& [s, signature] : drawSignatures_) {
+        if (s == stride) {
+            return signature.Get();
+        }
+    }
+    D3D12_INDIRECT_ARGUMENT_DESC arg{};
+    arg.Type = D3D12_INDIRECT_ARGUMENT_TYPE_DRAW;
+    D3D12_COMMAND_SIGNATURE_DESC desc{};
+    desc.ByteStride = stride;
+    desc.NumArgumentDescs = 1;
+    desc.pArgumentDescs = &arg;
+    ComPtr<ID3D12CommandSignature> signature;
+    if (HRESULT hr = device_->CreateCommandSignature(&desc, nullptr, IID_PPV_ARGS(&signature));
+        FAILED(hr)) {
+        return hrError("CreateCommandSignature (draw)", hr);
+    }
+    drawSignatures_.emplace_back(stride, signature);
+    return signature.Get();
 }
 
 void D3D12Device::waitIdle() const {

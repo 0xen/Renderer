@@ -1,6 +1,7 @@
 #include "rend/gpu/pipeline.h"
 
 #include "vulkan/vulkan_types.h"
+#include "d3d12/d3d12_types.h"
 
 #include "rend/gpu/descriptor_table.h"
 
@@ -278,7 +279,7 @@ Result<std::unique_ptr<Pipeline>> Pipeline::createGraphics(const Device& device,
                                                          const GraphicsPipelineDesc& desc) {
     switch (device.api()) {
     case Api::Vulkan: return VulkanPipeline::createGraphics(device, desc);
-    case Api::D3D12: break;
+    case Api::D3D12: return D3D12Pipeline::createGraphics(device, desc);
     }
     return Error{std::format("{} backend: Pipeline not implemented", apiName(device.api()))};
 }
@@ -287,7 +288,7 @@ Result<std::unique_ptr<Pipeline>> Pipeline::createCompute(const Device& device,
                                                         const ComputePipelineDesc& desc) {
     switch (device.api()) {
     case Api::Vulkan: return VulkanPipeline::createCompute(device, desc);
-    case Api::D3D12: break;
+    case Api::D3D12: return D3D12Pipeline::createCompute(device, desc);
     }
     return Error{std::format("{} backend: Pipeline not implemented", apiName(device.api()))};
 }

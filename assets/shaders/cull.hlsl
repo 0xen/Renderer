@@ -89,7 +89,7 @@ static const uint kInstanceRowCapacity = 4096;
 static const uint kBoundsAlwaysVisible = 1u;
 static const uint kBoundsTransparent = 2u;
 
-[[vk::binding(3, 0)]] StructuredBuffer<DrawCommand> templates REND_U(3);
+[[vk::binding(3, 0)]] StructuredBuffer<DrawCommand> templates REND_B(3);
 [[vk::binding(4, 0)]] RWStructuredBuffer<DrawCommand> compacted REND_U(4);
 // kCountStride per slot, zeroed before dispatch: [0] shadow-stream count,
 // [1] opaque scene-stream count, [2] scratch-row allocator for partial
@@ -100,10 +100,10 @@ static const uint kBoundsTransparent = 2u;
 // offsets in frame_renderer's bindAndDraw.
 static const uint kCountStride = 8;
 [[vk::binding(5, 0)]] RWStructuredBuffer<uint> counts REND_U(5);
-[[vk::binding(6, 0)]] StructuredBuffer<CameraData> cameras REND_U(6);
-[[vk::binding(19, 0)]] StructuredBuffer<column_major float4x4> objectTransforms REND_U(19);
+[[vk::binding(6, 0)]] StructuredBuffer<CameraData> cameras REND_B(6);
+[[vk::binding(19, 0)]] StructuredBuffer<column_major float4x4> objectTransforms REND_B(19);
 [[vk::binding(21, 0)]] RWStructuredBuffer<DrawCommand> culled REND_U(21);
-[[vk::binding(22, 0)]] StructuredBuffer<ObjectBounds> bounds REND_U(22);
+[[vk::binding(22, 0)]] StructuredBuffer<ObjectBounds> bounds REND_B(22);
 // The instance-row buffer (same VkBuffer as the vertex stage's binding
 // 20): rows [0, kInstanceRowCapacity) are canonical; per-slot scratch
 // regions above hold the compacted survivors of partially visible draws.
@@ -132,7 +132,7 @@ struct MeshLodTable {
     uint pad2;
     MeshLodLevel lods[kMaxMeshLods];
 };
-[[vk::binding(25, 0)]] StructuredBuffer<MeshLodTable> meshLods REND_U(25);
+[[vk::binding(25, 0)]] StructuredBuffer<MeshLodTable> meshLods REND_B(25);
 
 // Occlusion visibility (per-slot regions of push.capacity ENTRY slots
 // followed by kInstanceRowCapacity per-INSTANCE slots): the proxy passes
@@ -158,7 +158,7 @@ struct MeshLodTable {
 // region — rows are load-time constants once written.
 static const uint kObbHeaderBytes = 16u;
 static const uint kObbRowBytes = 64u;
-[[vk::binding(33, 0)]] ByteAddressBuffer obbs REND_U(33);
+[[vk::binding(33, 0)]] REND_SHARED_BYTES obbs REND_U(33);
 
 struct Obb {
     float3 center;

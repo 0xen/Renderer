@@ -20,6 +20,9 @@ add_library(rend_gpu OBJECT
     src/d3d12/d3d12_resources.cpp
     src/d3d12/d3d12_swapchain.cpp
     src/d3d12/d3d12_command_context.cpp
+    src/d3d12/d3d12_descriptor_table.cpp
+    src/d3d12/d3d12_pipeline.cpp
+    src/d3d12/d3d12_upload.cpp
     src/d3d12/d3d12_frame_renderer.cpp
     src/texture_uploader.cpp
     src/transfer.cpp

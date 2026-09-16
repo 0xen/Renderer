@@ -950,120 +950,6 @@ std::vector<float> interleave(const assetio::MeshData& mesh) {
 
 } // namespace
 
-// Slice 2 of the D3D12 backend: a window, a swapchain (a DirectComposition
-// surface when transparent) and the frame loop presenting cleared frames.
-// The clear colour is premultiplied (0,0,0,0) for a transparent target so
-// the desktop shows through the whole window; REND_SKELETON_CLEAR="r g b a"
-// overrides it for pixel tests (e.g. "0.5 0 0 0.5" = half-transparent red).
-int runD3D12Skeleton(platform::IPlatformBackend& backend, const gpu::Instance& instance,
-                     const gpu::Device& device, bool transparentWindow, bool vsync,
-                     std::uint64_t benchFrames) {
-    platform::TargetDesc desc{
-        .style = transparentWindow ? platform::WindowStyle::BorderlessTransparent
-                                   : platform::WindowStyle::Decorated,
-        .size = {1280, 720},
-        .title = "Renderer Viewer (D3D12)",
-        .vulkan = false,
-    };
-    auto targetResult = backend.createTarget(desc);
-    if (!targetResult) {
-        log::error("Failed to create presentation target: {}", targetResult.error().message);
-        return 1;
-    }
-    auto target = std::move(targetResult).value();
-    void* hwnd = backend.nativeWindowHandle(*target);
-    if (hwnd == nullptr) {
-        log::error("The windowing backend exposes no native window handle for D3D12");
-        return 1;
-    }
-
-    const auto extent = target->sizeInPixels();
-    auto swapchainResult = gpu::Swapchain::create(instance, device,
-                                                  {
-                                                      .nativeSurface = hwnd,
-                                                      .width = extent.width,
-                                                      .height = extent.height,
-                                                      .transparent = transparentWindow,
-                                                      .vsync = vsync,
-                                                  });
-    if (!swapchainResult) {
-        log::error("Swapchain creation failed: {}", swapchainResult.error().message);
-        return 1;
-    }
-    auto swapchain = std::move(swapchainResult).value();
-
-    auto rendererResult = gpu::FrameRenderer::create(device, *swapchain);
-    if (!rendererResult) {
-        log::error("Frame renderer creation failed: {}", rendererResult.error().message);
-        return 1;
-    }
-    auto renderer = std::move(rendererResult).value();
-
-    std::array<float, 4> clear = transparentWindow ? std::array<float, 4>{0.0f, 0.0f, 0.0f, 0.0f}
-                                                   : std::array<float, 4>{0.02f, 0.02f, 0.04f, 1.0f};
-    {
-        char override[64] = {};
-        std::size_t length = 0;
-        if (getenv_s(&length, override, sizeof(override), "REND_SKELETON_CLEAR") == 0 && length > 0) {
-            std::array<float, 4> parsed{};
-            if (sscanf_s(override, "%f %f %f %f", &parsed[0], &parsed[1], &parsed[2], &parsed[3]) == 4) {
-                clear = parsed;
-            }
-        }
-    }
-    renderer->setClearColor(clear[0], clear[1], clear[2], clear[3]);
-    log::info("D3D12 skeleton: presenting cleared frames ({:.2f} {:.2f} {:.2f} {:.2f}), {}",
-              clear[0], clear[1], clear[2], clear[3],
-              transparentWindow ? "transparent composition target" : "opaque window");
-
-    std::uint64_t frame = 0;
-    const auto start = std::chrono::steady_clock::now();
-    bool running = true;
-    while (running) {
-        for (const auto& event : backend.pumpEvents()) {
-            switch (event.type) {
-            case platform::Event::Type::CloseRequested:
-                running = false;
-                break;
-            case platform::Event::Type::Resized:
-                renderer->resize(event.size.width, event.size.height);
-                break;
-            case platform::Event::Type::KeyDown:
-                if (event.key == platform::Key::Escape) {
-                    running = false;
-                }
-                break;
-            default:
-                break;
-            }
-        }
-        if (!running) {
-            break;
-        }
-        if (auto r = renderer->drawFrame(nullptr); !r) {
-            log::error("drawFrame failed: {}", r.error().message);
-            return 1;
-        }
-        ++frame;
-        if (benchFrames != 0 && frame >= benchFrames) {
-            const double seconds =
-                std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
-            log::info("[d3d12-skeleton] {} frames in {:.2f} s = {:.0f} fps | draws 0+0t/0 in view, "
-                      "0 partial rows, 0.00M tris, 0 occluded",
-                      frame, seconds, seconds > 0.0 ? frame / seconds : 0.0);
-            log::info("Benchmark complete after {} frames", frame);
-            running = false;
-        }
-    }
-
-    log::info("Shutting down");
-    renderer->waitIdle();
-    renderer.reset();
-    swapchain.reset();
-    target.reset();
-    return 0;
-}
-
 int main(int argc, char** argv) {
     bool debug = false;
     bool vsync = true;
@@ -1106,9 +992,9 @@ int main(int argc, char** argv) {
     // to alpha 0, post/FXAA pass alpha through, swapchain asks the driver
     // for premultiplied compositing.
     bool transparentWindow = false;
-    // --backend: which gpu backend builds the object tree. Vulkan is the
-    // only implementation today; d3d12 is reserved for the transparent-
-    // window path and errors out until it lands.
+    // --backend: which gpu backend builds the object tree (Vulkan by
+    // default; --transparent picks D3D12, the only backend that can
+    // composite the window over the desktop on this hardware).
     gpu::Api backendApi = gpu::Api::Vulkan;
     bool backendExplicit = false;
     // Streaming test harness: auto-spawn this model at random intervals
@@ -1340,14 +1226,6 @@ int main(int argc, char** argv) {
         return 1;
     }
     auto device = std::move(deviceResult).value();
-
-    if (backendApi == gpu::Api::D3D12) {
-        // Slice 2 skeleton: the D3D12 backend presents cleared frames (the
-        // whole-window transparency test) and nothing else yet. The scene
-        // path below is Vulkan-only until slice 3 ports it.
-        return runD3D12Skeleton(*backend, *instance, *device, transparentWindow, vsync,
-                                benchFrames);
-    }
 
     // Milestone 7 step 1: everything the scene pass will draw lives in one
     // device-local memory pool, filled through the transfer queue. Indirect
@@ -2728,7 +2606,8 @@ int main(int argc, char** argv) {
         .style = transparentWindow ? platform::WindowStyle::BorderlessTransparent
                                    : platform::WindowStyle::Decorated,
         .size = {1280, 720},
-        .title = "Renderer Viewer",
+        .title = backendApi == gpu::Api::D3D12 ? "Renderer Viewer (D3D12)" : "Renderer Viewer",
+        .vulkan = backendApi == gpu::Api::Vulkan,
     };
     auto targetResult = backend->createTarget(desc);
     if (!targetResult) {
@@ -2737,17 +2616,29 @@ int main(int argc, char** argv) {
     }
     auto target = std::move(targetResult).value();
 
-    auto surfaceResult = backend->createVulkanSurface(
-        static_cast<VkInstance>(instance->nativeHandle()), *target);
-    if (!surfaceResult) {
-        log::error("Surface creation failed: {}", surfaceResult.error().message);
-        return 1;
+    // The swapchain's surface: a VkSurfaceKHR under Vulkan, the HWND
+    // under D3D12 (which has no surface object).
+    void* nativeSurface = nullptr;
+    if (backendApi == gpu::Api::Vulkan) {
+        auto surfaceResult = backend->createVulkanSurface(
+            static_cast<VkInstance>(instance->nativeHandle()), *target);
+        if (!surfaceResult) {
+            log::error("Surface creation failed: {}", surfaceResult.error().message);
+            return 1;
+        }
+        nativeSurface = surfaceResult.value();
+    } else {
+        nativeSurface = backend->nativeWindowHandle(*target);
+        if (nativeSurface == nullptr) {
+            log::error("The windowing backend exposes no native window handle for D3D12");
+            return 1;
+        }
     }
 
     const auto extent = target->sizeInPixels();
     auto swapchainResult = gpu::Swapchain::create(*instance, *device,
                                                   {
-                                                      .nativeSurface = surfaceResult.value(),
+                                                      .nativeSurface = nativeSurface,
                                                       .width = extent.width,
                                                       .height = extent.height,
                                                       .transparent = transparentWindow,
@@ -3228,8 +3119,23 @@ int main(int argc, char** argv) {
     // the lighting pass writes 1 wherever geometry covers the pixel.
     const float clearAlpha = transparentWindow ? 0.0f : 1.0f;
     if (transparentWindow) {
-        renderer->setClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-        log::info("Transparent window: sky pass disabled, clear alpha 0");
+        // Premultiplied (0,0,0,0): the desktop shows through every pixel
+        // no geometry covers. REND_TRANSPARENT_CLEAR="r g b a" overrides it
+        // for the pixel verifier (scratch/skills/verify-transparency.ps1).
+        std::array<float, 4> clear{0.0f, 0.0f, 0.0f, 0.0f};
+        char override[64] = {};
+        std::size_t length = 0;
+        if (getenv_s(&length, override, sizeof(override), "REND_TRANSPARENT_CLEAR") == 0 &&
+            length > 0) {
+            std::array<float, 4> parsed{};
+            if (sscanf_s(override, "%f %f %f %f", &parsed[0], &parsed[1], &parsed[2], &parsed[3]) ==
+                4) {
+                clear = parsed;
+            }
+        }
+        renderer->setClearColor(clear[0], clear[1], clear[2], clear[3]);
+        log::info("Transparent window: sky pass disabled, clear ({} {} {} {})", clear[0], clear[1],
+                  clear[2], clear[3]);
     }
 
     // Deferred G-buffer targets (bindings 28-31), kept at swapchain extent
@@ -3386,7 +3292,11 @@ int main(int argc, char** argv) {
 
     // Debug UI (ImGui): drawn through the frame renderer's overlay pass,
     // which stays per-frame even when the scene buffers are static.
-    auto ui = viewer::Ui::create(*instance, *device, *swapchain);
+    // The ImGui backend is Vulkan-only until imgui_impl_dx12 is wired in.
+    std::unique_ptr<viewer::Ui> ui;
+    if (backendApi == gpu::Api::Vulkan) {
+        ui = viewer::Ui::create(*instance, *device, *swapchain);
+    }
     if (ui) {
         renderer->setOverlayRecorder([&ui](gpu::CommandContext& cmd) { ui->render(cmd); });
     } else {

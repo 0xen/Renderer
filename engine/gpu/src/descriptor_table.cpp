@@ -1,6 +1,7 @@
 #include "rend/gpu/descriptor_table.h"
 
 #include "vulkan/vulkan_types.h"
+#include "d3d12/d3d12_types.h"
 
 #include "rend/gpu/acceleration_structure.h"
 #include "rend/gpu/buffer.h"
@@ -493,7 +494,7 @@ Result<std::unique_ptr<DescriptorTable>> DescriptorTable::create(const Device& d
                                                                const DescriptorTableDesc& desc) {
     switch (device.api()) {
     case Api::Vulkan: return VulkanDescriptorTable::create(device, desc);
-    case Api::D3D12: break;
+    case Api::D3D12: return D3D12DescriptorTable::create(device, desc);
     }
     return Error{std::format("{} backend: DescriptorTable not implemented", apiName(device.api()))};
 }

@@ -52,11 +52,11 @@ static const uint kBoundsObbEligible = 4u;
 
 static const uint kVertexStrideBytes = 32u;
 
-[[vk::binding(3, 0)]] StructuredBuffer<DrawCommand> templates REND_U(3);
+[[vk::binding(3, 0)]] StructuredBuffer<DrawCommand> templates REND_B(3);
 // The whole geometry pool (same binding the skin pass writes; read-only
 // here): uint32 indices and interleaved pos3f/normal3f/uv2f vertices.
-[[vk::binding(13, 0)]] ByteAddressBuffer pool REND_U(13);
-[[vk::binding(22, 0)]] StructuredBuffer<ObjectBounds> bounds REND_U(22);
+[[vk::binding(13, 0)]] REND_SHARED_BYTES pool REND_U(13);
+[[vk::binding(22, 0)]] StructuredBuffer<ObjectBounds> bounds REND_B(22);
 
 // OBB table (must match cull.hlsl / proxy.hlsl / the viewer's buffer):
 //   bytes [0,16)  — control: [0] claim counter, rest pad;

@@ -49,19 +49,19 @@ struct ObjectData {
 
 static const uint kFlagAlphaMasked = 1u;
 
-[[vk::binding(0, 0)]] StructuredBuffer<ObjectData> objects REND_U(0);
+[[vk::binding(0, 0)]] StructuredBuffer<ObjectData> objects REND_B(0);
 [[vk::binding(1, 0)]] Texture2D textures[] REND_T(1);
 [[vk::binding(2, 0)]] SamplerState linearSampler REND_S(2);
-[[vk::binding(7, 0)]] StructuredBuffer<LightData> lights REND_U(7);
+[[vk::binding(7, 0)]] StructuredBuffer<LightData> lights REND_B(7);
 // Must match shading.hlsli: per-slot per-object world transforms.
 static const uint kTransformCapacity = 4096;
-[[vk::binding(19, 0)]] StructuredBuffer<column_major float4x4> objectTransforms REND_U(19);
+[[vk::binding(19, 0)]] StructuredBuffer<column_major float4x4> objectTransforms REND_B(19);
 // Must match shading.hlsli: SV_InstanceID resolves through these rows.
 struct InstanceRow {
     uint objectIndex;
     uint transformIndex;
 };
-[[vk::binding(20, 0)]] StructuredBuffer<InstanceRow> instanceRows REND_U(20);
+[[vk::binding(20, 0)]] REND_SHARED_BUFFER(InstanceRow) instanceRows REND_U(20);
 
 struct VSInput {
     float3 position : POSITION;

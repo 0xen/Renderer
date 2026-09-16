@@ -17,8 +17,22 @@ Result<std::unique_ptr<Buffer>> D3D12Buffer::create(const Device& deviceBase,
     }
 
     const bool host = desc.location == MemoryLocation::HostVisible;
+    const bool uav = (desc.usage & kUsageStorage) != 0;
+    // Buffers the GPU writes (storage, fills) or fetches indirect
+    // arguments from need resource states an UPLOAD heap cannot leave
+    // GENERIC_READ for; host-visible ones of those live in the device's
+    // CPU-visible custom heap instead. Plain staging stays UPLOAD.
+    const bool gpuStates =
+        (desc.usage & (kUsageStorage | kUsageIndirect | kUsageTransferDst)) != 0;
+
     D3D12_HEAP_PROPERTIES heap{};
-    heap.Type = host ? D3D12_HEAP_TYPE_UPLOAD : D3D12_HEAP_TYPE_DEFAULT;
+    if (!host) {
+        heap.Type = D3D12_HEAP_TYPE_DEFAULT;
+    } else if (gpuStates) {
+        heap = device.hostHeapProperties();
+    } else {
+        heap.Type = D3D12_HEAP_TYPE_UPLOAD;
+    }
 
     D3D12_RESOURCE_DESC resource{};
     resource.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
@@ -29,15 +43,16 @@ Result<std::unique_ptr<Buffer>> D3D12Buffer::create(const Device& deviceBase,
     resource.Format = DXGI_FORMAT_UNKNOWN;
     resource.SampleDesc.Count = 1;
     resource.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-    // Storage buffers are written by compute (cull, skinning, refine) and
-    // must allow UAV access; upload heaps cannot.
-    if (!host && (desc.usage & kUsageStorage)) {
+    // Every storage buffer is a UAV on this backend (shaders declare them
+    // RW in all stages — see assets/shaders/backend.hlsli).
+    if (uav) {
         resource.Flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
     }
-    // Upload-heap resources must start in GENERIC_READ; default-heap
-    // buffers start in COMMON and promote on first use.
+    // Upload-heap resources must start in GENERIC_READ; everything else
+    // starts in COMMON and is transitioned explicitly by the recorder.
     const D3D12_RESOURCE_STATES initial =
-        host ? D3D12_RESOURCE_STATE_GENERIC_READ : D3D12_RESOURCE_STATE_COMMON;
+        heap.Type == D3D12_HEAP_TYPE_UPLOAD ? D3D12_RESOURCE_STATE_GENERIC_READ
+                                            : D3D12_RESOURCE_STATE_COMMON;
 
     auto buffer = std::unique_ptr<D3D12Buffer>(new D3D12Buffer());
     if (HRESULT hr = device.handle()->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &resource,
@@ -47,6 +62,7 @@ Result<std::unique_ptr<Buffer>> D3D12Buffer::create(const Device& deviceBase,
         return Error{std::format("CreateCommittedResource (buffer, {} bytes) failed (0x{:08x})",
                                  desc.size, static_cast<unsigned>(hr))};
     }
+    buffer->state_ = initial;
 
     if (host) {
         const D3D12_RANGE noRead{0, 0};
@@ -57,14 +73,22 @@ Result<std::unique_ptr<Buffer>> D3D12Buffer::create(const Device& deviceBase,
 
     const D3D12_RESOURCE_ALLOCATION_INFO info =
         device.handle()->GetResourceAllocationInfo(0, 1, &resource);
+    buffer->device_ = &device;
     buffer->size_ = desc.size;
     buffer->allocatedBytes_ = info.SizeInBytes;
     buffer->trackKind_ = host ? MemoryTracker::Kind::HostBuffer : MemoryTracker::Kind::DeviceBuffer;
     MemoryTracker::onAlloc(buffer->trackKind_, buffer->allocatedBytes_);
+    if (gpuStates) {
+        buffer->tracked_ = true;
+        device.registerBuffer(buffer.get());
+    }
     return std::unique_ptr<Buffer>(std::move(buffer));
 }
 
 D3D12Buffer::~D3D12Buffer() {
+    if (tracked_ && device_) {
+        device_->unregisterBuffer(this);
+    }
     if (resource_) {
         if (mapped_) {
             resource_->Unmap(0, nullptr);
@@ -90,6 +114,16 @@ Result<std::unique_ptr<Image>> D3D12Image::create(const Device& deviceBase, cons
 
     const bool color = (desc.usage & kImageUsageColorAttachment) != 0;
     const bool depth = desc.depth || (desc.usage & kImageUsageDepthAttachment) != 0;
+    const bool sampled = (desc.usage & kImageUsageSampled) != 0;
+
+    // A depth image the shaders sample (cascade maps) is a typeless
+    // resource viewed as D32_FLOAT by the DSV and R32_FLOAT by the SRV.
+    DXGI_FORMAT resourceFormat = format;
+    DXGI_FORMAT srvFormat = format;
+    if (depth && sampled) {
+        resourceFormat = DXGI_FORMAT_R32_TYPELESS;
+        srvFormat = DXGI_FORMAT_R32_FLOAT;
+    }
 
     D3D12_HEAP_PROPERTIES heap{};
     heap.Type = D3D12_HEAP_TYPE_DEFAULT;
@@ -100,7 +134,7 @@ Result<std::unique_ptr<Image>> D3D12Image::create(const Device& deviceBase, cons
     resource.Height = desc.height;
     resource.DepthOrArraySize = 1;
     resource.MipLevels = static_cast<UINT16>(desc.mipLevels);
-    resource.Format = format;
+    resource.Format = resourceFormat;
     resource.SampleDesc.Count = 1;
     resource.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
     if (color) {
@@ -108,19 +142,19 @@ Result<std::unique_ptr<Image>> D3D12Image::create(const Device& deviceBase, cons
     }
     if (depth) {
         resource.Flags |= D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
-        if (!(desc.usage & kImageUsageSampled)) {
+        if (!sampled) {
             resource.Flags |= D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE;
         }
     }
 
-    // Optimized clear values match what the frame renderer clears to:
-    // depth 1.0, colour targets zero (G-buffer / scene colour).
+    // Every depth clear in the engine is 1.0. Colour targets get no
+    // optimized clear value: their clears differ per pass (zero G-buffer,
+    // the scene clear colour), and a mismatching value only costs a
+    // debug-layer warning per clear.
     D3D12_CLEAR_VALUE clear{};
     clear.Format = format;
-    if (depth) {
-        clear.DepthStencil.Depth = 1.0f;
-    }
-    const D3D12_CLEAR_VALUE* clearPtr = (color || depth) ? &clear : nullptr;
+    clear.DepthStencil.Depth = 1.0f;
+    const D3D12_CLEAR_VALUE* clearPtr = depth ? &clear : nullptr;
 
     auto out = std::unique_ptr<D3D12Image>(new D3D12Image());
     if (HRESULT hr = device.handle()->CreateCommittedResource(
@@ -154,7 +188,10 @@ Result<std::unique_ptr<Image>> D3D12Image::create(const Device& deviceBase, cons
                                      static_cast<unsigned>(hr))};
         }
         out->dsv_ = out->dsvHeap_->GetCPUDescriptorHandleForHeapStart();
-        device.handle()->CreateDepthStencilView(out->resource_.Get(), nullptr, out->dsv_);
+        D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc{};
+        dsvDesc.Format = format;
+        dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
+        device.handle()->CreateDepthStencilView(out->resource_.Get(), &dsvDesc, out->dsv_);
     }
 
     const D3D12_RESOURCE_ALLOCATION_INFO info =
@@ -164,6 +201,7 @@ Result<std::unique_ptr<Image>> D3D12Image::create(const Device& deviceBase, cons
     out->height_ = desc.height;
     out->mipLevels_ = desc.mipLevels;
     out->layerCount_ = 1;
+    out->srvFormat_ = srvFormat;
     out->allocatedBytes_ = info.SizeInBytes;
     MemoryTracker::onAlloc(MemoryTracker::Kind::Image, out->allocatedBytes_);
     return std::unique_ptr<Image>(std::move(out));
@@ -176,6 +214,7 @@ std::unique_ptr<Image> D3D12Image::wrapExternal(ID3D12Resource* resource,
     out->resource_ = resource;
     out->rtv_ = rtv;
     out->format_ = format;
+    out->srvFormat_ = toDxgi(format);
     out->width_ = width;
     out->height_ = height;
     out->owned_ = false;
@@ -183,6 +222,16 @@ std::unique_ptr<Image> D3D12Image::wrapExternal(ID3D12Resource* resource,
     // return to it at the end of every frame.
     out->state_ = D3D12_RESOURCE_STATE_PRESENT;
     return out;
+}
+
+D3D12_SHADER_RESOURCE_VIEW_DESC D3D12Image::srvDesc() const {
+    D3D12_SHADER_RESOURCE_VIEW_DESC desc{};
+    desc.Format = srvFormat_;
+    desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    desc.Texture2D.MostDetailedMip = 0;
+    desc.Texture2D.MipLevels = mipLevels_;
+    return desc;
 }
 
 D3D12Image::~D3D12Image() {
