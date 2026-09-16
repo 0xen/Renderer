@@ -6,11 +6,13 @@
 // materials still discard so foliage shadows match their silhouettes.
 // Sampled later by shading.hlsli's shadePointLights (distance compare).
 
+#include "backend.hlsli"
+
 struct PushConstants {
     uint cameraSlot; // capture face slot; cameras[slot].position = the light
     uint cascade;    // unused; layout matches the scene pass
 };
-[[vk::push_constant]] PushConstants pc;
+REND_PUSH(PushConstants, pc);
 
 #include "shading.hlsli"
 

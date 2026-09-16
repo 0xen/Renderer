@@ -6,19 +6,21 @@
 // Include after shading.hlsli; the including shader must declare a push
 // constant struct `pc` with a `cameraSlot` member.
 
-[[vk::binding(10, 0)]] RaytracingAccelerationStructure sceneBVH;
+#include "backend.hlsli"
+
+[[vk::binding(10, 0)]] RaytracingAccelerationStructure sceneBVH REND_T(10);
 // The whole geometry pool as raw bytes: interleaved vertices (stride 32:
 // pos3f/normal3f/uv2f) and uint32 indices, addressed via geometryInfo.
-[[vk::binding(11, 0)]] ByteAddressBuffer geometryBytes;
+[[vk::binding(11, 0)]] ByteAddressBuffer geometryBytes REND_U(11);
 // Per BLAS-geometry index (== object index): x = firstIndex (uint32 units
 // from pool start), y = vertexOffset (vertex-stride units from pool start),
 // z = per-slot vertex stride for animated meshes (their y points at the
 // posed per-slot regions the BLAS is refitted from; 0 = static), w unused.
-[[vk::binding(12, 0)]] StructuredBuffer<uint4> geometryInfo;
+[[vk::binding(12, 0)]] StructuredBuffer<uint4> geometryInfo REND_U(12);
 // Runtime-model hit remap: a runtime TLAS instance's customIndex is a base
 // into this table; base + GeometryIndex = the mesh's object row (runtime
 // rows recycle scattered slots, so the mapping can't be arithmetic).
-[[vk::binding(32, 0)]] StructuredBuffer<uint> rtObjectRemap;
+[[vk::binding(32, 0)]] StructuredBuffer<uint> rtObjectRemap REND_U(32);
 
 static const uint kVertexStrideBytes = 32u;
 static const uint kMaxTransparencySteps = 4u;

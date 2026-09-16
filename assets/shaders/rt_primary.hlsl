@@ -11,11 +11,13 @@
 // Reflective-flagged objects (per-object RT) get one extra reflection
 // bounce, Fresnel-mixed into their shading.
 
+#include "backend.hlsli"
+
 struct PushConstants {
     uint cameraSlot; // frame-in-flight index into the camera/light buffers
     uint pad;
 };
-[[vk::push_constant]] PushConstants pc;
+REND_PUSH(PushConstants, pc);
 
 #include "shading.hlsli"
 #include "rt_common.hlsli"
@@ -29,7 +31,7 @@ struct VSOutput {
 VSOutput VSMain(uint id : SV_VertexID) {
     VSOutput output;
     const float2 pos = float2(id == 1 ? 3.0f : -1.0f, id == 2 ? 3.0f : -1.0f);
-    output.position = float4(pos, 0.0f, 1.0f);
+    output.position = rendClip(float4(pos, 0.0f, 1.0f));
     output.ndc = pos;
     return output;
 }

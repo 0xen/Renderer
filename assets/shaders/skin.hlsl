@@ -5,6 +5,8 @@
 // consumes posed vertices without knowing anything moved — static command
 // buffers and GPU compaction stay untouched.
 
+#include "backend.hlsli"
+
 struct PushConstants {
     uint srcVertex;        // bind-pose base, vertex-stride units from pool start
     uint dstVertexBase;    // slot 0 destination base (slot advances by vertexCount)
@@ -18,13 +20,13 @@ struct PushConstants {
     uint jointSlotStride;   // total joints per slot region
     uint weightSlotStride;  // total morph weights per slot region
 };
-[[vk::push_constant]] PushConstants pc;
+REND_PUSH(PushConstants, pc);
 
 static const uint kVertexStrideBytes = 32u;
 static const uint kNoSkin = 0xffffffffu;
 
 // The whole geometry pool: interleaved pos3f/normal3f/uv2f vertices.
-[[vk::binding(13, 0)]] RWByteAddressBuffer vertices;
+[[vk::binding(13, 0)]] RWByteAddressBuffer vertices REND_U(13);
 
 // Scalar members only: a float4 here would std430-align to 16 and skew
 // the stride (32) away from the CPU's tightly packed 24 bytes.
@@ -36,16 +38,16 @@ struct SkinVertex {
     float weight2;
     float weight3;
 };
-[[vk::binding(14, 0)]] StructuredBuffer<SkinVertex> skinVertices;
+[[vk::binding(14, 0)]] StructuredBuffer<SkinVertex> skinVertices REND_U(14);
 
 struct JointMatrix {
     column_major float4x4 m; // model * world[joint] * inverseBind
 };
-[[vk::binding(15, 0)]] StructuredBuffer<JointMatrix> joints;
+[[vk::binding(15, 0)]] StructuredBuffer<JointMatrix> joints REND_U(15);
 
 // 6 floats per vertex per target: position delta xyz, normal delta xyz.
-[[vk::binding(16, 0)]] StructuredBuffer<float> morphDeltas;
-[[vk::binding(17, 0)]] StructuredBuffer<float> morphWeights;
+[[vk::binding(16, 0)]] StructuredBuffer<float> morphDeltas REND_U(16);
+[[vk::binding(17, 0)]] StructuredBuffer<float> morphWeights REND_U(17);
 
 [numthreads(64, 1, 1)]
 void CSMain(uint3 id : SV_DispatchThreadID) {

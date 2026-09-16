@@ -20,8 +20,11 @@
 // model slots recycle only among local-mode resources and animated
 // meshes' bounds are CPU-authored per frame.
 
+#include "backend.hlsli"
+
 // Must match rend::gpu::DrawIndexedIndirect / cull.hlsl.
 struct DrawCommand {
+    uint baseInstance; // == firstInstance; D3D12 root constant (backend.hlsli)
     uint indexCount;
     uint instanceCount;
     uint firstIndex;
@@ -40,7 +43,7 @@ struct ObbPush {
     uint slot;      // frame-in-flight index selecting the buffer regions
     uint capacity;  // entries per slot region (templates + bounds)
 };
-[[vk::push_constant]] ObbPush push;
+REND_PUSH(ObbPush, push);
 
 // Must match kBoundsObbEligible in the viewer (bounds bmin.w bitmask):
 // set only for world-baked, non-animated scene meshes whose pooled
@@ -49,11 +52,11 @@ static const uint kBoundsObbEligible = 4u;
 
 static const uint kVertexStrideBytes = 32u;
 
-[[vk::binding(3, 0)]] StructuredBuffer<DrawCommand> templates;
+[[vk::binding(3, 0)]] StructuredBuffer<DrawCommand> templates REND_U(3);
 // The whole geometry pool (same binding the skin pass writes; read-only
 // here): uint32 indices and interleaved pos3f/normal3f/uv2f vertices.
-[[vk::binding(13, 0)]] ByteAddressBuffer pool;
-[[vk::binding(22, 0)]] StructuredBuffer<ObjectBounds> bounds;
+[[vk::binding(13, 0)]] ByteAddressBuffer pool REND_U(13);
+[[vk::binding(22, 0)]] StructuredBuffer<ObjectBounds> bounds REND_U(22);
 
 // OBB table (must match cull.hlsl / proxy.hlsl / the viewer's buffer):
 //   bytes [0,16)  — control: [0] claim counter, rest pad;
@@ -63,7 +66,7 @@ static const uint kVertexStrideBytes = 32u;
 // ordering rides the recorded barriers around the cull dispatch.
 static const uint kObbHeaderBytes = 16u;
 static const uint kObbRowBytes = 64u;
-[[vk::binding(33, 0)]] RWByteAddressBuffer obbs;
+[[vk::binding(33, 0)]] RWByteAddressBuffer obbs REND_U(33);
 
 static const uint kThreads = 256u;
 

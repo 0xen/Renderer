@@ -14,6 +14,8 @@
 // Local-bounds entries (bmax.w != 0 — instanced/runtime models) emit
 // degenerate positions and are never occlusion-culled.
 
+#include "backend.hlsli"
+
 // Must match CameraData in shading.hlsli (only viewProj read).
 struct CameraData {
     column_major float4x4 viewProj;
@@ -39,7 +41,7 @@ struct ProxyPush {
     uint slot;     // frame-in-flight index selecting the buffer regions
     uint capacity; // entries per slot region (bounds + templates)
 };
-[[vk::push_constant]] ProxyPush push;
+REND_PUSH(ProxyPush, push);
 
 // Must match kTransformCapacity / kInstanceRowCapacity in the viewer.
 // A visibility region holds capacity entry slots followed by
@@ -47,16 +49,16 @@ struct ProxyPush {
 static const uint kTransformCapacity = 4096;
 static const uint kInstanceRowCapacity = 4096;
 
-[[vk::binding(6, 0)]] StructuredBuffer<CameraData> cameras;
-[[vk::binding(19, 0)]] StructuredBuffer<column_major float4x4> objectTransforms;
-[[vk::binding(20, 0)]] StructuredBuffer<InstanceRow> instanceRows;
-[[vk::binding(22, 0)]] StructuredBuffer<ObjectBounds> bounds;
-[[vk::binding(26, 0)]] RWStructuredBuffer<uint> visibility;
+[[vk::binding(6, 0)]] StructuredBuffer<CameraData> cameras REND_U(6);
+[[vk::binding(19, 0)]] StructuredBuffer<column_major float4x4> objectTransforms REND_U(19);
+[[vk::binding(20, 0)]] StructuredBuffer<InstanceRow> instanceRows REND_U(20);
+[[vk::binding(22, 0)]] StructuredBuffer<ObjectBounds> bounds REND_U(22);
+[[vk::binding(26, 0)]] RWStructuredBuffer<uint> visibility REND_U(26);
 // Canonical-row -> draw-entry map (the viewer maintains it beside the
 // instance rows): 0xffffffff = the row is dead or belongs to a scene
 // entry (covered by the per-entry pass). Lets VSInstances find a row's
 // local bounds without any per-frame CPU work.
-[[vk::binding(34, 0)]] StructuredBuffer<uint> rowEntries;
+[[vk::binding(34, 0)]] StructuredBuffer<uint> rowEntries REND_U(34);
 // GPU-refined oriented bounding boxes (must match obb.hlsl / cull.hlsl /
 // the viewer): row e at 16 + e*64 = float4 center (w = ready flag) +
 // three float4 {unit axis, half extent}. Once an entry's row is ready the
@@ -65,7 +67,7 @@ static const uint kInstanceRowCapacity = 4096;
 // camera-inside bypass switches with it, keeping test and box matched.
 static const uint kObbHeaderBytes = 16u;
 static const uint kObbRowBytes = 64u;
-[[vk::binding(33, 0)]] ByteAddressBuffer obbs;
+[[vk::binding(33, 0)]] ByteAddressBuffer obbs REND_U(33);
 
 struct VSOutput {
     float4 position : SV_Position;
@@ -122,6 +124,7 @@ static const uint3 kCubeCorner[36] = {
 
 VSOutput VSMain(uint vertexId : SV_VertexID, uint instanceId : SV_InstanceID) {
     VSOutput output;
+    instanceId = rendInstanceIndex(instanceId);
     output.entry = instanceId;
     const ObjectBounds b = bounds[push.slot * push.capacity + instanceId];
     // Local-mode or never-written bounds: collapse the box (w = 0 clips
@@ -154,6 +157,7 @@ VSOutput VSMain(uint vertexId : SV_VertexID, uint instanceId : SV_InstanceID) {
     output.position = dilate(mul(viewProj, float4(world, 1.0f)),
                              mul(viewProj, float4(center, 1.0f)));
     output.corner = float3(corner);
+    output.position = rendClip(output.position);
     return output;
 }
 
@@ -166,6 +170,7 @@ VSOutput VSMain(uint vertexId : SV_VertexID, uint instanceId : SV_InstanceID) {
 // degenerate positions; the same PSMain/PSDebug pair the entry pass.
 VSOutput VSInstances(uint vertexId : SV_VertexID, uint instanceId : SV_InstanceID) {
     VSOutput output;
+    instanceId = rendInstanceIndex(instanceId);
     output.entry = push.capacity + instanceId; // per-instance visibility slot
     output.corner = float3(0.0f, 0.0f, 0.0f);
     output.position = float4(0.0f, 0.0f, 0.0f, 0.0f);
@@ -189,6 +194,7 @@ VSOutput VSInstances(uint vertexId : SV_VertexID, uint instanceId : SV_InstanceI
     output.position = dilate(mul(viewProj, float4(pos, 1.0f)),
                              mul(viewProj, float4(center, 1.0f)));
     output.corner = float3(corner);
+    output.position = rendClip(output.position);
     return output;
 }
 

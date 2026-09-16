@@ -5,8 +5,10 @@
 // (LightData/CameraData/bindings) — this file declares the shadow-map
 // bindings 8/9 itself.
 
-[[vk::binding(8, 0)]] Texture2D<float> shadowMaps[4];
-[[vk::binding(9, 0)]] SamplerComparisonState shadowSampler;
+#include "backend.hlsli"
+
+[[vk::binding(8, 0)]] Texture2D<float> shadowMaps[4] REND_T(8);
+[[vk::binding(9, 0)]] SamplerComparisonState shadowSampler REND_S(9);
 
 // Visibility from one cascade's map: transform to its light space, 3x3
 // PCF over hardware 2x2 compares. The projections bake Vulkan's Y flip,

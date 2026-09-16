@@ -5,15 +5,17 @@
 // curve selection ride the per-slot light buffer, so both are live under
 // static recordings. The ImGui overlay draws after this pass, untouched.
 
+#include "backend.hlsli"
+
 struct PushConstants {
     uint cameraSlot; // frame-in-flight index into the light buffer
     uint cascade;    // unused; layout shared with the scene passes
 };
-[[vk::push_constant]] PushConstants pc;
+REND_PUSH(PushConstants, pc);
 
 #include "shading.hlsli"
 
-[[vk::binding(35, 0)]] Texture2D<float4> sceneColor;
+[[vk::binding(35, 0)]] Texture2D<float4> sceneColor REND_T(35);
 
 struct VSOutput {
     float4 position : SV_Position;
@@ -24,7 +26,7 @@ struct VSOutput {
 VSOutput VSMain(uint vertexId : SV_VertexID) {
     const float2 corners[3] = {float2(-1.0f, -1.0f), float2(3.0f, -1.0f), float2(-1.0f, 3.0f)};
     VSOutput output;
-    output.position = float4(corners[vertexId], 1.0f, 1.0f);
+    output.position = rendClip(float4(corners[vertexId], 1.0f, 1.0f));
     return output;
 }
 

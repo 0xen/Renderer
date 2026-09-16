@@ -15,11 +15,13 @@
 //                          reintroduce direction here (rebuild it from
 //                          the camera ray axes as rt_primary does).
 
+#include "backend.hlsli"
+
 struct PushConstants {
     uint cameraSlot; // frame-in-flight index into the camera/light buffers
     uint cascade;    // unused; layout matches the scene pass
 };
-[[vk::push_constant]] PushConstants pc;
+REND_PUSH(PushConstants, pc);
 
 #include "shading.hlsli"
 
@@ -32,7 +34,7 @@ VSOutput VSMain(uint vertexId : SV_VertexID) {
     // Fullscreen triangle from the vertex id, pinned to depth 1.0.
     const float2 corners[3] = {float2(-1.0f, -1.0f), float2(3.0f, -1.0f), float2(-1.0f, 3.0f)};
     VSOutput output;
-    output.position = float4(corners[vertexId], 1.0f, 1.0f);
+    output.position = rendClip(float4(corners[vertexId], 1.0f, 1.0f));
     output.ndc = corners[vertexId];
     return output;
 }

@@ -2,11 +2,13 @@
 // point of view. Alpha-masked materials (foliage, banners) still discard,
 // so their shadows match their silhouettes instead of their quads.
 
+#include "backend.hlsli"
+
 struct PushConstants {
     uint slot;    // frame-in-flight index into the light buffer
     uint cascade; // which cascade this pass renders
 };
-[[vk::push_constant]] PushConstants pc;
+REND_PUSH(PushConstants, pc);
 
 // Must match LightData in the viewer / scene.hlsl.
 struct LightData {
@@ -47,19 +49,19 @@ struct ObjectData {
 
 static const uint kFlagAlphaMasked = 1u;
 
-[[vk::binding(0, 0)]] StructuredBuffer<ObjectData> objects;
-[[vk::binding(1, 0)]] Texture2D textures[];
-[[vk::binding(2, 0)]] SamplerState linearSampler;
-[[vk::binding(7, 0)]] StructuredBuffer<LightData> lights;
+[[vk::binding(0, 0)]] StructuredBuffer<ObjectData> objects REND_U(0);
+[[vk::binding(1, 0)]] Texture2D textures[] REND_T(1);
+[[vk::binding(2, 0)]] SamplerState linearSampler REND_S(2);
+[[vk::binding(7, 0)]] StructuredBuffer<LightData> lights REND_U(7);
 // Must match shading.hlsli: per-slot per-object world transforms.
 static const uint kTransformCapacity = 4096;
-[[vk::binding(19, 0)]] StructuredBuffer<column_major float4x4> objectTransforms;
+[[vk::binding(19, 0)]] StructuredBuffer<column_major float4x4> objectTransforms REND_U(19);
 // Must match shading.hlsli: SV_InstanceID resolves through these rows.
 struct InstanceRow {
     uint objectIndex;
     uint transformIndex;
 };
-[[vk::binding(20, 0)]] StructuredBuffer<InstanceRow> instanceRows;
+[[vk::binding(20, 0)]] StructuredBuffer<InstanceRow> instanceRows REND_U(20);
 
 struct VSInput {
     float3 position : POSITION;
@@ -76,7 +78,7 @@ struct VSOutput {
 
 VSOutput VSMain(VSInput input) {
     VSOutput output;
-    const InstanceRow row = instanceRows[input.instanceId];
+    const InstanceRow row = instanceRows[rendInstanceIndex(input.instanceId)];
     const float3 worldPos =
         mul(objectTransforms[pc.slot * kTransformCapacity + row.transformIndex],
             float4(input.position, 1.0f))
@@ -84,6 +86,7 @@ VSOutput VSMain(VSInput input) {
     output.position = mul(lights[pc.slot].cascadeViewProj[pc.cascade], float4(worldPos, 1.0f));
     output.uv = input.uv;
     output.objectIndex = row.objectIndex;
+    output.position = rendClip(output.position);
     return output;
 }
 

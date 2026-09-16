@@ -9,11 +9,13 @@
 // to overdraw. Compiled twice like scene.hlsl: RT_SHADOWS=0 (ps_6_0) and
 // RT_SHADOWS=1 (ps_6_5, RayQuery devices).
 
+#include "backend.hlsli"
+
 struct PushConstants {
     uint cameraSlot; // frame-in-flight index into the camera buffer
     uint cascade;    // unused; layout shared with the scene pass
 };
-[[vk::push_constant]] PushConstants pc;
+REND_PUSH(PushConstants, pc);
 
 #include "shading.hlsli"
 #include "lighting.hlsli"
@@ -21,10 +23,10 @@ struct PushConstants {
 #include "rt_common.hlsli"
 #endif
 
-[[vk::binding(28, 0)]] Texture2D gbufferAlbedo;
-[[vk::binding(29, 0)]] Texture2D gbufferNormal;
-[[vk::binding(30, 0)]] Texture2D gbufferMaterial;
-[[vk::binding(31, 0)]] Texture2D<float> gbufferViewDepth;
+[[vk::binding(28, 0)]] Texture2D gbufferAlbedo REND_T(28);
+[[vk::binding(29, 0)]] Texture2D gbufferNormal REND_T(29);
+[[vk::binding(30, 0)]] Texture2D gbufferMaterial REND_T(30);
+[[vk::binding(31, 0)]] Texture2D<float> gbufferViewDepth REND_T(31);
 
 struct VSOutput {
     float4 position : SV_Position;
@@ -36,7 +38,7 @@ struct VSOutput {
 VSOutput VSMain(uint vertexId : SV_VertexID) {
     const float2 corners[3] = {float2(-1.0f, -1.0f), float2(3.0f, -1.0f), float2(-1.0f, 3.0f)};
     VSOutput output;
-    output.position = float4(corners[vertexId], 1.0f, 1.0f);
+    output.position = rendClip(float4(corners[vertexId], 1.0f, 1.0f));
     output.ndc = corners[vertexId];
     return output;
 }

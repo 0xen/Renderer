@@ -19,16 +19,26 @@ class Image;
 class Pipeline;
 class Swapchain;
 
-// Mirrors VkDrawIndexedIndirectCommand so callers can fill indirect
-// buffers without Vulkan headers.
+// One indirect draw record (24 bytes). The five trailing words are the
+// API's indexed-draw arguments (VkDrawIndexedIndirectCommand /
+// D3D12_DRAW_INDEXED_ARGUMENTS, identical layouts); the leading word
+// repeats firstInstance for the D3D12 backend, whose ExecuteIndirect
+// command signature feeds it to the vertex stage as a root constant
+// (SV_InstanceID excludes the base instance there — see
+// assets/shaders/backend.hlsli). Every writer fills both words; the
+// Vulkan backend simply draws from offset 4. Mirrored by DrawCommand in
+// cull.hlsl / obb.hlsl.
 struct DrawIndexedIndirect {
+    std::uint32_t baseInstance = 0; // == firstInstance (D3D12 root constant)
     std::uint32_t indexCount = 0;
     std::uint32_t instanceCount = 0;
     std::uint32_t firstIndex = 0;
     std::int32_t vertexOffset = 0;
     std::uint32_t firstInstance = 0;
 };
-static_assert(sizeof(DrawIndexedIndirect) == 20);
+static_assert(sizeof(DrawIndexedIndirect) == 24);
+// Byte offset of the API draw arguments inside a DrawIndexedIndirect.
+inline constexpr std::uint64_t kDrawIndexedArgsOffset = 4;
 
 // How a DrawBatch reaches the GPU, best first. The caller picks the best
 // mode the device's enabled features allow (Device::isEnabled) — the gpu

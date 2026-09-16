@@ -7,11 +7,13 @@
 // the row resolves to the object/material index and the transform index,
 // so instanced draws (instanceCount > 1) share geometry and materials.
 
+#include "backend.hlsli"
+
 struct PushConstants {
     uint cameraSlot; // frame-in-flight index into the camera buffer
     uint cascade;    // used by the shadow pass; 0 here
 };
-[[vk::push_constant]] PushConstants pc;
+REND_PUSH(PushConstants, pc);
 
 // Data layouts, common bindings (0-2, 6, 7) and the BRDF live in the
 // shared include so the raster and traced paths can never drift apart.
@@ -45,7 +47,7 @@ struct VSOutput {
 
 VSOutput VSMain(VSInput input) {
     VSOutput output;
-    const InstanceRow row = instanceRows[input.instanceId];
+    const InstanceRow row = instanceRows[rendInstanceIndex(input.instanceId)];
     const float4x4 world =
         objectTransforms[pc.cameraSlot * kTransformCapacity + row.transformIndex];
     const float3 worldPos = mul(world, float4(input.position, 1.0f)).xyz;
@@ -57,6 +59,7 @@ VSOutput VSMain(VSInput input) {
     output.normal = normalize(mul((float3x3)world, input.normal));
     output.uv = input.uv;
     output.objectIndex = row.objectIndex;
+    output.position = rendClip(output.position);
     return output;
 }
 

@@ -8,14 +8,16 @@
 // forced and coordinates are clamped half a texel inside the image.
 // Non-temporal and deterministic: static frames stay bit-stable.
 
+#include "backend.hlsli"
+
 struct PushConstants {
     uint cameraSlot; // unused; layout shared with the other post passes
     uint cascade;
 };
-[[vk::push_constant]] PushConstants pc;
+REND_PUSH(PushConstants, pc);
 
-[[vk::binding(2, 0)]] SamplerState linearSampler;
-[[vk::binding(36, 0)]] Texture2D<float4> ldrColor;
+[[vk::binding(2, 0)]] SamplerState linearSampler REND_S(2);
+[[vk::binding(36, 0)]] Texture2D<float4> ldrColor REND_T(36);
 
 struct VSOutput {
     float4 position : SV_Position;
@@ -25,7 +27,7 @@ struct VSOutput {
 VSOutput VSMain(uint vertexId : SV_VertexID) {
     const float2 corners[3] = {float2(-1.0f, -1.0f), float2(3.0f, -1.0f), float2(-1.0f, 3.0f)};
     VSOutput output;
-    output.position = float4(corners[vertexId], 1.0f, 1.0f);
+    output.position = rendClip(float4(corners[vertexId], 1.0f, 1.0f));
     output.uv = corners[vertexId] * 0.5f + 0.5f; // +Y-down clip = +V-down uv, already aligned
     return output;
 }

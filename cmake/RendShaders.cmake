@@ -1,5 +1,7 @@
-# Offline HLSL -> SPIR-V compilation through dxc from the Vulkan SDK. Shared
-# by the engine's own shaders (assets/) and by any project that consumes the
+# Offline HLSL compilation through dxc from the Vulkan SDK: SPIR-V for the
+# Vulkan backend and, on Windows, DXIL for the D3D12 backend from the SAME
+# sources (assets/shaders/backend.hlsli hides the differences). Shared by
+# the engine's own shaders (assets/) and by any project that consumes the
 # engine and ships its own HLSL — there is no runtime shader compilation.
 find_program(REND_DXC_EXECUTABLE
     NAMES dxc
@@ -9,6 +11,14 @@ if(NOT REND_DXC_EXECUTABLE)
     message(FATAL_ERROR "dxc not found; set VULKAN_SDK or REND_DXC_EXECUTABLE")
 endif()
 message(STATUS "Shader compiler: ${REND_DXC_EXECUTABLE}")
+
+# DXIL artifacts (<name>.<stage>.dxil beside every .spv) for the D3D12
+# backend. The same dxc emits them; REND_DXIL=OFF skips the rule.
+if(WIN32)
+    option(REND_DXIL "Also compile every shader stage to DXIL for the D3D12 backend" ON)
+else()
+    set(REND_DXIL OFF)
+endif()
 
 # rend_add_shaders(<target>
 #     SOURCE_DIR <dir>        directory holding the .hlsl sources
@@ -69,6 +79,25 @@ function(rend_add_shaders target)
             VERBATIM)
         list(APPEND artifacts "${artifact_path}")
         list(APPEND sources "${source_path}")
+
+        if(REND_DXIL)
+            # Same stage to DXIL: no -spirv, same entry/profile/defines.
+            # The [[vk::*]] attributes stay in the sources for the SPIR-V
+            # build and are ignored here (warning silenced).
+            string(REGEX REPLACE "[.]spv$" ".dxil" dxil_artifact "${artifact}")
+            set(dxil_path "${ARG_OUTPUT_DIR}/${dxil_artifact}")
+            add_custom_command(
+                OUTPUT "${dxil_path}"
+                COMMAND ${CMAKE_COMMAND} -E make_directory "${ARG_OUTPUT_DIR}"
+                COMMAND "${REND_DXC_EXECUTABLE}"
+                        -T ${profile} -E ${entrypoint} -Wno-ignored-attributes
+                        ${defines}
+                        -Fo "${dxil_path}" "${source_path}"
+                DEPENDS "${source_path}" ${include_paths}
+                COMMENT "dxc ${source} [${profile} ${entrypoint}] -> ${dxil_artifact}"
+                VERBATIM)
+            list(APPEND artifacts "${dxil_path}")
+        endif()
     endforeach()
     list(REMOVE_DUPLICATES sources)
 

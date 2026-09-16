@@ -6,11 +6,13 @@
 // which Loads these four targets. Target order/formats must match
 // FrameRenderer::kGBufferFormats.
 
+#include "backend.hlsli"
+
 struct PushConstants {
     uint cameraSlot; // frame-in-flight index into the camera buffer
     uint cascade;    // unused here; layout shared with the scene pass
 };
-[[vk::push_constant]] PushConstants pc;
+REND_PUSH(PushConstants, pc);
 
 #include "shading.hlsli"
 #include "lighting.hlsli"

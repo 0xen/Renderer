@@ -182,8 +182,10 @@ public:
     virtual void drawIndexed(std::uint32_t indexCount, std::uint32_t instanceCount = 1,
                      std::uint32_t firstIndex = 0, std::int32_t vertexOffset = 0,
                      std::uint32_t firstInstance = 0) = 0;
-    // Entries are the API's draw-indirect (16 B) / indexed (20 B,
-    // DrawIndexedIndirect in frame_renderer.h) records; stride 0 = packed.
+    // drawIndirect entries are the API's 16-byte draw-indirect records;
+    // the indexed variants take DrawIndexedIndirect records (24 B,
+    // frame_renderer.h — the API arguments sit at kDrawIndexedArgsOffset).
+    // stride 0 = packed.
     virtual void drawIndirect(const Buffer& buffer, std::uint64_t offset, std::uint32_t drawCount,
                       std::uint32_t stride = 0) = 0;
     virtual void drawIndexedIndirect(const Buffer& buffer, std::uint64_t offset, std::uint32_t drawCount,

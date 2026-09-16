@@ -4,6 +4,8 @@
 // scene.hlsl and rt_primary.hlsl so the raster and traced paths can never
 // drift apart. The including shader declares its own push constants.
 
+#include "backend.hlsli"
+
 static const float kPi = 3.14159265f;
 
 // ObjectData.flags bits.
@@ -87,25 +89,25 @@ static const uint kReflectionProbe = 0u;  // sample the probe cubemap
 static const uint kReflectionTraced = 1u; // fire an inline reflection ray
 static const uint kReflectionNone = 2u;   // shade plain (probe capture pass)
 
-[[vk::binding(0, 0)]] StructuredBuffer<ObjectData> objects;
-[[vk::binding(1, 0)]] Texture2D textures[];
-[[vk::binding(2, 0)]] SamplerState linearSampler;
-[[vk::binding(6, 0)]] StructuredBuffer<CameraData> cameras;
-[[vk::binding(7, 0)]] StructuredBuffer<LightData> lights;
+[[vk::binding(0, 0)]] StructuredBuffer<ObjectData> objects REND_U(0);
+[[vk::binding(1, 0)]] Texture2D textures[] REND_T(1);
+[[vk::binding(2, 0)]] SamplerState linearSampler REND_S(2);
+[[vk::binding(6, 0)]] StructuredBuffer<CameraData> cameras REND_U(6);
+[[vk::binding(7, 0)]] StructuredBuffer<LightData> lights REND_U(7);
 // Reflection probe cubemap (load-time capture, full mip chain). Only
 // sampled when reflections == kReflectionProbe, so the binding may stay
 // unwritten on scenes that never captured one (partially bound).
-[[vk::binding(18, 0)]] TextureCube probeMap;
+[[vk::binding(18, 0)]] TextureCube probeMap REND_T(18);
 // Point-light shadow cubes (load-time capture, one per shadow-casting
 // light slot): R32F world distance from the light. Sampled only when the
 // light's params.y flags a written slot (partially bound).
-[[vk::binding(27, 0)]] TextureCube pointShadowMaps[kMaxPointLights];
+[[vk::binding(27, 0)]] TextureCube pointShadowMaps[kMaxPointLights] REND_T(27);
 // Per-object world transforms: one region per camera slot (frame slots +
 // probe faces), kTransformCapacity entries each, indexed by the object
 // index. Scene geometry is world-baked and rides identity; runtime-spawned
 // models are placed and moved through these (renderer message queue).
 static const uint kTransformCapacity = 4096;
-[[vk::binding(19, 0)]] StructuredBuffer<column_major float4x4> objectTransforms;
+[[vk::binding(19, 0)]] StructuredBuffer<column_major float4x4> objectTransforms REND_U(19);
 // Instance rows: SV_InstanceID (which includes the draw's firstInstance)
 // indexes here; the row names the object/material row and the transform
 // row, so one indirect entry with instanceCount N draws N placements of
@@ -117,7 +119,7 @@ struct InstanceRow {
     uint objectIndex;
     uint transformIndex;
 };
-[[vk::binding(20, 0)]] StructuredBuffer<InstanceRow> instanceRows;
+[[vk::binding(20, 0)]] StructuredBuffer<InstanceRow> instanceRows REND_U(20);
 
 // One directional light, glTF metallic-roughness: Lambert diffuse + GGX
 // specular (Smith-Schlick visibility, Schlick Fresnel). Scaled by pi so a

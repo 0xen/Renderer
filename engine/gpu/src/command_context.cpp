@@ -4,6 +4,7 @@
 
 #include "rend/gpu/buffer.h"
 #include "rend/gpu/descriptor_table.h"
+#include "rend/gpu/frame_renderer.h"
 #include "rend/gpu/image.h"
 #include "rend/gpu/pipeline.h"
 
@@ -230,9 +231,9 @@ void VulkanCommandContext::fillBuffer(const Buffer& buffer, std::uint64_t offset
 void VulkanCommandContext::drawIndexedIndirectCount(const Buffer& buffer, std::uint64_t offset,
                                               const Buffer& count, std::uint64_t countOffset,
                                               std::uint32_t maxDrawCount, std::uint32_t stride) {
-    vkCmdDrawIndexedIndirectCount(cmd_, vk(buffer).handle(), offset, vk(count).handle(), countOffset,
-                                  maxDrawCount,
-                                  stride == 0 ? sizeof(VkDrawIndexedIndirectCommand) : stride);
+    vkCmdDrawIndexedIndirectCount(cmd_, vk(buffer).handle(), offset + kDrawIndexedArgsOffset,
+                                  vk(count).handle(), countOffset, maxDrawCount,
+                                  stride == 0 ? sizeof(DrawIndexedIndirect) : stride);
 }
 
 void VulkanCommandContext::beginRendering(const RenderingDesc& desc) {
@@ -337,8 +338,8 @@ void VulkanCommandContext::drawIndirect(const Buffer& buffer, std::uint64_t offs
 
 void VulkanCommandContext::drawIndexedIndirect(const Buffer& buffer, std::uint64_t offset,
                                          std::uint32_t drawCount, std::uint32_t stride) {
-    vkCmdDrawIndexedIndirect(cmd_, vk(buffer).handle(), offset, drawCount,
-                             stride == 0 ? sizeof(VkDrawIndexedIndirectCommand) : stride);
+    vkCmdDrawIndexedIndirect(cmd_, vk(buffer).handle(), offset + kDrawIndexedArgsOffset, drawCount,
+                             stride == 0 ? sizeof(DrawIndexedIndirect) : stride);
 }
 
 void VulkanCommandContext::dispatch(std::uint32_t x, std::uint32_t y, std::uint32_t z) {

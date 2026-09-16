@@ -25,8 +25,11 @@
 // front of last frame's depth (proxy pass, end of the previous frame)
 // are dropped from the scene streams — never from the shadow stream.
 
+#include "backend.hlsli"
+
 // Must match rend::gpu::DrawIndexedIndirect (VkDrawIndexedIndirectCommand).
 struct DrawCommand {
+    uint baseInstance; // == firstInstance; D3D12 root constant (backend.hlsli)
     uint indexCount;
     uint instanceCount;
     uint firstIndex;
@@ -74,7 +77,7 @@ struct CullPush {
     // pick (guards the first frames before the viewer measures it).
     float lodFactor;
 };
-[[vk::push_constant]] CullPush push;
+REND_PUSH(CullPush, push);
 
 static const uint kCullFrustum = 1u;
 static const uint kCullLod = 2u;
@@ -86,8 +89,8 @@ static const uint kInstanceRowCapacity = 4096;
 static const uint kBoundsAlwaysVisible = 1u;
 static const uint kBoundsTransparent = 2u;
 
-[[vk::binding(3, 0)]] StructuredBuffer<DrawCommand> templates;
-[[vk::binding(4, 0)]] RWStructuredBuffer<DrawCommand> compacted;
+[[vk::binding(3, 0)]] StructuredBuffer<DrawCommand> templates REND_U(3);
+[[vk::binding(4, 0)]] RWStructuredBuffer<DrawCommand> compacted REND_U(4);
 // kCountStride per slot, zeroed before dispatch: [0] shadow-stream count,
 // [1] opaque scene-stream count, [2] scratch-row allocator for partial
 // entries, [3] transparent-stream count, [4]/[5] INDICES emitted to the
@@ -96,16 +99,16 @@ static const uint kBoundsTransparent = 2u;
 // spare. Must match countRegionStride in the viewer and the count
 // offsets in frame_renderer's bindAndDraw.
 static const uint kCountStride = 8;
-[[vk::binding(5, 0)]] RWStructuredBuffer<uint> counts;
-[[vk::binding(6, 0)]] StructuredBuffer<CameraData> cameras;
-[[vk::binding(19, 0)]] StructuredBuffer<column_major float4x4> objectTransforms;
-[[vk::binding(21, 0)]] RWStructuredBuffer<DrawCommand> culled;
-[[vk::binding(22, 0)]] StructuredBuffer<ObjectBounds> bounds;
+[[vk::binding(5, 0)]] RWStructuredBuffer<uint> counts REND_U(5);
+[[vk::binding(6, 0)]] StructuredBuffer<CameraData> cameras REND_U(6);
+[[vk::binding(19, 0)]] StructuredBuffer<column_major float4x4> objectTransforms REND_U(19);
+[[vk::binding(21, 0)]] RWStructuredBuffer<DrawCommand> culled REND_U(21);
+[[vk::binding(22, 0)]] StructuredBuffer<ObjectBounds> bounds REND_U(22);
 // The instance-row buffer (same VkBuffer as the vertex stage's binding
 // 20): rows [0, kInstanceRowCapacity) are canonical; per-slot scratch
 // regions above hold the compacted survivors of partially visible draws.
-[[vk::binding(23, 0)]] RWStructuredBuffer<InstanceRow> instanceRows;
-[[vk::binding(24, 0)]] RWStructuredBuffer<DrawCommand> transparent;
+[[vk::binding(23, 0)]] RWStructuredBuffer<InstanceRow> instanceRows REND_U(23);
+[[vk::binding(24, 0)]] RWStructuredBuffer<DrawCommand> transparent REND_U(24);
 
 // Discrete LOD chain per draw entry (must match MeshLodTable in the
 // viewer). Every level indexes the SAME vertex block as the template —
@@ -129,7 +132,7 @@ struct MeshLodTable {
     uint pad2;
     MeshLodLevel lods[kMaxMeshLods];
 };
-[[vk::binding(25, 0)]] StructuredBuffer<MeshLodTable> meshLods;
+[[vk::binding(25, 0)]] StructuredBuffer<MeshLodTable> meshLods REND_U(25);
 
 // Occlusion visibility (per-slot regions of push.capacity ENTRY slots
 // followed by kInstanceRowCapacity per-INSTANCE slots): the proxy passes
@@ -144,7 +147,7 @@ struct MeshLodTable {
 // on/off pixel centers on alternating frames would otherwise oscillate
 // visible/occluded every frame (one extra frame of disappear latency,
 // no popping). Seeded all-1 at load so frame 0 draws everything.
-[[vk::binding(26, 0)]] RWStructuredBuffer<uint> visibility;
+[[vk::binding(26, 0)]] RWStructuredBuffer<uint> visibility REND_U(26);
 
 // GPU-refined oriented bounding boxes (must match obb.hlsl / proxy.hlsl /
 // the viewer): row e at 16 + e*64 = float4 center (w = ready flag) + three
@@ -155,7 +158,7 @@ struct MeshLodTable {
 // region — rows are load-time constants once written.
 static const uint kObbHeaderBytes = 16u;
 static const uint kObbRowBytes = 64u;
-[[vk::binding(33, 0)]] ByteAddressBuffer obbs;
+[[vk::binding(33, 0)]] ByteAddressBuffer obbs REND_U(33);
 
 struct Obb {
     float3 center;
@@ -334,6 +337,7 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
                     }
                 }
                 cmd.firstInstance = scratch;
+                cmd.baseInstance = scratch;
                 cmd.instanceCount = visible;
             }
         }

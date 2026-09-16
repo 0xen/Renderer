@@ -1809,6 +1809,7 @@ int main(int argc, char** argv) {
         for (std::size_t i = 0; i < geometry.size(); ++i) {
             const GeometryLocation& location = geometry[i];
             draws.push_back({
+                .baseInstance = static_cast<std::uint32_t>(i),
                 .indexCount = location.indexCount,
                 .instanceCount = 1,
                 .firstIndex = static_cast<std::uint32_t>(location.indices.offset /
@@ -4067,6 +4068,8 @@ int main(int argc, char** argv) {
                 }
                 draws[resource.meshObjectIndices[m]].firstInstance =
                     *newBase + m * newCapacity;
+                draws[resource.meshObjectIndices[m]].baseInstance =
+                    *newBase + m * newCapacity;
             }
             templatesDirty.fill(true); // canonical firstInstance changed
             if (resource.instanceCapacity > 0) {
@@ -4521,6 +4524,7 @@ int main(int argc, char** argv) {
                                      .materialIndex = mesh.materialIndex};
             objectData[objectIndex] = mesh.object;
             draws[objectIndex] = {
+                .baseInstance = 0, // patched with firstInstance below
                 .indexCount = static_cast<std::uint32_t>(mesh.indices.size()),
                 .instanceCount = 0, // instances bump this below
                 .firstIndex = static_cast<std::uint32_t>(indexSlice.value().offset /

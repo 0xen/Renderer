@@ -40,5 +40,5 @@ rend_add_shaders(shaders
     SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shaders"
     OUTPUT_DIR "${REND_SHADER_OUT_DIR}"
     STAGES ${REND_SHADER_STAGES}
-    INCLUDES shading.hlsli lighting.hlsli rt_common.hlsli)
+    INCLUDES backend.hlsli shading.hlsli lighting.hlsli rt_common.hlsli)
 set_target_properties(shaders PROPERTIES FOLDER "assets")
