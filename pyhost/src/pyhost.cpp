@@ -46,6 +46,7 @@ struct AnimationMirror {
     float time = 0.0f; // as of the last broadcast, not a live clock
     float speed = 1.0f;
     bool paused = false;
+    bool loop = true;
 };
 
 struct HostState {
@@ -118,6 +119,7 @@ void refillEventCache() {
             mirror.time = event.animationState.time;
             mirror.speed = event.animationState.speed;
             mirror.paused = event.animationState.paused != 0;
+            mirror.loop = event.animationState.loop != 0;
             mirror.clips.clear();
             for (std::uint32_t i = 0;
                  i < event.animationState.clipCount && i < renderer::kAnimationMaxClips; ++i) {
@@ -410,7 +412,7 @@ PYBIND11_EMBEDDED_MODULE(rend, m) {
     // field mask, so changing the speed never re-triggers the clip.
     auto pushAnimation = [](const std::string& model, std::uint32_t fields,
                             const std::string& clip, float blend, float speed, float time,
-                            bool paused) {
+                            bool paused, bool loop = true) {
         if (clip.size() >= renderer::kAnimationNameChars ||
             model.size() >= renderer::kAnimationNameChars) {
             throw py::value_error("model/clip name too long");
@@ -424,23 +426,47 @@ PYBIND11_EMBEDDED_MODULE(rend, m) {
         cmd.animation.speed = speed;
         cmd.animation.time = time;
         cmd.animation.paused = paused ? 1u : 0u;
+        cmd.animation.loop = loop ? 1u : 0u;
         cmd.animation.fields = fields;
         pushCommand(cmd);
     };
 
     m.def(
         "set_animation",
-        [pushAnimation](const std::string& clip, const std::string& model, float blend) {
-            pushAnimation(model, renderer::kAnimationFieldClip, clip, blend, 1.0f, 0.0f,
-                          false);
+        [pushAnimation](const std::string& clip, const std::string& model, float blend,
+                        std::optional<bool> loop) {
+            std::uint32_t fields = renderer::kAnimationFieldClip;
+            if (loop.has_value()) {
+                fields |= renderer::kAnimationFieldLoop;
+            }
+            pushAnimation(model, fields, clip, blend, 1.0f, 0.0f, false,
+                          loop.value_or(true));
         },
         py::arg("clip"), py::arg("model") = std::string(), py::arg("blend") = 0.25f,
+        py::arg("loop") = py::none(),
         "Switch an animated model to the named clip, cross-fading out of "
         "the running one over `blend` seconds (0 = snap). `model` is a "
         "scene-XML <Model name>; the default empty string targets EVERY "
-        "animated model. Async like every command: a clip the model does "
-        "not have is logged viewer-side and ignored, so confirm with "
-        "get_animation() rather than assuming.");
+        "animated model. `loop=None` keeps the clip's scene-declared mode "
+        "(<Clip loop=\"false\"/>); True/False overrides it for this clip "
+        "from now on, where False means play once and hold the last pose. "
+        "Async like every command: a clip the model does not have is "
+        "logged viewer-side and ignored, so confirm with get_animation() "
+        "rather than assuming.");
+
+    m.def(
+        "set_animation_loop",
+        [pushAnimation](bool loop, const std::string& model) {
+            pushAnimation(model, renderer::kAnimationFieldLoop, {}, 0.0f, 1.0f, 0.0f, false,
+                          loop);
+        },
+        py::arg("loop"), py::arg("model") = std::string(),
+        "Set the PLAYING clip's loop mode. False = play once and hold the "
+        "last pose, which is what a one-shot gesture or a two-key A-to-B "
+        "pose clip needs — looping one makes it snap back and judder every "
+        "cycle. glTF stores no loop flag, so this (or scene XML) is the "
+        "only place the intent can come from; the viewer warns at load for "
+        "any looping clip whose first and last poses disagree.");
 
     m.def(
         "set_animation_speed",
@@ -544,11 +570,12 @@ PYBIND11_EMBEDDED_MODULE(rend, m) {
             out["time"] = it->second.time;
             out["speed"] = it->second.speed;
             out["paused"] = it->second.paused;
+            out["loop"] = it->second.loop;
             return out;
         },
         py::arg("model") = std::string(),
         "Full mirrored playback state as a dict: model, clip, clips, "
-        "duration, time, speed, paused. NOTE `time` is the clip time at "
+        "duration, time, speed, paused, loop. NOTE `time` is the clip time at "
         "the last state change (state broadcasts on change, not per "
         "frame), so it is exact after a seek or switch and stale while a "
         "clip free-runs. None when the name is unknown, or when the name "

@@ -165,7 +165,18 @@ Result<SceneDesc> parseScene(const std::filesystem::path& xmlFile) {
         desc.pipelinePath = model.child("Shader").attribute("path").as_string("");
         desc.reflective = model.attribute("reflective").as_bool(false);
         desc.lodEnabled = model.attribute("lod").as_bool(true);
-        desc.animationClip = model.child("Animation").attribute("clip").as_string("");
+        if (const pugi::xml_node animation = model.child("Animation")) {
+            desc.animationClip = animation.attribute("clip").as_string("");
+            for (const pugi::xml_node clip : animation.children("Clip")) {
+                const char* clipName = clip.attribute("name").as_string("");
+                if (*clipName == '\0') {
+                    return Error{std::format("Model '{}': <Clip> without a name", desc.name)};
+                }
+                if (!clip.attribute("loop").as_bool(true)) {
+                    desc.nonLoopingClips.emplace_back(clipName);
+                }
+            }
+        }
         const char* meshPath = model.child("Mesh").attribute("path").as_string("");
         if (*meshPath == '\0') {
             return Error{std::format("Model '{}' has no <Mesh path=...>", desc.name)};

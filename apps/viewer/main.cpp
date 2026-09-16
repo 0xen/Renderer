@@ -384,6 +384,14 @@ struct AnimatedModelState {
     float time = 0.0f;
     float speed = 1.0f; // time scale; 0 freezes, negative plays backwards
     bool paused = false;
+    // Per-clip loop mode, parallel to data->animations (char, not bool, to
+    // keep a plain addressable element). A non-looping clip clamps at its
+    // ends and holds the last pose instead of wrapping.
+    std::vector<char> clipLoops;
+    bool fromLoop = true; // loop mode of the outgoing clip during a fade
+    bool loops() const {
+        return clip >= clipLoops.size() || clipLoops[clip] != 0;
+    }
     std::size_t fromClip = 0;  // outgoing clip; meaningful only while fading
     float fromTime = 0.0f;
     float fade = 0.0f;         // seconds of cross-fade left; 0 = not fading
@@ -417,6 +425,7 @@ bool selectAnimationClip(AnimatedModelState& state, std::size_t index, float fad
     // one frame of imprecision and keeps the state flat.
     state.fromClip = state.clip;
     state.fromTime = state.time;
+    state.fromLoop = state.loops();
     state.clip = index;
     state.time = 0.0f;
     state.fade = fadeSeconds;
@@ -2173,6 +2182,20 @@ int main(int argc, char** argv) {
                                   model.desc.name, model.desc.animationClip);
                     }
                 }
+                // Clips loop unless the scene says otherwise.
+                state.clipLoops.assign(model.data.animations.size(), 1);
+                for (const std::string& name : model.desc.nonLoopingClips) {
+                    const auto& clips = model.data.animations;
+                    const auto found = std::find_if(
+                        clips.begin(), clips.end(),
+                        [&](const assetio::AnimationData& a) { return a.name == name; });
+                    if (found == clips.end()) {
+                        log::warn("Model '{}': <Clip name='{}' loop='false'> names no clip",
+                                  model.desc.name, name);
+                        continue;
+                    }
+                    state.clipLoops[static_cast<std::size_t>(found - clips.begin())] = 0;
+                }
                 totalJoints +=
                     static_cast<std::uint32_t>(model.data.skeleton.jointNodes.size());
                 animatedStates.push_back(std::move(state));
@@ -2237,15 +2260,46 @@ int main(int argc, char** argv) {
                 }
                 std::string list;
                 for (std::size_t i = 0; i < clips.size(); ++i) {
+                    const char* mark = state.clipLoops[i] != 0 ? "" : " once";
                     if (i < 9) {
-                        list += std::format("{}[{}]={} ({:.2f}s) ", i == state.clip ? "*" : "",
-                                            i + 1, clips[i].name, clips[i].duration);
+                        list += std::format("{}[{}]={} ({:.2f}s{}) ", i == state.clip ? "*" : "",
+                                            i + 1, clips[i].name, clips[i].duration, mark);
                     } else {
-                        list += std::format("{} ({:.2f}s) ", clips[i].name, clips[i].duration);
+                        list += std::format("{} ({:.2f}s{}) ", clips[i].name, clips[i].duration,
+                                            mark);
                     }
                 }
-                log::info("  '{}' clips (number keys 1-9 switch, * = playing): {}",
-                          scene->models[state.modelIndex].desc.name, list);
+                const std::string& modelName = scene->models[state.modelIndex].desc.name;
+                log::info("  '{}' clips (number keys 1-9 switch, * = playing): {}", modelName,
+                          list);
+                // glTF has no loop flag, so a one-shot clip looks exactly like
+                // a cycle until it wraps and JUDDERS. Compare each clip's
+                // first and last rotation keys and say so — this is the check
+                // that catches a two-key A-to-B pose clip being looped.
+                for (std::size_t i = 0; i < clips.size(); ++i) {
+                    if (state.clipLoops[i] == 0) {
+                        continue; // already declared one-shot
+                    }
+                    float worst = 0.0f;
+                    for (const auto& channel : clips[i].channels) {
+                        if (channel.path != assetio::AnimationPath::Rotation ||
+                            channel.times.size() < 2 || channel.values.size() < 8) {
+                            continue;
+                        }
+                        const std::size_t last = channel.values.size() - 4;
+                        for (std::size_t c = 0; c < 4; ++c) {
+                            worst = std::max(worst, std::abs(channel.values[c] -
+                                                             channel.values[last + c]));
+                        }
+                    }
+                    if (worst > 0.1f) {
+                        log::warn("  '{}' clip '{}' does not loop cleanly (first/last rotation "
+                                  "differ by {:.2f}) — it will judder every {:.2f}s; mark it "
+                                  "<Clip name=\"{}\" loop=\"false\"/>",
+                                  modelName, clips[i].name, worst, clips[i].duration,
+                                  clips[i].name);
+                    }
+                }
             }
         }
 
@@ -3770,6 +3824,7 @@ int main(int argc, char** argv) {
             out.time = state.time;
             out.speed = state.speed;
             out.paused = state.paused ? 1u : 0u;
+            out.loop = state.loops() ? 1u : 0u;
             out.clipCount = static_cast<std::uint32_t>(
                 std::min<std::size_t>(clips.size(), renderer::kAnimationMaxClips));
             for (std::uint32_t i = 0; i < out.clipCount; ++i) {
@@ -4941,15 +4996,28 @@ int main(int argc, char** argv) {
                             animationStatesDirty = true;
                         }
                     }
+                    // Applied after the switch so an explicit loop= overrides
+                    // the new clip's scene-declared default rather than the
+                    // old clip's.
+                    if ((cmd.animation.fields & renderer::kAnimationFieldLoop) != 0 &&
+                        state.clip < state.clipLoops.size()) {
+                        state.clipLoops[state.clip] =
+                            cmd.animation.loop != 0 ? char{1} : char{0};
+                        animationStatesDirty = true;
+                    }
                     // Seek last so it wins over a clip switch's time reset.
                     if ((cmd.animation.fields & renderer::kAnimationFieldTime) != 0 &&
                         state.clip < clips.size()) {
                         const float duration = clips[state.clip].duration;
                         float t = cmd.animation.time;
                         if (duration > 0.0f) {
-                            t = std::fmod(t, duration);
-                            if (t < 0.0f) {
-                                t += duration;
+                            if (state.loops()) {
+                                t = std::fmod(t, duration);
+                                if (t < 0.0f) {
+                                    t += duration;
+                                }
+                            } else {
+                                t = std::clamp(t, 0.0f, duration);
                             }
                         }
                         state.time = t;
@@ -5557,24 +5625,31 @@ int main(int argc, char** argv) {
                         // the pose, so a seek or a clip switch while paused
                         // shows up immediately.
                         const float step = state.paused ? 0.0f : deltaSeconds * state.speed;
-                        auto advance = [&](std::size_t clipIndex, float& clipTime) {
+                        auto advance = [&](std::size_t clipIndex, float& clipTime, bool loop) {
                             const float duration = state.data->animations[clipIndex].duration;
                             clipTime += step;
-                            if (duration > 0.0f) {
+                            if (duration <= 0.0f) {
+                                return;
+                            }
+                            if (loop) {
                                 clipTime = std::fmod(clipTime, duration);
                                 if (clipTime < 0.0f) {
                                     clipTime += duration; // reverse playback wraps too
                                 }
+                            } else {
+                                // One-shot: hold the final pose (or the first,
+                                // playing backwards) instead of snapping back.
+                                clipTime = std::clamp(clipTime, 0.0f, duration);
                             }
                         };
-                        advance(state.clip, state.time);
+                        advance(state.clip, state.time, state.loops());
                         // Cross-fade: BOTH clips keep running and their poses
                         // blend by w (0 the instant of the switch, 1 when the
                         // fade ends), so the outgoing motion continues instead
                         // of freezing at the pose it was caught in.
                         if (state.fade > 0.0f && state.fadeDuration > 0.0f &&
                             state.fromClip < state.data->animations.size()) {
-                            advance(state.fromClip, state.fromTime);
+                            advance(state.fromClip, state.fromTime, state.fromLoop);
                             state.fade = std::max(
                                 0.0f, state.fade - (state.paused ? 0.0f : deltaSeconds));
                             const float w = 1.0f - state.fade / state.fadeDuration;

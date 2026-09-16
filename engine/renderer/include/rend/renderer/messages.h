@@ -121,6 +121,7 @@ enum AnimationField : std::uint32_t {
     kAnimationFieldSpeed = 1u << 1,
     kAnimationFieldPaused = 1u << 2,
     kAnimationFieldTime = 1u << 3,
+    kAnimationFieldLoop = 1u << 4,
 };
 
 struct SetAnimationCmd {
@@ -130,6 +131,7 @@ struct SetAnimationCmd {
     float speed = 1.0f;         // time scale; 0 freezes, negative plays backwards
     float time = 0.0f;          // seek target in seconds, wrapped into the clip
     std::uint32_t paused = 0;
+    std::uint32_t loop = 1; // 0 = play once and hold the last pose
     std::uint32_t fields = 0; // AnimationField bits
 };
 
@@ -227,6 +229,7 @@ struct AnimationStateEvent {
     float time = 0.0f;
     float speed = 1.0f;
     std::uint32_t paused = 0;
+    std::uint32_t loop = 1; // of the playing clip
     std::uint32_t clipCount = 0;
     char clips[kAnimationMaxClips][kAnimationNameChars] = {};
 };

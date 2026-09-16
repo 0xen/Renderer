@@ -99,17 +99,30 @@ clip an animated model starts on:
 <Model name="xbot">
     <Shader path="pipelines/opaque.xml" />
     <Mesh path="model/Xbot/Xbot.gltf" />
-    <Animation clip="idle" />
+    <Animation clip="idle">
+        <Clip name="sad_pose" loop="false" />
+    </Animation>
 </Model>
 ```
 
 `clip` is a clip name as it appears in the source file (glTF `animations[].name`);
 omitting the element — or naming a clip the model does not have, which warns — starts
-the first clip, which is what every scene did before this element existed. Clips always
-loop. At runtime the number keys `1`-`9` switch the viewer to the first nine clips of
+the first clip, which is what every scene did before this element existed.
+
+Clips loop by default. A `<Clip name="..." loop="false"/>` child marks one that must
+**not**: it plays once and holds its last pose. This matters because glTF stores no
+loop flag, so a one-shot gesture, or a two-keyframe A-to-B pose clip, is
+indistinguishable from a cycle until it wraps — and looping one makes it snap back to
+its first pose every cycle. A 0.07 s Mixamo pose clip looped this way judders about
+fifteen times a second. The viewer WARNS at load for any looping clip whose first and
+last rotation keys disagree, naming the clip and the `<Clip>` line to add, so this
+does not have to be discovered by eye.
+
+At runtime the number keys `1`-`9` switch the viewer to the first nine clips of
 every animated model, cross-fading over 0.25 s; the load log lists each animated
-model's clips with their key and duration. Python scripts switch clips through
-`rend.set_animation()` (see `pyhost/CLAUDE.md`).
+model's clips with their key, duration and an `once` marker for the non-looping ones.
+Python scripts switch clips and override loop mode through `rend.set_animation()` and
+`rend.set_animation_loop()` (see `pyhost/CLAUDE.md`).
 
 `ReflectionProbe position="x y z"` (optional, zero or more) marks where a probe-based
 renderer captures its environment cubemap at load time. Like lights it describes the

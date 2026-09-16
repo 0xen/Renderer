@@ -188,6 +188,11 @@ struct ModelNodeDesc {
     // the first clip, the historical behaviour. An unknown name warns and
     // falls back to the first clip.
     std::string animationClip;
+    // Clips that must NOT loop (<Animation><Clip name="x" loop="false"/>):
+    // they play once and hold their last pose. glTF carries no loop flag, so
+    // a one-shot gesture or a two-key A-to-B pose clip is indistinguishable
+    // from a cycle until someone says — and looping one makes it judder.
+    std::vector<std::string> nonLoopingClips;
 };
 
 // Scene-wide asset-loading intent (<Scene loading=...>): how the app
