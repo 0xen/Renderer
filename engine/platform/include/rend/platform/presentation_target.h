@@ -16,6 +16,17 @@ public:
     virtual Extent2D sizeInPixels() const = 0;
     virtual WindowStyle style() const = 0;
 
+    // Resizes the window. An app that has to grow a window must come
+    // through here rather than resizing the OS window itself: the backend
+    // holds the size the windowing system answers size queries with, and
+    // on Windows a borderless, non-resizable window's client rect is
+    // pinned to it (SDL answers WM_NCCALCSIZE with the size it knows). A
+    // raw SetWindowPos then grows the window rect while the client rect —
+    // which is what DWM composites — stays at the size the backend still
+    // believes, so the window can shrink but never grow past its creation
+    // size. Position is the app's own business; only the size is here.
+    virtual void setSize(Extent2D size) = 0;
+
 protected:
     PresentationTarget() = default;
 };

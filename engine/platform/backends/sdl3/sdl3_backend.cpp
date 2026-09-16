@@ -77,6 +77,10 @@ public:
 
     WindowStyle style() const override { return style_; }
 
+    void setSize(Extent2D size) override {
+        SDL_SetWindowSize(window_, static_cast<int>(size.width), static_cast<int>(size.height));
+    }
+
     SDL_Window* handle() const { return window_; }
 
 private:
