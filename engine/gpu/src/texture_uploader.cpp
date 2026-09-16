@@ -17,8 +17,6 @@ namespace rend::gpu {
 namespace {
 
 constexpr std::uint64_t kFenceTimeoutNs = 30ull * 1000 * 1000 * 1000;
-constexpr std::uint32_t kFormatR8G8B8A8Srgb = 43;  // VK_FORMAT_R8G8B8A8_SRGB
-constexpr std::uint32_t kFormatR8G8B8A8Unorm = 37; // VK_FORMAT_R8G8B8A8_UNORM
 
 VkImageMemoryBarrier2 mipBarrier(VkImage image, std::uint32_t baseMip, std::uint32_t mipCount,
                                  VkImageLayout oldLayout, VkImageLayout newLayout,
@@ -221,7 +219,7 @@ Result<std::unique_ptr<Image>> TextureUploader::upload(std::uint32_t width, std:
     return image;
 }
 
-Result<std::unique_ptr<Image>> TextureUploader::uploadCompressed(std::uint32_t format,
+Result<std::unique_ptr<Image>> TextureUploader::uploadCompressed(Format format,
                                                                  const CompressedMip* mips,
                                                                  std::uint32_t mipCount,
                                                                  const void* bytes,

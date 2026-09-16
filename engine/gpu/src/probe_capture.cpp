@@ -1,5 +1,8 @@
 #include "rend/gpu/probe_capture.h"
 
+#include "rend/gpu/buffer.h"
+#include "rend/gpu/descriptor_table.h"
+
 #include "rend/core/profile.h"
 #include "rend/gpu/device.h"
 #include "rend/gpu/image.h"
@@ -177,14 +180,15 @@ Result<std::unique_ptr<Image>> ProbeCapture::render(const Device& device,
         vkCmdSetViewport(cmd, 0, 1, &viewport);
         vkCmdSetScissor(cmd, 0, 1, &scissor);
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, desc.pipeline->handle());
-        if (desc.descriptors != VK_NULL_HANDLE) {
+        if (desc.descriptors != nullptr) {
+            const VkDescriptorSet set = desc.descriptors->set();
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    desc.pipeline->layout(), 0, 1, &desc.descriptors, 0,
-                                    nullptr);
+                                    desc.pipeline->layout(), 0, 1, &set, 0, nullptr);
         }
         const VkDeviceSize zero = 0;
-        vkCmdBindVertexBuffers(cmd, 0, 1, &desc.geometry, &zero);
-        vkCmdBindIndexBuffer(cmd, desc.geometry, 0, VK_INDEX_TYPE_UINT32);
+        const VkBuffer geometry = desc.geometry->handle();
+        vkCmdBindVertexBuffers(cmd, 0, 1, &geometry, &zero);
+        vkCmdBindIndexBuffer(cmd, geometry, 0, VK_INDEX_TYPE_UINT32);
         const std::uint32_t push[2] = {desc.cameraSlotBase + face, 0};
         vkCmdPushConstants(cmd, desc.pipeline->layout(),
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,

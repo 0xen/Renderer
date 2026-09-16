@@ -1,6 +1,7 @@
 #pragma once
 
 #include "rend/core/result.h"
+#include "rend/gpu/format.h"
 
 #include <cstdint>
 #include <memory>
@@ -46,7 +47,7 @@ public:
     void setVsync(bool vsync) { vsync_ = vsync; }
 
     VkSwapchainKHR handle() const { return swapchain_; }
-    std::uint32_t imageFormat() const { return format_; } // VkFormat value
+    Format imageFormat() const { return format_; }
     std::uint32_t width() const { return width_; }
     std::uint32_t height() const { return height_; }
     const std::vector<VkImage>& images() const { return images_; }
@@ -63,7 +64,7 @@ private:
     VkSwapchainKHR swapchain_ = nullptr;
     std::vector<VkImage> images_;
     std::vector<VkImageView> views_;
-    std::uint32_t format_ = 0;
+    Format format_ = Format::Undefined;
     std::uint32_t width_ = 0;
     std::uint32_t height_ = 0;
     bool transparent_ = false;

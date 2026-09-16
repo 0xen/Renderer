@@ -1,6 +1,7 @@
 #pragma once
 
 #include "rend/core/result.h"
+#include "rend/gpu/format.h"
 
 #include <cstdint>
 #include <memory>
@@ -8,26 +9,16 @@
 
 typedef struct VkPipeline_T* VkPipeline;
 typedef struct VkPipelineLayout_T* VkPipelineLayout;
-typedef struct VkDescriptorSetLayout_T* VkDescriptorSetLayout;
 
 namespace rend::gpu {
 
+class DescriptorTable;
 class Device;
 class Shader;
 
-// VkFormat values callers need without including Vulkan headers; the
-// pipeline XML's neutral format vocabulary maps onto these.
-inline constexpr std::uint32_t kFormatR8G8B8A8Unorm = 37;
-inline constexpr std::uint32_t kFormatR8G8B8A8Srgb = 43;
-inline constexpr std::uint32_t kFormatR16G16B16A16Sfloat = 97;
-inline constexpr std::uint32_t kFormatR32Sfloat = 100;
-inline constexpr std::uint32_t kFormatR32G32Sfloat = 103;
-inline constexpr std::uint32_t kFormatR32G32B32Sfloat = 106;
-inline constexpr std::uint32_t kFormatD32Sfloat = 126;
-
 struct VertexAttribute {
     std::uint32_t location = 0;
-    std::uint32_t format = 0; // VkFormat
+    Format format = Format::Undefined;
     std::uint32_t offset = 0;
 };
 
@@ -36,23 +27,23 @@ struct GraphicsPipelineDesc {
     const Shader* fragmentShader = nullptr;
     const char* vertexEntryPoint = "main";
     const char* fragmentEntryPoint = "main";
-    // VkFormat of the single color attachment, taken from the swapchain.
+    // Format of the single color attachment, taken from the swapchain.
     // Dynamic rendering needs the format, not a render pass object.
-    std::uint32_t colorFormat = 0;
+    Format colorFormat = Format::Undefined;
     // Multiple render targets (the deferred G-buffer pass): when non-empty
     // this list wins over colorFormat and declares one attachment per
     // entry. Blending/write-mask state is replicated across attachments.
-    std::vector<std::uint32_t> colorFormats;
+    std::vector<Format> colorFormats;
     // Single interleaved vertex binding; stride 0 = no vertex input.
     std::uint32_t vertexStride = 0;
     std::vector<VertexAttribute> vertexAttributes;
-    // VkFormat of the depth attachment; 0 = no depth test/attachment. Must
-    // match what the frame's rendering info attaches.
-    std::uint32_t depthFormat = 0;
+    // Format of the depth attachment; Undefined = no depth test/attachment.
+    // Must match what the frame's rendering info attaches.
+    Format depthFormat = Format::Undefined;
     // One push-constant range visible to both stages; 0 = none.
     std::uint32_t pushConstantBytes = 0;
-    // Set 0 layout (the bindless DescriptorTable); null = no sets.
-    VkDescriptorSetLayout descriptorLayout = nullptr;
+    // The bindless DescriptorTable the pipeline binds as set 0; null = no sets.
+    const DescriptorTable* descriptorTable = nullptr;
     // Alpha blending (src-alpha / one-minus-src-alpha) with depth test but
     // NO depth write — the transparency-pass state. Blended fragments must
     // not occlude each other; opaques drawn first still occlude them.
@@ -81,8 +72,8 @@ struct GraphicsPipelineDesc {
 struct ComputePipelineDesc {
     const Shader* shader = nullptr;
     const char* entryPoint = "main";
-    // Set 0 layout (the bindless DescriptorTable); null = no sets.
-    VkDescriptorSetLayout descriptorLayout = nullptr;
+    // The bindless DescriptorTable the pipeline binds as set 0; null = no sets.
+    const DescriptorTable* descriptorTable = nullptr;
     // One compute-stage push-constant range; 0 = none.
     std::uint32_t pushConstantBytes = 0;
 };

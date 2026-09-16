@@ -43,9 +43,9 @@ public:
         std::uint64_t byteOffset = 0;
         std::uint64_t byteLength = 0;
     };
-    static constexpr std::uint32_t kFormatBc7Unorm = 145; // VK_FORMAT_BC7_UNORM_BLOCK
-    static constexpr std::uint32_t kFormatBc7Srgb = 146;  // VK_FORMAT_BC7_SRGB_BLOCK
-    Result<std::unique_ptr<Image>> uploadCompressed(std::uint32_t format,
+    static constexpr Format kFormatBc7Unorm = Format::Bc7Unorm;
+    static constexpr Format kFormatBc7Srgb = Format::Bc7Srgb;
+    Result<std::unique_ptr<Image>> uploadCompressed(Format format,
                                                     const CompressedMip* mips,
                                                     std::uint32_t mipCount, const void* bytes,
                                                     std::uint64_t byteSize);

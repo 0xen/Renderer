@@ -5,17 +5,17 @@
 #include <cstdint>
 #include <memory>
 
-typedef struct VkAccelerationStructureKHR_T* VkAccelerationStructureKHR;
 typedef struct VkDescriptorSetLayout_T* VkDescriptorSetLayout;
 typedef struct VkDescriptorSet_T* VkDescriptorSet;
 typedef struct VkDescriptorPool_T* VkDescriptorPool;
 typedef struct VkSampler_T* VkSampler;
-typedef struct VkBuffer_T* VkBuffer;
-typedef struct VkImageView_T* VkImageView;
 
 namespace rend::gpu {
 
+class AccelerationStructure;
+class Buffer;
 class Device;
+class Image;
 
 // The bindless table (see ARCHITECTURE.md): one descriptor set bound once,
 // holding everything shaders index dynamically. Bindings:
@@ -104,23 +104,24 @@ public:
     VkDescriptorSetLayout layout() const { return layout_; }
     VkDescriptorSet set() const { return set_; }
 
-    void writeObjectBuffer(VkBuffer buffer, std::uint64_t range);
-    void writeTexture(std::uint32_t index, VkImageView view);
-    // Storage-buffer bindings (3-7); binding picks which, see class comment.
-    void writeStorageBuffer(std::uint32_t binding, VkBuffer buffer, std::uint64_t range);
+    // Buffer bindings take the whole buffer unless `range` (bytes) is given.
+    void writeObjectBuffer(const Buffer& buffer, std::uint64_t range = 0);
+    void writeTexture(std::uint32_t index, const Image& image);
+    // Storage-buffer bindings; binding picks which, see class comment.
+    void writeStorageBuffer(std::uint32_t binding, const Buffer& buffer, std::uint64_t range = 0);
     // Binding 8: one cascade's depth image the scene pass samples.
-    void writeShadowMap(std::uint32_t cascade, VkImageView view);
-    // Binding 18: the reflection probe's cube view.
-    void writeProbe(VkImageView view);
+    void writeShadowMap(std::uint32_t cascade, const Image& image);
+    // Binding 18: the reflection probe's cube image.
+    void writeProbe(const Image& image);
     // Binding 27: one point light's shadow-distance cube (index = the
     // light's slot, 0..15). Not update-after-bind — idle around writes.
-    void writePointShadowMap(std::uint32_t index, VkImageView view);
+    void writePointShadowMap(std::uint32_t index, const Image& image);
     // Any SAMPLED_IMAGE binding/array element (SHADER_READ_ONLY layout);
     // used for the G-buffer targets 28-31. Not update-after-bind — idle
     // around writes.
-    void writeSampledImage(std::uint32_t binding, std::uint32_t index, VkImageView view);
+    void writeSampledImage(std::uint32_t binding, std::uint32_t index, const Image& image);
     // Binding 10 (RayQuery devices only): the scene TLAS.
-    void writeAccelerationStructure(VkAccelerationStructureKHR tlas);
+    void writeAccelerationStructure(const AccelerationStructure& tlas);
 
 private:
     DescriptorTable() = default;

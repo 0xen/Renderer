@@ -1,5 +1,7 @@
 #include "rend/gpu/pipeline.h"
 
+#include "rend/gpu/descriptor_table.h"
+
 #include "rend/core/log.h"
 #include "rend/gpu/device.h"
 #include "rend/gpu/shader.h"
@@ -27,9 +29,11 @@ Result<std::unique_ptr<Pipeline>> Pipeline::createCompute(const Device& device,
         layoutInfo.pushConstantRangeCount = 1;
         layoutInfo.pPushConstantRanges = &pushRange;
     }
-    if (desc.descriptorLayout != nullptr) {
+    const VkDescriptorSetLayout setLayout =
+        desc.descriptorTable ? desc.descriptorTable->layout() : VK_NULL_HANDLE;
+    if (setLayout != VK_NULL_HANDLE) {
         layoutInfo.setLayoutCount = 1;
-        layoutInfo.pSetLayouts = &desc.descriptorLayout;
+        layoutInfo.pSetLayouts = &setLayout;
     }
 
     VkPipelineLayout layout = VK_NULL_HANDLE;
@@ -81,9 +85,11 @@ Result<std::unique_ptr<Pipeline>> Pipeline::createGraphics(const Device& device,
         layoutInfo.pushConstantRangeCount = 1;
         layoutInfo.pPushConstantRanges = &pushRange;
     }
-    if (desc.descriptorLayout != nullptr) {
+    const VkDescriptorSetLayout setLayout =
+        desc.descriptorTable ? desc.descriptorTable->layout() : VK_NULL_HANDLE;
+    if (setLayout != VK_NULL_HANDLE) {
         layoutInfo.setLayoutCount = 1;
-        layoutInfo.pSetLayouts = &desc.descriptorLayout;
+        layoutInfo.pSetLayouts = &setLayout;
     }
 
     VkPipelineLayout layout = VK_NULL_HANDLE;
@@ -149,10 +155,10 @@ Result<std::unique_ptr<Pipeline>> Pipeline::createGraphics(const Device& device,
     // blend/write-mask state is identical across attachments.
     std::vector<VkFormat> colorFormats;
     if (!desc.colorFormats.empty()) {
-        for (std::uint32_t format : desc.colorFormats) {
+        for (Format format : desc.colorFormats) {
             colorFormats.push_back(static_cast<VkFormat>(format));
         }
-    } else if (desc.colorFormat != 0) {
+    } else if (desc.colorFormat != Format::Undefined) {
         colorFormats.push_back(static_cast<VkFormat>(desc.colorFormat));
     }
 
@@ -226,7 +232,7 @@ Result<std::unique_ptr<Pipeline>> Pipeline::createGraphics(const Device& device,
     info.pViewportState = &viewport;
     info.pRasterizationState = &raster;
     info.pMultisampleState = &multisample;
-    if (desc.depthFormat != 0) {
+    if (desc.depthFormat != Format::Undefined) {
         info.pDepthStencilState = &depthStencil;
     }
     info.pColorBlendState = &blend;

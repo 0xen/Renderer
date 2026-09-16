@@ -238,7 +238,7 @@ constexpr float kPi = 3.14159265358979323846f;
 // indexes with its push-constant slot (appended after the per-frame ones,
 // so scene.hlsl needs no changes to render probe faces).
 constexpr std::uint32_t kProbeFaceSize = 256;
-constexpr std::uint32_t kProbeFormat = 43; // VK_FORMAT_R8G8B8A8_SRGB
+constexpr gpu::Format kProbeFormat = gpu::Format::R8G8B8A8Srgb;
 // Point-light shadow-distance cubes (soft lamp shadows need little
 // resolution; 16 lights x 6 x 256^2 R32F = 24 MiB worst case).
 constexpr std::uint32_t kPointShadowFaceSize = 256;
@@ -2238,68 +2238,53 @@ int main(int argc, char** argv) {
             return 1;
         }
         descriptorTable = std::move(tableResult).value();
-        descriptorTable->writeObjectBuffer(objectBuffer->handle(), objectBuffer->size());
-        descriptorTable->writeStorageBuffer(19, transformBuffer->handle(),
-                                            transformBuffer->size());
-        descriptorTable->writeStorageBuffer(20, instanceRowBuffer->handle(),
-                                            instanceRowBuffer->size());
-        descriptorTable->writeStorageBuffer(21, culledBuffer->handle(), culledBuffer->size());
-        descriptorTable->writeStorageBuffer(24, transparentBuffer->handle(),
-                                            transparentBuffer->size());
-        descriptorTable->writeStorageBuffer(22, boundsBuffer->handle(), boundsBuffer->size());
-        descriptorTable->writeStorageBuffer(25, meshLodBuffer->handle(), meshLodBuffer->size());
-        descriptorTable->writeStorageBuffer(33, obbBuffer->handle(), obbBuffer->size());
-        descriptorTable->writeStorageBuffer(34, rowEntryBuffer->handle(),
-                                            rowEntryBuffer->size());
-        descriptorTable->writeStorageBuffer(26, visibilityBuffer->handle(),
-                                            visibilityBuffer->size());
+        descriptorTable->writeObjectBuffer(*objectBuffer);
+        descriptorTable->writeStorageBuffer(19, *transformBuffer);
+        descriptorTable->writeStorageBuffer(20, *instanceRowBuffer);
+        descriptorTable->writeStorageBuffer(21, *culledBuffer);
+        descriptorTable->writeStorageBuffer(24, *transparentBuffer);
+        descriptorTable->writeStorageBuffer(22, *boundsBuffer);
+        descriptorTable->writeStorageBuffer(25, *meshLodBuffer);
+        descriptorTable->writeStorageBuffer(33, *obbBuffer);
+        descriptorTable->writeStorageBuffer(34, *rowEntryBuffer);
+        descriptorTable->writeStorageBuffer(26, *visibilityBuffer);
         // The rows buffer again, writable for the cull pass's scratch
         // regions (same VkBuffer, second binding — no aliasing hazard,
         // canonical and scratch ranges are disjoint).
-        descriptorTable->writeStorageBuffer(23, instanceRowBuffer->handle(),
-                                            instanceRowBuffer->size());
-        descriptorTable->writeStorageBuffer(3, indirectBuffer->handle(), indirectBuffer->size());
-        descriptorTable->writeStorageBuffer(4, compactedBuffer->handle(),
-                                            compactedBuffer->size());
-        descriptorTable->writeStorageBuffer(5, countBuffer->handle(), countBuffer->size());
-        descriptorTable->writeStorageBuffer(6, cameraBuffer->handle(), cameraBuffer->size());
-        descriptorTable->writeStorageBuffer(7, lightBuffer->handle(), lightBuffer->size());
+        descriptorTable->writeStorageBuffer(23, *instanceRowBuffer);
+        descriptorTable->writeStorageBuffer(3, *indirectBuffer);
+        descriptorTable->writeStorageBuffer(4, *compactedBuffer);
+        descriptorTable->writeStorageBuffer(5, *countBuffer);
+        descriptorTable->writeStorageBuffer(6, *cameraBuffer);
+        descriptorTable->writeStorageBuffer(7, *lightBuffer);
         // The pool's compute view (binding 13) is always bound: the skin
         // pass writes posed vertices through it AND the OBB refine pass
         // reads static vertices from it — static scenes need it too.
-        descriptorTable->writeStorageBuffer(13, geometryPool->buffer().handle(),
-                                            geometryPool->buffer().size());
+        descriptorTable->writeStorageBuffer(13, geometryPool->buffer());
         if (!animatedMeshes.empty()) {
             if (skinVertexBuffer) {
-                descriptorTable->writeStorageBuffer(14, skinVertexBuffer->handle(),
-                                                    skinVertexBuffer->size());
+                descriptorTable->writeStorageBuffer(14, *skinVertexBuffer);
             }
             if (jointBuffer) {
-                descriptorTable->writeStorageBuffer(15, jointBuffer->handle(),
-                                                    jointBuffer->size());
+                descriptorTable->writeStorageBuffer(15, *jointBuffer);
             }
             if (morphDeltaBuffer) {
-                descriptorTable->writeStorageBuffer(16, morphDeltaBuffer->handle(),
-                                                    morphDeltaBuffer->size());
+                descriptorTable->writeStorageBuffer(16, *morphDeltaBuffer);
             }
             if (morphWeightBuffer) {
-                descriptorTable->writeStorageBuffer(17, morphWeightBuffer->handle(),
-                                                    morphWeightBuffer->size());
+                descriptorTable->writeStorageBuffer(17, *morphWeightBuffer);
             }
         }
         for (std::uint32_t c = 0; c < kShadowCascades; ++c) {
-            descriptorTable->writeShadowMap(c, shadowMaps[c]->view());
+            descriptorTable->writeShadowMap(c, *shadowMaps[c]);
         }
         if (rtReady) {
-            descriptorTable->writeAccelerationStructure(tlas->handle());
+            descriptorTable->writeAccelerationStructure(*tlas);
             // Traced-primary triangle fetch: the pool's raw bytes plus the
             // per-object index/vertex offsets.
-            descriptorTable->writeStorageBuffer(11, geometryPool->buffer().handle(),
-                                                geometryPool->buffer().size());
-            descriptorTable->writeStorageBuffer(12, geometryInfoBuffer->handle(),
-                                                geometryInfoBuffer->size());
-            descriptorTable->writeStorageBuffer(32, rtRemapBuffer->handle(),
-                                                rtRemapBuffer->size());
+            descriptorTable->writeStorageBuffer(11, geometryPool->buffer());
+            descriptorTable->writeStorageBuffer(12, *geometryInfoBuffer);
+            descriptorTable->writeStorageBuffer(32, *rtRemapBuffer);
         }
 
         auto uploaderResult = gpu::TextureUploader::create(*device);
@@ -2325,7 +2310,7 @@ int main(int argc, char** argv) {
             textures[0] = std::move(whiteResult).value();
             for (std::size_t i = 0; i < texturePaths.size(); ++i) {
                 descriptorTable->writeTexture(static_cast<std::uint32_t>(i),
-                                              textures[0]->view());
+                                              *textures[0]);
             }
         }
         texStream.total = texturePaths.size() - 1;
@@ -2453,16 +2438,16 @@ int main(int argc, char** argv) {
                                              {2, gpu::kFormatR32G32Sfloat, 24}},
                         .depthFormat = gpu::kFormatD32Sfloat,
                         .pushConstantBytes = 2 * sizeof(std::uint32_t),
-                        .descriptorLayout = descriptorTable->layout(),
+                        .descriptorTable = descriptorTable.get(),
                     });
                 if (probePipeResult) {
                     auto probePipeline = std::move(probePipeResult).value();
                     auto probeResult = gpu::ProbeCapture::render(
                         *device, {
-                                     .geometry = geometryPool->buffer().handle(),
+                                     .geometry = &geometryPool->buffer(),
                                      .draws = draws.data(),
                                      .drawCount = sceneDrawCount,
-                                     .descriptors = descriptorTable->set(),
+                                     .descriptors = descriptorTable.get(),
                                      .pipeline = probePipeline.get(),
                                      .format = kProbeFormat,
                                      .faceSize = kProbeFaceSize,
@@ -2473,7 +2458,7 @@ int main(int argc, char** argv) {
                         // Binding 18 is not update-after-bind: the CALLER
                         // idles the device around this invocation and
                         // invalidates static recordings after it.
-                        descriptorTable->writeProbe(probeImage->view());
+                        descriptorTable->writeProbe(*probeImage);
                         probeReady = true;
                         const auto probeMs =
                             std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -2529,7 +2514,7 @@ int main(int argc, char** argv) {
                                                  {2, gpu::kFormatR32G32Sfloat, 24}},
                             .depthFormat = gpu::kFormatD32Sfloat,
                             .pushConstantBytes = 2 * sizeof(std::uint32_t),
-                            .descriptorLayout = descriptorTable->layout(),
+                            .descriptorTable = descriptorTable.get(),
                         });
                     if (bakeResult) {
                         bakePipeline = std::move(bakeResult).value();
@@ -2554,10 +2539,10 @@ int main(int argc, char** argv) {
                         auto cubeResult = gpu::ProbeCapture::render(
                             *device,
                             {
-                                .geometry = geometryPool->buffer().handle(),
+                                .geometry = &geometryPool->buffer(),
                                 .draws = draws.data(),
                                 .drawCount = sceneDrawCount,
-                                .descriptors = descriptorTable->set(),
+                                .descriptors = descriptorTable.get(),
                                 .pipeline = bakePipeline.get(),
                                 .format = gpu::kFormatR32Sfloat,
                                 .faceSize = kPointShadowFaceSize,
@@ -2574,7 +2559,7 @@ int main(int argc, char** argv) {
                         pointShadowImages[i] = std::move(cubeResult).value();
                         // Binding 27 is not update-after-bind; the caller
                         // idles + invalidates around this lambda already.
-                        descriptorTable->writePointShadowMap(i, pointShadowImages[i]->view());
+                        descriptorTable->writePointShadowMap(i, *pointShadowImages[i]);
                         pl.params[1] = 1.0f;
                         ++baked;
                     }
@@ -2676,7 +2661,7 @@ int main(int argc, char** argv) {
                                               {2, gpu::kFormatR32G32Sfloat, 24}},
                          .depthFormat = gpu::kFormatD32Sfloat,
                          .pushConstantBytes = 2 * sizeof(std::uint32_t), // {slot, cascade}
-                         .descriptorLayout = descriptorTable->layout(),
+                         .descriptorTable = descriptorTable.get(),
                          .alphaBlend = true,
                      });
         if (!transparentResult) {
@@ -2702,7 +2687,7 @@ int main(int argc, char** argv) {
                              .colorFormat = gpu::FrameRenderer::kSceneColorFormat,
                              .depthFormat = gpu::kFormatD32Sfloat,
                              .pushConstantBytes = 2 * sizeof(std::uint32_t), // {slot, cascade}
-                             .descriptorLayout = descriptorTable->layout(),
+                             .descriptorTable = descriptorTable.get(),
                              .background = true,
                          });
             if (skyResult) {
@@ -2737,7 +2722,7 @@ int main(int argc, char** argv) {
         gbufferFrag = std::move(gbufferFragResult).value();
         deferredVert = std::move(deferredVertResult).value();
         deferredFrag = std::move(deferredFragResult).value();
-        std::vector<std::uint32_t> gbufferFormats(gpu::FrameRenderer::kGBufferFormats.begin(),
+        std::vector<gpu::Format> gbufferFormats(gpu::FrameRenderer::kGBufferFormats.begin(),
                                                   gpu::FrameRenderer::kGBufferFormats.end());
         auto gbufferResult = gpu::Pipeline::createGraphics(
             *device, {
@@ -2750,7 +2735,7 @@ int main(int argc, char** argv) {
                                               {2, gpu::kFormatR32G32Sfloat, 24}},
                          .depthFormat = gpu::kFormatD32Sfloat,
                          .pushConstantBytes = 2 * sizeof(std::uint32_t), // {slot, cascade}
-                         .descriptorLayout = descriptorTable->layout(),
+                         .descriptorTable = descriptorTable.get(),
                      });
         auto lightingResult = gpu::Pipeline::createGraphics(
             *device, {
@@ -2759,7 +2744,7 @@ int main(int argc, char** argv) {
                          .colorFormat = gpu::FrameRenderer::kSceneColorFormat,
                          .depthFormat = gpu::kFormatD32Sfloat,
                          .pushConstantBytes = 2 * sizeof(std::uint32_t), // {slot, cascade}
-                         .descriptorLayout = descriptorTable->layout(),
+                         .descriptorTable = descriptorTable.get(),
                          .disableDepthTest = true,
                      });
         if (!gbufferResult || !lightingResult) {
@@ -2787,9 +2772,9 @@ int main(int argc, char** argv) {
                          .vertexShader = postVert.get(),
                          .fragmentShader = postFrag.get(),
                          .colorFormat = swapchain->imageFormat(),
-                         .depthFormat = 0, // fullscreen map, no depth attachment
+                         .depthFormat = gpu::Format::Undefined, // fullscreen map, no depth attachment
                          .pushConstantBytes = 2 * sizeof(std::uint32_t), // {slot, cascade}
-                         .descriptorLayout = descriptorTable->layout(),
+                         .descriptorTable = descriptorTable.get(),
                      });
         if (!postResult) {
             log::error("Post pipeline creation failed: {}", postResult.error().message);
@@ -2806,9 +2791,9 @@ int main(int argc, char** argv) {
                          .vertexShader = postVert.get(),
                          .fragmentShader = postFrag.get(),
                          .colorFormat = gpu::FrameRenderer::kLdrColorFormat,
-                         .depthFormat = 0,
+                         .depthFormat = gpu::Format::Undefined,
                          .pushConstantBytes = 2 * sizeof(std::uint32_t), // {slot, cascade}
-                         .descriptorLayout = descriptorTable->layout(),
+                         .descriptorTable = descriptorTable.get(),
                      });
         auto fxaaVertResult = gpu::Shader::createFromFile(*device, shaderDir / "fxaa.vert.spv");
         auto fxaaFragResult = gpu::Shader::createFromFile(*device, shaderDir / "fxaa.frag.spv");
@@ -2821,9 +2806,9 @@ int main(int argc, char** argv) {
                              .vertexShader = fxaaVert.get(),
                              .fragmentShader = fxaaFrag.get(),
                              .colorFormat = swapchain->imageFormat(),
-                             .depthFormat = 0,
+                             .depthFormat = gpu::Format::Undefined,
                              .pushConstantBytes = 2 * sizeof(std::uint32_t),
-                             .descriptorLayout = descriptorTable->layout(),
+                             .descriptorTable = descriptorTable.get(),
                          });
             if (fxaaResult) {
                 fxaaPipeline = std::move(fxaaResult).value();
@@ -2845,7 +2830,7 @@ int main(int argc, char** argv) {
             auto cullResult = gpu::Pipeline::createCompute(
                 *device, {
                              .shader = cullShader.get(),
-                             .descriptorLayout = descriptorTable->layout(),
+                             .descriptorTable = descriptorTable.get(),
                              // {drawCount, slot, capacity, flags, lodFactor}
                              .pushConstantBytes = 5 * sizeof(std::uint32_t),
                          });
@@ -2870,7 +2855,7 @@ int main(int argc, char** argv) {
                 auto obbResult2 = gpu::Pipeline::createCompute(
                     *device, {
                                  .shader = obbShader.get(),
-                                 .descriptorLayout = descriptorTable->layout(),
+                                 .descriptorTable = descriptorTable.get(),
                                  // {drawCount, slot, capacity}
                                  .pushConstantBytes = 3 * sizeof(std::uint32_t),
                              });
@@ -2905,7 +2890,7 @@ int main(int argc, char** argv) {
                              .colorFormat = gpu::FrameRenderer::kSceneColorFormat,
                              .depthFormat = gpu::kFormatD32Sfloat,
                              .pushConstantBytes = 2 * sizeof(std::uint32_t), // {slot, capacity}
-                             .descriptorLayout = descriptorTable->layout(),
+                             .descriptorTable = descriptorTable.get(),
                              .occlusionProxy = true,
                          });
             if (proxyResult) {
@@ -2925,7 +2910,7 @@ int main(int argc, char** argv) {
                                      .depthFormat = gpu::kFormatD32Sfloat,
                                      .pushConstantBytes =
                                          2 * sizeof(std::uint32_t), // {slot, capacity}
-                                     .descriptorLayout = descriptorTable->layout(),
+                                     .descriptorTable = descriptorTable.get(),
                                      .occlusionProxy = true,
                                  });
                     if (instResult) {
@@ -2953,7 +2938,7 @@ int main(int argc, char** argv) {
                                      .depthFormat = gpu::kFormatD32Sfloat,
                                      .pushConstantBytes =
                                          2 * sizeof(std::uint32_t), // {slot, capacity}
-                                     .descriptorLayout = descriptorTable->layout(),
+                                     .descriptorTable = descriptorTable.get(),
                                      .occlusionDebug = true,
                                  });
                     if (debugResult) {
@@ -2971,7 +2956,7 @@ int main(int argc, char** argv) {
                                 .colorFormat = gpu::FrameRenderer::kSceneColorFormat,
                                 .depthFormat = gpu::kFormatD32Sfloat,
                                 .pushConstantBytes = 2 * sizeof(std::uint32_t),
-                                .descriptorLayout = descriptorTable->layout(),
+                                .descriptorTable = descriptorTable.get(),
                                 .occlusionDebug = true,
                             });
                         if (instDebugResult) {
@@ -3005,7 +2990,7 @@ int main(int argc, char** argv) {
                     *device,
                     {
                         .shader = skinShader.get(),
-                        .descriptorLayout = descriptorTable->layout(),
+                        .descriptorTable = descriptorTable.get(),
                         .pushConstantBytes =
                             gpu::DrawBatch::kSkinPushWords * sizeof(std::uint32_t),
                     });
@@ -3030,14 +3015,14 @@ int main(int argc, char** argv) {
                 *device, {
                              .vertexShader = shadowVert.get(),
                              .fragmentShader = shadowFrag.get(),
-                             .colorFormat = 0, // depth-only
+                             .colorFormat = gpu::Format::Undefined, // depth-only
                              .vertexStride = kVertexStride,
                              .vertexAttributes = {{0, gpu::kFormatR32G32B32Sfloat, 0},
                                                   {1, gpu::kFormatR32G32B32Sfloat, 12},
                                                   {2, gpu::kFormatR32G32Sfloat, 24}},
                              .depthFormat = gpu::kFormatD32Sfloat,
                              .pushConstantBytes = 2 * sizeof(std::uint32_t), // {slot, cascade}
-                             .descriptorLayout = descriptorTable->layout(),
+                             .descriptorTable = descriptorTable.get(),
                          });
             if (shadowPipeResult) {
                 shadowPipeline = std::move(shadowPipeResult).value();
@@ -3066,9 +3051,9 @@ int main(int argc, char** argv) {
                              .vertexShader = rtPrimaryVert.get(),
                              .fragmentShader = rtPrimaryFrag.get(),
                              .colorFormat = gpu::FrameRenderer::kSceneColorFormat,
-                             .depthFormat = 0, // rays need no depth buffer
+                             .depthFormat = gpu::Format::Undefined, // rays need no depth buffer
                              .pushConstantBytes = 2 * sizeof(std::uint32_t),
-                             .descriptorLayout = descriptorTable->layout(),
+                             .descriptorTable = descriptorTable.get(),
                          });
             if (pipeResult) {
                 rtPrimaryPipeline = std::move(pipeResult).value();
@@ -3127,16 +3112,16 @@ int main(int argc, char** argv) {
             batch.mode = gpu::DrawSubmitMode::IndirectCount;
         }
 
-        batch.geometry = geometryPool->buffer().handle();
+        batch.geometry = &geometryPool->buffer();
         batch.drawCount = static_cast<std::uint32_t>(geometry.size());
         batch.indirectRegionStride = templateCapacity * sizeof(gpu::DrawIndexedIndirect);
         if (batch.mode == gpu::DrawSubmitMode::IndirectCount) {
             // The GPU draws what the cull pass compacted, not the
             // templates: shadows the visibility-only list, the scene pass
             // the frustum-culled one.
-            batch.indirect = compactedBuffer->handle();
-            batch.sceneIndirect = culledBuffer->handle();
-            batch.transparentIndirect = transparentBuffer->handle();
+            batch.indirect = compactedBuffer.get();
+            batch.sceneIndirect = culledBuffer.get();
+            batch.transparentIndirect = transparentBuffer.get();
             batch.transparentPipeline = transparentPipeline.get();
             batch.cullPipeline = cullPipeline.get();
             batch.obbRefinePipeline = obbPipeline.get();
@@ -3147,7 +3132,7 @@ int main(int argc, char** argv) {
                 showOcclusionBoxes ? occlusionDebugPipeline.get() : nullptr;
             batch.occlusionInstanceDebugPipeline =
                 showOcclusionBoxes ? occlusionInstanceDebugPipeline.get() : nullptr;
-            batch.occlusionVisibility = visibilityBuffer->handle();
+            batch.occlusionVisibility = visibilityBuffer.get();
             // Region = entry slots + per-instance slots (matches the
             // hardcoded split in cull.hlsl / proxy.hlsl).
             batch.occlusionRegionStride =
@@ -3156,7 +3141,7 @@ int main(int argc, char** argv) {
             batch.cullFlags = (frustumCull ? 1u : 0u) | (lodSelect ? 2u : 0u) |
                               (occlusionCull && occlusionPipeline ? 4u : 0u);
         } else {
-            batch.indirect = indirectBuffer->handle();
+            batch.indirect = indirectBuffer.get();
         }
         // The only scene path: the G-buffer pass rasterizes whatever
         // stream the tier provides (culled opaque / templates / CPU
@@ -3172,10 +3157,10 @@ int main(int argc, char** argv) {
         } else if (aaFromStart) {
             log::warn("--aa fxaa ignored: FXAA module unavailable");
         }
-        batch.count = countBuffer->handle();
+        batch.count = countBuffer.get();
         batch.countRegionStride = 8 * sizeof(std::uint32_t);
         batch.cpuDraws = draws.data();
-        batch.descriptors = descriptorTable->set();
+        batch.descriptors = descriptorTable.get();
         // Transparent window: no sky pass, so background pixels keep the
         // alpha-0 clear and the desktop shows through them.
         batch.skyPipeline = transparentWindow ? nullptr : skyPipeline.get();
@@ -4291,7 +4276,7 @@ int main(int argc, char** argv) {
                 continue;
             }
             const auto textureIndex = static_cast<std::uint32_t>(textures.size());
-            descriptorTable->writeTexture(textureIndex, image.value()->view());
+            descriptorTable->writeTexture(textureIndex, *image.value());
             textures.push_back(std::move(image).value());
             textureSlotByPath.emplace(texture.path, textureIndex);
         }
@@ -4944,7 +4929,7 @@ int main(int argc, char** argv) {
                  now - texStream.lastFlush > std::chrono::milliseconds(400))) {
                 renderer->waitIdle();
                 for (std::uint32_t slot : texStream.pendingSlots) {
-                    descriptorTable->writeTexture(slot, textures[slot]->view());
+                    descriptorTable->writeTexture(slot, *textures[slot]);
                 }
                 texStream.pendingSlots.clear();
                 texStream.lastFlush = now;

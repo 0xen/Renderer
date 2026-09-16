@@ -1,6 +1,7 @@
 #pragma once
 
 #include "rend/core/result.h"
+#include "rend/gpu/format.h"
 
 #include <array>
 #include <cstdint>
@@ -24,7 +25,7 @@ inline constexpr std::uint32_t kImageUsageDepthAttachment = 0x20;
 struct ImageDesc {
     std::uint32_t width = 0;
     std::uint32_t height = 0;
-    std::uint32_t format = 0; // VkFormat
+    Format format = Format::Undefined;
     std::uint32_t usage = 0;  // VkImageUsageFlags
     std::uint32_t mipLevels = 1;
     bool depth = false; // view aspect: depth instead of color
@@ -49,7 +50,7 @@ public:
     VkImageView view() const { return view_; }
     // Cube images only: 2D render view of one face's mip 0.
     VkImageView faceView(std::uint32_t face) const { return faceViews_[face]; }
-    std::uint32_t format() const { return format_; }
+    Format format() const { return format_; }
     std::uint32_t width() const { return width_; }
     std::uint32_t height() const { return height_; }
     std::uint32_t mipLevels() const { return mipLevels_; }
@@ -63,7 +64,7 @@ private:
     VkDeviceMemory memory_ = nullptr;
     VkImageView view_ = nullptr;
     std::array<VkImageView, 6> faceViews_{};
-    std::uint32_t format_ = 0;
+    Format format_ = Format::Undefined;
     std::uint32_t width_ = 0;
     std::uint32_t height_ = 0;
     std::uint32_t mipLevels_ = 1;

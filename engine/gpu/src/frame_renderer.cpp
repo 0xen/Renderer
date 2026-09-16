@@ -1,5 +1,7 @@
 #include "rend/gpu/frame_renderer.h"
 
+#include "rend/gpu/buffer.h"
+
 #include "rend/core/log.h"
 #include "rend/core/profile.h"
 #include "rend/gpu/command_context.h"
@@ -153,7 +155,7 @@ Result<void> FrameRenderer::createGBuffer() {
             return Error{std::format("G-buffer target {}: {}", i, result.error().message)};
         }
         gbuffer_[i] = std::move(result).value();
-        deferredTable_->writeSampledImage(28 + i, 0, gbuffer_[i]->view());
+        deferredTable_->writeSampledImage(28 + i, 0, *gbuffer_[i]);
     }
     // The HDR scene-color target the composite pass renders into when the
     // batch carries a post pipeline; the post pass Loads it (binding 35).
@@ -168,7 +170,7 @@ Result<void> FrameRenderer::createGBuffer() {
         return Error{std::format("Scene-color target: {}", sceneColorResult.error().message)};
     }
     sceneColor_ = std::move(sceneColorResult).value();
-    deferredTable_->writeSampledImage(35, 0, sceneColor_->view());
+    deferredTable_->writeSampledImage(35, 0, *sceneColor_);
     // The LDR intermediate an AA module samples (post output parked one
     // pass before the swapchain when DrawBatch::aaPipeline is set).
     auto ldrResult = Image::create(*device_, {
@@ -182,7 +184,7 @@ Result<void> FrameRenderer::createGBuffer() {
         return Error{std::format("LDR color target: {}", ldrResult.error().message)};
     }
     ldrColor_ = std::move(ldrResult).value();
-    deferredTable_->writeSampledImage(36, 0, ldrColor_->view());
+    deferredTable_->writeSampledImage(36, 0, *ldrColor_);
     return {};
 }
 
@@ -254,6 +256,9 @@ Result<void> FrameRenderer::recreateSwapchain() {
 Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex,
                                    std::uint32_t slot, const DrawBatch* batch,
                                    bool reusable) const {
+    // The bindless set every batch pass binds (VK_NULL_HANDLE = none).
+    const VkDescriptorSet descriptors =
+        (batch && batch->descriptors) ? batch->descriptors->set() : VK_NULL_HANDLE;
     REND_PROFILE_ZONE("RecordScene");
     VkCommandBufferBeginInfo begin{};
     begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -308,9 +313,9 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
         vkCmdPipelineBarrier2(cmd, &skinDependency);
 
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, batch->skinPipeline->handle());
-        if (batch->descriptors != VK_NULL_HANDLE) {
+        if (descriptors != VK_NULL_HANDLE) {
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
-                                    batch->skinPipeline->layout(), 0, 1, &batch->descriptors, 0,
+                                    batch->skinPipeline->layout(), 0, 1, &descriptors, 0,
                                     nullptr);
         }
         for (const DrawBatch::SkinDispatch& dispatch : batch->skinDispatches) {
@@ -405,7 +410,7 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
         // exactly like scenes where this dispatch never ran.
         const std::uint32_t cullFlags = rtDraw ? (batch->cullFlags & ~4u) : batch->cullFlags;
         const bool occlusion = batch->occlusionPipeline != nullptr &&
-                               batch->occlusionVisibility != VK_NULL_HANDLE &&
+                               batch->occlusionVisibility != nullptr &&
                                (cullFlags & 4u) != 0;
         VkDependencyInfo cullDependency{};
         cullDependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
@@ -414,7 +419,7 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
         // slot's still holds the frame-before-last's proxy results), so
         // this slot's region must survive until then before the proxy
         // pass at the end of this frame refills it.
-        vkCmdFillBuffer(cmd, batch->count, slot * batch->countRegionStride,
+        vkCmdFillBuffer(cmd, batch->count->handle(), slot * batch->countRegionStride,
                         batch->countRegionStride, 0);
 
         // The fills must land before the dispatch reads/increments, and —
@@ -452,10 +457,10 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
             // is the only state, so no recording ever changes.
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
                               batch->obbRefinePipeline->handle());
-            if (batch->descriptors != VK_NULL_HANDLE) {
+            if (descriptors != VK_NULL_HANDLE) {
                 vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
                                         batch->obbRefinePipeline->layout(), 0, 1,
-                                        &batch->descriptors, 0, nullptr);
+                                        &descriptors, 0, nullptr);
             }
             const std::uint32_t obbPush[3] = {
                 batch->drawCount, slot,
@@ -477,9 +482,9 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
         }
 
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, batch->cullPipeline->handle());
-        if (batch->descriptors != VK_NULL_HANDLE) {
+        if (descriptors != VK_NULL_HANDLE) {
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
-                                    batch->cullPipeline->layout(), 0, 1, &batch->descriptors, 0,
+                                    batch->cullPipeline->layout(), 0, 1, &descriptors, 0,
                                     nullptr);
         }
         // capacity = the per-slot region stride in entries; drawCount can
@@ -522,7 +527,7 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
             cullToClear.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
             cullDependency.pMemoryBarriers = &cullToClear;
             vkCmdPipelineBarrier2(cmd, &cullDependency);
-            vkCmdFillBuffer(cmd, batch->occlusionVisibility,
+            vkCmdFillBuffer(cmd, batch->occlusionVisibility->handle(),
                             slot * batch->occlusionRegionStride,
                             batch->occlusionRegionStride, 0);
             VkMemoryBarrier2 clearToProxy{};
@@ -545,36 +550,37 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
     // frustum-culled transparent list.
     auto bindAndDraw = [&](const Pipeline& p, std::uint32_t cascade, std::uint32_t stream) {
         const VkDeviceSize zero = 0;
-        if (batch->descriptors != VK_NULL_HANDLE) {
+        if (descriptors != VK_NULL_HANDLE) {
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, p.layout(), 0, 1,
-                                    &batch->descriptors, 0, nullptr);
+                                    &descriptors, 0, nullptr);
         }
-        vkCmdBindVertexBuffers(cmd, 0, 1, &batch->geometry, &zero);
-        vkCmdBindIndexBuffer(cmd, batch->geometry, 0, VK_INDEX_TYPE_UINT32);
+        const VkBuffer geometry = batch->geometry->handle();
+        vkCmdBindVertexBuffers(cmd, 0, 1, &geometry, &zero);
+        vkCmdBindIndexBuffer(cmd, geometry, 0, VK_INDEX_TYPE_UINT32);
         const std::uint32_t push[2] = {slot, cascade};
         vkCmdPushConstants(cmd, p.layout(),
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                            sizeof(push), push);
         // Counter layout per slot: [0] shadow, [1] opaque, [2] scratch
         // rows, [3] transparent.
-        VkBuffer streamBuffer = batch->indirect;
+        VkBuffer streamBuffer = batch->indirect->handle();
         std::uint64_t countOffset = 0;
-        if (stream == 1 && batch->sceneIndirect != VK_NULL_HANDLE) {
-            streamBuffer = batch->sceneIndirect;
+        if (stream == 1 && batch->sceneIndirect != nullptr) {
+            streamBuffer = batch->sceneIndirect->handle();
             countOffset = 1 * sizeof(std::uint32_t);
         } else if (stream == 2) {
-            streamBuffer = batch->transparentIndirect;
+            streamBuffer = batch->transparentIndirect->handle();
             countOffset = 3 * sizeof(std::uint32_t);
         }
         switch (batch->mode) {
         case DrawSubmitMode::IndirectCount:
             vkCmdDrawIndexedIndirectCount(
-                cmd, streamBuffer, slot * batch->indirectRegionStride, batch->count,
+                cmd, streamBuffer, slot * batch->indirectRegionStride, batch->count->handle(),
                 slot * batch->countRegionStride + countOffset, batch->drawCount,
                 sizeof(DrawIndexedIndirect));
             break;
         case DrawSubmitMode::Indirect:
-            vkCmdDrawIndexedIndirect(cmd, batch->indirect, slot * batch->indirectRegionStride,
+            vkCmdDrawIndexedIndirect(cmd, batch->indirect->handle(), slot * batch->indirectRegionStride,
                                      batch->drawCount, sizeof(DrawIndexedIndirect));
             break;
         case DrawSubmitMode::Direct:
@@ -833,10 +839,10 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
         // raster path, so static recordings survive camera motion here too.
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                           batch->rtPrimaryPipeline->handle());
-        if (batch->descriptors != VK_NULL_HANDLE) {
+        if (descriptors != VK_NULL_HANDLE) {
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                     batch->rtPrimaryPipeline->layout(), 0, 1,
-                                    &batch->descriptors, 0, nullptr);
+                                    &descriptors, 0, nullptr);
         }
         const std::uint32_t push[2] = {slot, 0};
         vkCmdPushConstants(cmd, batch->rtPrimaryPipeline->layout(),
@@ -851,10 +857,10 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
         // overdraw.
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                           batch->lightingPipeline->handle());
-        if (batch->descriptors != VK_NULL_HANDLE) {
+        if (descriptors != VK_NULL_HANDLE) {
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                     batch->lightingPipeline->layout(), 0, 1,
-                                    &batch->descriptors, 0, nullptr);
+                                    &descriptors, 0, nullptr);
         }
         const std::uint32_t lightingPush[2] = {slot, 0};
         vkCmdPushConstants(cmd, batch->lightingPipeline->layout(),
@@ -868,10 +874,10 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
             if (batch->skyPipeline != nullptr) {
                 vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                   batch->skyPipeline->handle());
-                if (batch->descriptors != VK_NULL_HANDLE) {
+                if (descriptors != VK_NULL_HANDLE) {
                     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                             batch->skyPipeline->layout(), 0, 1,
-                                            &batch->descriptors, 0, nullptr);
+                                            &descriptors, 0, nullptr);
                 }
                 const std::uint32_t skyPush[2] = {slot, 0};
                 vkCmdPushConstants(cmd, batch->skyPipeline->layout(),
@@ -883,7 +889,7 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
             // depth write off — the cull shader routed these entries out
             // of the opaque stream. Unsorted for now (single-layer glass
             // is fine; stacked transparents may blend out of order).
-            if (batch->transparentPipeline && batch->transparentIndirect != VK_NULL_HANDLE &&
+            if (batch->transparentPipeline && batch->transparentIndirect != nullptr &&
                 batch->mode == DrawSubmitMode::IndirectCount) {
                 vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                   batch->transparentPipeline->handle());
@@ -898,10 +904,10 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
                 batch->mode == DrawSubmitMode::IndirectCount) {
                 vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                   batch->occlusionPipeline->handle());
-                if (batch->descriptors != VK_NULL_HANDLE) {
+                if (descriptors != VK_NULL_HANDLE) {
                     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                             batch->occlusionPipeline->layout(), 0, 1,
-                                            &batch->descriptors, 0, nullptr);
+                                            &descriptors, 0, nullptr);
                 }
                 const std::uint32_t proxyPush[2] = {
                     slot, static_cast<std::uint32_t>(batch->indirectRegionStride /
@@ -918,10 +924,10 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
                     batch->occlusionInstanceRows > 0) {
                     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                       batch->occlusionInstancePipeline->handle());
-                    if (batch->descriptors != VK_NULL_HANDLE) {
+                    if (descriptors != VK_NULL_HANDLE) {
                         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                                 batch->occlusionInstancePipeline->layout(), 0,
-                                                1, &batch->descriptors, 0, nullptr);
+                                                1, &descriptors, 0, nullptr);
                     }
                     vkCmdPushConstants(cmd, batch->occlusionInstancePipeline->layout(),
                                        VK_SHADER_STAGE_VERTEX_BIT |
@@ -939,10 +945,10 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
                 batch->mode == DrawSubmitMode::IndirectCount) {
                 vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                   batch->occlusionDebugPipeline->handle());
-                if (batch->descriptors != VK_NULL_HANDLE) {
+                if (descriptors != VK_NULL_HANDLE) {
                     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                             batch->occlusionDebugPipeline->layout(), 0, 1,
-                                            &batch->descriptors, 0, nullptr);
+                                            &descriptors, 0, nullptr);
                 }
                 const std::uint32_t debugPush[2] = {
                     slot, static_cast<std::uint32_t>(batch->indirectRegionStride /
@@ -956,11 +962,11 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
                     batch->occlusionInstanceRows > 0) {
                     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                       batch->occlusionInstanceDebugPipeline->handle());
-                    if (batch->descriptors != VK_NULL_HANDLE) {
+                    if (descriptors != VK_NULL_HANDLE) {
                         vkCmdBindDescriptorSets(
                             cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                             batch->occlusionInstanceDebugPipeline->layout(), 0, 1,
-                            &batch->descriptors, 0, nullptr);
+                            &descriptors, 0, nullptr);
                     }
                     vkCmdPushConstants(cmd, batch->occlusionInstanceDebugPipeline->layout(),
                                        VK_SHADER_STAGE_VERTEX_BIT |
@@ -982,7 +988,7 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
     vkCmdEndRendering(cmd);
 
     passContext.colorView = VK_NULL_HANDLE;
-    passContext.colorFormat = 0;
+    passContext.colorFormat = Format::Undefined;
     passContext.depthAttached = false;
     passContext.depthView = VK_NULL_HANDLE;
     recordPasses(cmd, PassPoint::AfterScene, passContext);
@@ -1016,9 +1022,9 @@ Result<void> FrameRenderer::record(VkCommandBuffer cmd, std::uint32_t imageIndex
             vkCmdSetViewport(cmd, 0, 1, &viewport);
             vkCmdSetScissor(cmd, 0, 1, &scissor);
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, p.handle());
-            if (batch->descriptors != VK_NULL_HANDLE) {
+            if (descriptors != VK_NULL_HANDLE) {
                 vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, p.layout(), 0, 1,
-                                        &batch->descriptors, 0, nullptr);
+                                        &descriptors, 0, nullptr);
             }
             const std::uint32_t passPush[2] = {slot, 0};
             vkCmdPushConstants(cmd, p.layout(),

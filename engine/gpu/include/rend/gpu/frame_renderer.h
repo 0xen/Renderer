@@ -2,7 +2,7 @@
 
 #include "rend/core/result.h"
 #include "rend/gpu/acceleration_structure.h"
-#include "rend/gpu/pipeline.h" // kFormat* constants for kGBufferFormats
+#include "rend/gpu/format.h"
 
 #include <array>
 #include <cstdint>
@@ -14,13 +14,12 @@ typedef struct VkCommandPool_T* VkCommandPool;
 typedef struct VkCommandBuffer_T* VkCommandBuffer;
 typedef struct VkSemaphore_T* VkSemaphore;
 typedef struct VkFence_T* VkFence;
-typedef struct VkBuffer_T* VkBuffer;
-typedef struct VkDescriptorSet_T* VkDescriptorSet;
 typedef struct VkImage_T* VkImage;
 typedef struct VkImageView_T* VkImageView;
 
 namespace rend::gpu {
 
+class Buffer;
 class DescriptorTable;
 class Device;
 class Image;
@@ -61,13 +60,13 @@ enum class DrawSubmitMode {
 // is bound once as vertex + index source, then every entry in the indirect
 // buffer draws by offset. Adding/removing objects only rewrites entries.
 struct DrawBatch {
-    VkBuffer geometry = nullptr; // bound at offset 0 as VB and IB (uint32 indices)
-    VkBuffer indirect = nullptr; // DrawIndexedIndirect[drawCount]
+    const Buffer* geometry = nullptr; // bound at offset 0 as VB and IB (uint32 indices)
+    const Buffer* indirect = nullptr; // DrawIndexedIndirect[drawCount]
     std::uint32_t drawCount = 0;
     DrawSubmitMode mode = DrawSubmitMode::Indirect;
     // IndirectCount mode: buffer holding the uint32 draw count, one region
     // per frame slot (countRegionStride apart); drawCount caps it.
-    VkBuffer count = nullptr;
+    const Buffer* count = nullptr;
     std::uint64_t countRegionStride = 0;
     // Direct mode: CPU-side copy of the drawCount entries.
     const DrawIndexedIndirect* cpuDraws = nullptr;
@@ -95,7 +94,7 @@ struct DrawBatch {
     // IndirectCount mode; `indirect` keeps the visibility-only stream the
     // shadow passes draw (casters outside the camera frustum still cast).
     // Null = the main pass draws `indirect` too.
-    VkBuffer sceneIndirect = nullptr;
+    const Buffer* sceneIndirect = nullptr;
     // Sky pass (optional): after the opaque draws, one fullscreen triangle
     // at the far plane paints the light buffer's per-slot skyColor over
     // the pixels no geometry covered (depth test LESS_OR_EQUAL, write
@@ -110,7 +109,7 @@ struct DrawBatch {
     // it inside the same rendering pass (depth test on, depth write off).
     // Either null = no transparency pass (transparents then simply never
     // reach the transparent stream, or draw opaquely in lower tiers).
-    VkBuffer transparentIndirect = nullptr;
+    const Buffer* transparentIndirect = nullptr;
     const Pipeline* transparentPipeline = nullptr;
     // Cull-shader flags pushed with the dispatch (bit 0 = frustum culling
     // against binding 22's per-object AABBs, bit 1 = LOD selection from
@@ -126,7 +125,7 @@ struct DrawBatch {
     // 26), which the NEXT frame's cull dispatch reads. The region is
     // zeroed alongside the count fill. Null pipeline = no proxy pass.
     const Pipeline* occlusionPipeline = nullptr;
-    VkBuffer occlusionVisibility = nullptr;
+    const Buffer* occlusionVisibility = nullptr;
     std::uint64_t occlusionRegionStride = 0; // bytes per frame-slot region
     // Per-INSTANCE proxy pass (runtime instanced models): drawn right
     // after the per-entry pass with the same push constants —
@@ -172,7 +171,7 @@ struct DrawBatch {
     // The camera matrix lives in the bindless table's per-slot camera
     // buffer (binding 6); only the slot index is pushed, so a moving
     // camera never invalidates static recordings.
-    VkDescriptorSet descriptors = nullptr;  // bindless table set, bound once if set
+    const DescriptorTable* descriptors = nullptr; // bindless table, bound once if set
     // Ray-traced primary visibility (optional): when rtPrimary is set and
     // the pipeline is present, the frame skips the shadow cascades, the
     // compaction dispatch and the indirect draw stream entirely and instead
@@ -275,10 +274,10 @@ struct PassContext {
     std::uint32_t height = 0;
     VkImage swapchainImage = nullptr;
     VkImageView swapchainView = nullptr;
-    std::uint32_t swapchainFormat = 0; // VkFormat
+    Format swapchainFormat = Format::Undefined;
     // InScene only: what the active rendering pass attaches.
     VkImageView colorView = nullptr; // swapchain or scene-color view
-    std::uint32_t colorFormat = 0;   // VkFormat of that attachment
+    Format colorFormat = Format::Undefined; // format of that attachment
     bool depthAttached = false;
     VkImageView depthView = nullptr; // the frame depth image, when attached
 };
@@ -388,17 +387,17 @@ public:
     // world normal (16F), material params (unorm), view depth (32F, the
     // cleared 0 marks background). The gbuffer pipeline's colorFormats and
     // the lighting shader's Loads follow this order.
-    static constexpr std::array<std::uint32_t, kGBufferTargets> kGBufferFormats{
+    static constexpr std::array<Format, kGBufferTargets> kGBufferFormats{
         kFormatR8G8B8A8Srgb, kFormatR16G16B16A16Sfloat, kFormatR8G8B8A8Unorm, kFormatR32Sfloat};
     // The HDR scene-color target the composite pass renders into when a
     // batch carries a postPipeline (descriptor binding 35). Every pass
     // pipeline drawing inside the composite pass must declare this format.
-    static constexpr std::uint32_t kSceneColorFormat = kFormatR16G16B16A16Sfloat;
+    static constexpr Format kSceneColorFormat = Format::R16G16B16A16Sfloat;
     // The LDR intermediate an AA module reads (descriptor binding 36):
     // tonemapped output parked one pass before the swapchain when
     // DrawBatch::aaPipeline is set. sRGB like the swapchain, so the post
     // shader behaves identically against either target.
-    static constexpr std::uint32_t kLdrColorFormat = kFormatR8G8B8A8Srgb;
+    static constexpr Format kLdrColorFormat = Format::R8G8B8A8Srgb;
     Result<void> setDeferredTargets(DescriptorTable* table);
 
 private:

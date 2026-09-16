@@ -77,11 +77,6 @@ VkAttachmentLoadOp loadOp(LoadOp op) {
     }
 }
 
-bool isDepthFormat(std::uint32_t format) {
-    // VK_FORMAT_D16_UNORM .. VK_FORMAT_D32_SFLOAT_S8_UINT
-    return format >= 124 && format <= 130;
-}
-
 } // namespace
 
 void CommandContext::imageBarrier(const Image& image, ImageState from, ImageState to) {

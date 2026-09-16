@@ -23,12 +23,12 @@ class Pipeline;
 // pipeline built for the face format and pre-writes one camera + light
 // region per face; this class executes, it never chooses policy.
 struct ProbeCaptureDesc {
-    VkBuffer geometry = nullptr;    // bound at offset 0 as VB and IB (uint32)
+    const Buffer* geometry = nullptr; // bound at offset 0 as VB and IB (uint32)
     const DrawIndexedIndirect* draws = nullptr; // CPU draw list (bind pose)
     std::uint32_t drawCount = 0;
-    VkDescriptorSet descriptors = nullptr;
+    const DescriptorTable* descriptors = nullptr;
     const Pipeline* pipeline = nullptr; // colorFormat must equal `format`
-    std::uint32_t format = 0;           // VkFormat of the cube faces
+    Format format = Format::Undefined;  // format of the cube faces
     std::uint32_t faceSize = 256;       // square face resolution
     // First camera/light buffer region of the six per-face capture regions;
     // face f is drawn with push constant slot = cameraSlotBase + f.

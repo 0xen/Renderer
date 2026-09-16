@@ -151,7 +151,7 @@ Result<void> Swapchain::build(std::uint32_t width, std::uint32_t height, VkSwapc
         vkDestroySwapchainKHR(device_->handle(), old, nullptr);
     }
     swapchain_ = handle;
-    format_ = format.format;
+    format_ = static_cast<Format>(format.format);
     width_ = extent.width;
     height_ = extent.height;
 

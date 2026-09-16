@@ -1,5 +1,9 @@
 #include "rend/gpu/descriptor_table.h"
 
+#include "rend/gpu/acceleration_structure.h"
+#include "rend/gpu/buffer.h"
+#include "rend/gpu/image.h"
+
 #include "rend/gpu/device.h"
 
 #include <volk.h>
@@ -364,8 +368,9 @@ DescriptorTable::~DescriptorTable() {
     }
 }
 
-void DescriptorTable::writeObjectBuffer(VkBuffer buffer, std::uint64_t range) {
-    VkDescriptorBufferInfo info{.buffer = buffer, .offset = 0, .range = range};
+void DescriptorTable::writeObjectBuffer(const Buffer& buffer, std::uint64_t range) {
+    VkDescriptorBufferInfo info{
+        .buffer = buffer.handle(), .offset = 0, .range = range == 0 ? buffer.size() : range};
     VkWriteDescriptorSet write{};
     write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     write.dstSet = set_;
@@ -376,9 +381,10 @@ void DescriptorTable::writeObjectBuffer(VkBuffer buffer, std::uint64_t range) {
     vkUpdateDescriptorSets(device_->handle(), 1, &write, 0, nullptr);
 }
 
-void DescriptorTable::writeStorageBuffer(std::uint32_t binding, VkBuffer buffer,
+void DescriptorTable::writeStorageBuffer(std::uint32_t binding, const Buffer& buffer,
                                          std::uint64_t range) {
-    VkDescriptorBufferInfo info{.buffer = buffer, .offset = 0, .range = range};
+    VkDescriptorBufferInfo info{
+        .buffer = buffer.handle(), .offset = 0, .range = range == 0 ? buffer.size() : range};
     VkWriteDescriptorSet write{};
     write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     write.dstSet = set_;
@@ -389,9 +395,9 @@ void DescriptorTable::writeStorageBuffer(std::uint32_t binding, VkBuffer buffer,
     vkUpdateDescriptorSets(device_->handle(), 1, &write, 0, nullptr);
 }
 
-void DescriptorTable::writeShadowMap(std::uint32_t cascade, VkImageView view) {
+void DescriptorTable::writeShadowMap(std::uint32_t cascade, const Image& image) {
     VkDescriptorImageInfo info{};
-    info.imageView = view;
+    info.imageView = image.view();
     info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     VkWriteDescriptorSet write{};
     write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -404,9 +410,9 @@ void DescriptorTable::writeShadowMap(std::uint32_t cascade, VkImageView view) {
     vkUpdateDescriptorSets(device_->handle(), 1, &write, 0, nullptr);
 }
 
-void DescriptorTable::writePointShadowMap(std::uint32_t index, VkImageView view) {
+void DescriptorTable::writePointShadowMap(std::uint32_t index, const Image& image) {
     VkDescriptorImageInfo info{};
-    info.imageView = view;
+    info.imageView = image.view();
     info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     VkWriteDescriptorSet write{};
     write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -420,9 +426,9 @@ void DescriptorTable::writePointShadowMap(std::uint32_t index, VkImageView view)
 }
 
 void DescriptorTable::writeSampledImage(std::uint32_t binding, std::uint32_t index,
-                                        VkImageView view) {
+                                        const Image& image) {
     VkDescriptorImageInfo info{};
-    info.imageView = view;
+    info.imageView = image.view();
     info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     VkWriteDescriptorSet write{};
     write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -435,9 +441,9 @@ void DescriptorTable::writeSampledImage(std::uint32_t binding, std::uint32_t ind
     vkUpdateDescriptorSets(device_->handle(), 1, &write, 0, nullptr);
 }
 
-void DescriptorTable::writeProbe(VkImageView view) {
+void DescriptorTable::writeProbe(const Image& image) {
     VkDescriptorImageInfo info{};
-    info.imageView = view;
+    info.imageView = image.view();
     info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     VkWriteDescriptorSet write{};
     write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -449,11 +455,12 @@ void DescriptorTable::writeProbe(VkImageView view) {
     vkUpdateDescriptorSets(device_->handle(), 1, &write, 0, nullptr);
 }
 
-void DescriptorTable::writeAccelerationStructure(VkAccelerationStructureKHR tlas) {
+void DescriptorTable::writeAccelerationStructure(const AccelerationStructure& tlas) {
+    const VkAccelerationStructureKHR handle = tlas.handle();
     VkWriteDescriptorSetAccelerationStructureKHR asInfo{};
     asInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
     asInfo.accelerationStructureCount = 1;
-    asInfo.pAccelerationStructures = &tlas;
+    asInfo.pAccelerationStructures = &handle;
     VkWriteDescriptorSet write{};
     write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     write.pNext = &asInfo;
@@ -464,9 +471,9 @@ void DescriptorTable::writeAccelerationStructure(VkAccelerationStructureKHR tlas
     vkUpdateDescriptorSets(device_->handle(), 1, &write, 0, nullptr);
 }
 
-void DescriptorTable::writeTexture(std::uint32_t index, VkImageView view) {
+void DescriptorTable::writeTexture(std::uint32_t index, const Image& image) {
     VkDescriptorImageInfo info{};
-    info.imageView = view;
+    info.imageView = image.view();
     info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     VkWriteDescriptorSet write{};
     write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
