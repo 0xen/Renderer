@@ -29,9 +29,10 @@ include(cmake/RendShaders.cmake)
 
 # A project consuming the engine via add_subdirectory() wants rend.dll and
 # the rend_add_shaders() rule only: turning this off skips the viewer,
-# assetio, the Python host, the engine's own shader target and the
-# third-party fetches only those need.
-option(REND_BUILD_APPS "Build the viewer app, assetio, the Python host and the engine shaders" ON)
+# assetio, the engine's own shader target and the third-party fetches only
+# those need. It no longer skips the Python host: REND_PYTHON stands on its
+# own, below.
+option(REND_BUILD_APPS "Build the viewer app, assetio and the engine shaders" ON)
 if(REND_BUILD_APPS)
     include(cmake/FetchPugixml.cmake)
     include(cmake/FetchCgltf.cmake)
@@ -56,18 +57,27 @@ endif()
 # CPython and drives the renderer message queue from scene scripts. The
 # viewer loads it at RUNTIME only when a scene declares <Script> nodes,
 # so turning this off (or deleting the DLL) costs nothing.
+#
+# This option alone decides it. It used to be gated on REND_BUILD_APPS as
+# well, which made "standalone" above untrue in the one case that matters:
+# a project consuming the engine with the apps off could not build the
+# script host however loudly it asked for it. Nothing under pyhost/ needs
+# the viewer, assetio or any fetch those two bring in — it links
+# rend::engine and pybind11::embed and nothing else — so the second gate
+# bought nothing and cost exactly that consumer.
 option(REND_PYTHON "Build the embedded Python script host DLL" ON)
-if(REND_BUILD_APPS AND REND_PYTHON)
+if(REND_PYTHON)
     include(cmake/FetchPython.cmake)
     include(cmake/FetchPybind11.cmake)
 endif()
 
 add_subdirectory(engine)
+# Ahead of apps/viewer, so the DLL the viewer LoadLibrary's is built beside it.
+if(REND_PYTHON)
+    add_subdirectory(pyhost)
+endif()
 if(REND_BUILD_APPS)
     add_subdirectory(assets)
     add_subdirectory(assetio)
-    if(REND_PYTHON)
-        add_subdirectory(pyhost)
-    endif()
     add_subdirectory(apps/viewer)
 endif()
