@@ -29,8 +29,8 @@ scene and model files so the engine itself never touches a file format.
 
 - Windows 10 or 11, 64-bit, with a GPU and driver that support Vulkan 1.3 or
   Direct3D 12. Ray tracing features switch on only where the hardware has them.
-- [Visual Studio 2022](https://visualstudio.microsoft.com/) with the "Desktop
-  development with C++" workload.
+- [Visual Studio](https://visualstudio.microsoft.com/) 2022 or 2026 with the
+  "Desktop development with C++" workload.
 - [CMake](https://cmake.org/download/) 3.24 or newer.
 - The [Vulkan SDK](https://vulkan.lunarg.com/sdk/home). The build uses its shader
   compiler, `dxc`, to compile every shader ahead of time.
@@ -47,6 +47,10 @@ cd Renderer
 cmake -S . -B build -G "Visual Studio 17 2022" -A x64
 cmake --build build --config Release
 ```
+
+That configure line names Visual Studio 2022. With Visual Studio 2026 the generator is
+`"Visual Studio 18 2026"` instead, and it needs a CMake new enough to list it under
+`cmake --help`.
 
 The first configure downloads the dependencies, so it takes a few minutes. The result
 is `build\bin\Release\viewer.exe` next to `rend.dll`, `rend_assetio.dll`,
@@ -139,8 +143,12 @@ viewer [options] <scene.xml>
 
 While it runs, the number keys 1 to 9 switch every animated model to one of its first
 nine clips, and Space toggles between the once-recorded command buffers and recording
-every frame. An in-window panel shows the frame timing and lets you change the same
-graphics settings a script can.
+every frame. On Vulkan, an in-window panel shows the frame timing and lets you change
+the same graphics settings a script can; the Direct3D 12 backend runs without it.
+
+On Direct3D 12 the viewer always asks for the debug layer and logs its messages. The layer
+is part of Windows' optional **Graphics Tools** feature (Settings, System, Optional
+features); without it the viewer says so in the log and runs on without validation.
 
 ## Scripting
 

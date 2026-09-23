@@ -339,6 +339,15 @@ public:
     // records e.g. ImGui draw data. Recorded every frame regardless of
     // static mode — overlay content is inherently dynamic; the prerecorded
     // scene buffers stay untouched. Null disables the pass.
+    //
+    // On D3D12 there is no separate buffer: the overlay is the tail of the
+    // frame's one command list, and the descriptor heaps bound when the
+    // callback runs are the engine's, left there by the scene. A recorder that
+    // reads descriptors from a heap of its own (ImGui's D3D12 backend does)
+    // must bind it with SetDescriptorHeaps first; the backend does not, and
+    // the handle then points into a heap the GPU is not reading. Some drivers
+    // tolerate that and some crash on it. The overlay is recorded last, so
+    // nothing after it needs the engine's heaps back.
     using OverlayRecorder = std::function<void(CommandContext&)>;
     void setOverlayRecorder(OverlayRecorder recorder) { overlayRecorder_ = std::move(recorder); }
 

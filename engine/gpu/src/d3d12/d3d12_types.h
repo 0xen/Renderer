@@ -141,6 +141,10 @@ private:
     ComPtr<ID3D12CommandQueue> graphics_;
     ComPtr<ID3D12CommandQueue> copy_;
     ComPtr<ID3D12InfoQueue> infoQueue_;
+    // Set when the debug layer can call us per message (Windows 11): the
+    // per-frame drain then has nothing left to report.
+    ComPtr<ID3D12InfoQueue1> infoQueue1_;
+    DWORD messageCallbackCookie_ = 0;
     // waitIdle: one fence signalled through both queues.
     ComPtr<ID3D12Fence> idleFence_;
     mutable std::uint64_t idleValue_ = 0;

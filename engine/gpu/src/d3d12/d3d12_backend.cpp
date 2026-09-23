@@ -4,9 +4,12 @@
 
 #include "rend/core/log.h"
 
+#include <algorithm>
 #include <cstring>
 #include <format>
+#include <iterator>
 #include <string>
+#include <string_view>
 
 namespace rend::gpu {
 
@@ -22,6 +25,35 @@ std::string narrow(const wchar_t* wide) {
         WideCharToMultiByte(CP_UTF8, 0, wide, -1, out.data(), length, nullptr, nullptr);
     }
     return out;
+}
+
+// Colour targets carry no optimized clear value (their clears differ per
+// pass); the per-clear performance note this raises is filtered out.
+constexpr D3D12_MESSAGE_ID kDeniedMessages[] = {
+    D3D12_MESSAGE_ID_CLEARRENDERTARGETVIEW_MISMATCHINGCLEARVALUE,
+    D3D12_MESSAGE_ID_CLEARDEPTHSTENCILVIEW_MISMATCHINGCLEARVALUE,
+};
+
+void logDebugMessage(D3D12_MESSAGE_SEVERITY severity, D3D12_MESSAGE_ID id, std::string_view text) {
+    for (D3D12_MESSAGE_ID denied : kDeniedMessages) {
+        if (id == denied) {
+            return;
+        }
+    }
+    switch (severity) {
+    case D3D12_MESSAGE_SEVERITY_CORRUPTION:
+    case D3D12_MESSAGE_SEVERITY_ERROR: log::error("[d3d12] {}", text); break;
+    case D3D12_MESSAGE_SEVERITY_WARNING: log::warn("[d3d12] {}", text); break;
+    default: log::trace("[d3d12] {}", text); break;
+    }
+}
+
+// Called by the debug layer on the thread that made the offending call, at
+// the moment it is made. A call that goes on to crash the driver is logged
+// before the crash, which the once-a-frame drain cannot do.
+void CALLBACK onDebugMessage(D3D12_MESSAGE_CATEGORY, D3D12_MESSAGE_SEVERITY severity,
+                             D3D12_MESSAGE_ID id, LPCSTR description, void*) {
+    logDebugMessage(severity, id, description ? description : "");
 }
 
 // What D3D12 (feature level 12.0 + the queried options) offers for each
@@ -166,19 +198,28 @@ Result<std::unique_ptr<Device>> D3D12Device::create(const Instance& instanceBase
 
     if (instance.validationEnabled()) {
         if (SUCCEEDED(device->device_.As(&device->infoQueue_))) {
-            // Never break into the debugger: messages are drained into the
-            // log once per frame instead (drainDebugMessages).
+            // Never break into the debugger: messages go to the log instead,
+            // as they happen where the OS allows it and once per frame
+            // (drainDebugMessages) where it does not.
             device->infoQueue_->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, FALSE);
             device->infoQueue_->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR, FALSE);
-            // Colour targets carry no optimized clear value (their clears
-            // differ per pass); silence the per-clear performance note.
-            D3D12_MESSAGE_ID denied[] = {D3D12_MESSAGE_ID_CLEARRENDERTARGETVIEW_MISMATCHINGCLEARVALUE,
-                                         D3D12_MESSAGE_ID_CLEARDEPTHSTENCILVIEW_MISMATCHINGCLEARVALUE};
+            D3D12_MESSAGE_ID denied[std::size(kDeniedMessages)];
+            std::copy(std::begin(kDeniedMessages), std::end(kDeniedMessages), denied);
             D3D12_INFO_QUEUE_FILTER filter{};
-            filter.DenyList.NumIDs = 2;
+            filter.DenyList.NumIDs = static_cast<UINT>(std::size(denied));
             filter.DenyList.pIDList = denied;
             device->infoQueue_->AddStorageFilterEntries(&filter);
         }
+        // A driver fault mid-frame ends the process before the drain runs,
+        // taking the one message that explains it along.
+        if (SUCCEEDED(device->device_.As(&device->infoQueue1_)) &&
+            FAILED(device->infoQueue1_->RegisterMessageCallback(
+                &onDebugMessage, D3D12_MESSAGE_CALLBACK_FLAG_NONE, nullptr,
+                &device->messageCallbackCookie_))) {
+            device->infoQueue1_.Reset();
+        }
+        log::info("D3D12 debug messages: {}", device->infoQueue1_ ? "logged as they are raised"
+                                                                  : "drained once per frame");
     }
 
     // Feature report: required ones fail creation, optional ones are
@@ -332,6 +373,11 @@ void D3D12Device::drainDebugMessages() const {
     if (!infoQueue_) {
         return;
     }
+    if (infoQueue1_) {
+        // Already logged by onDebugMessage; only the stored copies remain.
+        infoQueue_->ClearStoredMessages();
+        return;
+    }
     const UINT64 count = infoQueue_->GetNumStoredMessages();
     std::vector<char> storage;
     for (UINT64 i = 0; i < count; ++i) {
@@ -347,12 +393,7 @@ void D3D12Device::drainDebugMessages() const {
         const std::string_view text(message->pDescription, message->DescriptionByteLength > 0
                                                                ? message->DescriptionByteLength - 1
                                                                : 0);
-        switch (message->Severity) {
-        case D3D12_MESSAGE_SEVERITY_CORRUPTION:
-        case D3D12_MESSAGE_SEVERITY_ERROR: log::error("[d3d12] {}", text); break;
-        case D3D12_MESSAGE_SEVERITY_WARNING: log::warn("[d3d12] {}", text); break;
-        default: log::trace("[d3d12] {}", text); break;
-        }
+        logDebugMessage(message->Severity, message->ID, text);
     }
     infoQueue_->ClearStoredMessages();
 }
@@ -361,6 +402,9 @@ D3D12Device::~D3D12Device() {
     if (device_) {
         waitIdle();
         drainDebugMessages();
+        if (infoQueue1_) {
+            infoQueue1_->UnregisterMessageCallback(messageCallbackCookie_);
+        }
         log::info("Device destroyed ('{}')", adapterName_);
     }
     if (idleEvent_) {
