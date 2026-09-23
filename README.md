@@ -179,7 +179,12 @@ rend_add_shaders(my_shaders SOURCE_DIR shaders OUTPUT_DIR ${CMAKE_BINARY_DIR}/bi
 `docs/ARCHITECTURE.md` describes the layers, the backend-neutral GPU interface, the
 GPU-driven rendering model and how intent in a scene maps to a technique in the renderer.
 
-## Licences
+## Licence
+
+This repository is published to show the work. It is under the
+[PolyForm Strict License 1.0.0](LICENSE): you are welcome to read the code and build
+and run it for noncommercial purposes, but not to distribute it, modify it or build
+products on it. Pull requests are not being taken.
 
 The dependencies CMake fetches carry their own licences: SDL3 (zlib), volk (MIT), Dear
 ImGui (MIT), cgltf (MIT), pugixml (MIT), stb (public domain or MIT), meshoptimizer
