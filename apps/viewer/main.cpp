@@ -1043,6 +1043,11 @@ int main(int argc, char** argv) {
     // to alpha 0, post/FXAA pass alpha through, swapchain asks the driver
     // for premultiplied compositing.
     bool transparentWindow = false;
+    // --noui: no debug overlay at all, for captures and demos. --size WxH:
+    // the window's initial client size.
+    bool noUi = false;
+    std::uint32_t windowWidth = 1280;
+    std::uint32_t windowHeight = 720;
     // --backend: which gpu backend builds the object tree (Vulkan by
     // default; --transparent picks D3D12, the only backend that can
     // composite the window over the desktop on that driver).
@@ -1067,6 +1072,22 @@ int main(int argc, char** argv) {
             debug = true;
         } else if (arg == "--novsync") {
             vsync = false;
+        } else if (arg == "--noui") {
+            noUi = true;
+        } else if (arg == "--size" && i + 1 < argc) {
+            const std::string_view wh = argv[++i];
+            const auto x = wh.find('x');
+            std::uint32_t w = 0, h = 0;
+            if (x != std::string_view::npos) {
+                std::from_chars(wh.data(), wh.data() + x, w);
+                std::from_chars(wh.data() + x + 1, wh.data() + wh.size(), h);
+            }
+            if (w < 64 || h < 64) {
+                log::error("--size wants WIDTHxHEIGHT, e.g. 1920x1080 (got '{}')", wh);
+                return 1;
+            }
+            windowWidth = w;
+            windowHeight = h;
         } else if (arg == "--static") {
             staticMode = true;
         } else if (arg == "--rt") {
@@ -1234,7 +1255,7 @@ int main(int argc, char** argv) {
     } else {
         log::info("No scene file given "
                   "(usage: viewer [--debug] [--novsync] [--static] [--bench N] [--walk] "
-                  "[--transparent] [--backend vulkan|d3d12] "
+                  "[--noui] [--size WxH] [--transparent] [--backend vulkan|d3d12] "
                   "[--draw-mode count|indirect|direct] [--spawn-test model.gltf] <scene.xml>)");
     }
 
@@ -2735,7 +2756,7 @@ int main(int argc, char** argv) {
     platform::TargetDesc desc{
         .style = transparentWindow ? platform::WindowStyle::BorderlessTransparent
                                    : platform::WindowStyle::Decorated,
-        .size = {1280, 720},
+        .size = {windowWidth, windowHeight},
         .title = backendApi == gpu::Api::D3D12 ? "Renderer Viewer (D3D12)" : "Renderer Viewer",
         .vulkan = backendApi == gpu::Api::Vulkan,
     };
@@ -3424,11 +3445,13 @@ int main(int argc, char** argv) {
     // which stays per-frame even when the scene buffers are static.
     // The ImGui backend is Vulkan-only until imgui_impl_dx12 is wired in.
     std::unique_ptr<viewer::Ui> ui;
-    if (backendApi == gpu::Api::Vulkan) {
+    if (backendApi == gpu::Api::Vulkan && !noUi) {
         ui = viewer::Ui::create(*instance, *device, *swapchain);
     }
     if (ui) {
         renderer->setOverlayRecorder([&ui](gpu::CommandContext& cmd) { ui->render(cmd); });
+    } else if (noUi) {
+        log::info("Debug UI off (--noui)");
     } else {
         log::warn("Debug UI unavailable; continuing without it");
     }

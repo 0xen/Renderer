@@ -4,6 +4,11 @@ A modular real-time renderer for Windows, written in C++20. It draws scenes desc
 a small XML format, loads glTF 2.0 models, and runs on either Vulkan 1.3 or Direct3D 12
 from the same code and the same HLSL shaders.
 
+![The Bistro scene in morning fog, with primary visibility, shadows and reflections all ray traced](docs/images/bistro_fog_raytraced.png)
+
+*Amazon Lumberyard Bistro, fully ray traced: primary rays, shadows and reflections, with
+volumetric fog carved by the sun. `viewer --rtprimary --rt --reflections traced bistro_fog.xml`*
+
 What it does:
 
 - GPU-driven drawing: one indirect draw stream, culling, level of detail and occlusion
@@ -128,6 +133,8 @@ viewer [options] <scene.xml>
 | `--novsync` | Present as fast as possible |
 | `--bench N` | Exit after N frames with a timing report |
 | `--debug` | Mirror the log to `viewer.log` beside the executable and turn on synchronisation validation |
+| `--noui` | No overlay panels, for captures and demos |
+| `--size WxH` | Initial window size, for example `--size 1920x1080` |
 | `--nocull`, `--nolod`, `--noocclusion`, `--noobb` | Switch off one stage of the GPU culling pipeline, for comparison |
 
 While it runs, the number keys 1 to 9 switch every animated model to one of its first
@@ -142,6 +149,19 @@ that loads and moves models, drives the camera, changes the sun, sky and point l
 switches animation clips and reads or sets the graphics settings. `docs/SCRIPTING.md` is
 the reference, with a complete example. Scenes without scripts never load the Python
 host at all.
+
+## More scenes
+
+| | |
+|---|---|
+| ![Crytek Sponza](docs/images/crytek_sponza.png) | ![A skinned character under cascaded shadows](docs/images/human_lab.png) |
+| Crytek Sponza, rasterised with cascaded shadow maps and the sun through the atrium. | A skinned glTF character with ray-traced shadows, `viewer --rt`. |
+| ![An animated character walking past a mirror](docs/images/animation_lab.png) | |
+| A walking clip from glTF, with a `reflective` surface showing the probe reflection. | |
+
+Every one of these is a folder of glTF files and one XML scene, run with the same
+`viewer.exe`. The models are the Khronos and Amazon Lumberyard sample assets under their
+own licences.
 
 ## Using the engine in your own project
 
