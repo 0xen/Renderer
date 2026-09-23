@@ -21,7 +21,7 @@ struct BufferSlice {
 // The geometry memory pool (see ARCHITECTURE.md): all vertex/index data
 // suballocated from one device-local buffer that is bound once. First-fit
 // free list with coalescing on free; defrag is a later, separate concern
-// (roadmap #9). Fixed capacity — growing would invalidate every offset the
+// (not yet built). Fixed capacity — growing would invalidate every offset the
 // indirect entries reference.
 class MemoryPool {
 public:

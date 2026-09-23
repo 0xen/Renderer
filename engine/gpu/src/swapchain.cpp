@@ -68,7 +68,7 @@ VkCompositeAlphaFlagBitsKHR chooseCompositeAlpha(const VkSurfaceCapabilitiesKHR&
         }
         // AMD's Windows driver reports OPAQUE only and presents opaque: the
         // window renders a black background no matter what the image alpha
-        // or the HWND ex-styles say (verified on an RX 7700 XT, 2026-09).
+        // or the HWND ex-styles say.
         // Per-pixel transparency there needs a D3D11/DirectComposition
         // present path instead of this swapchain.
         log::warn("Transparent target requested but the driver offers OPAQUE compositing only; "

@@ -1,4 +1,4 @@
-// Occlusion proxy pass (docs: scratch/memories — GPU occlusion slice 1):
+// Occlusion proxy pass:
 // drawn at the END of the main rendering pass, one instance per draw
 // template, 36 unindexed vertices generating the entry's world AABB as a
 // cube straight from the bounds table — no vertex buffer, no proxy

@@ -14,7 +14,7 @@ class Device;
 // fallback). stage() copies bytes into a growing host-visible staging
 // buffer immediately; flush() submits every pending copy in one command
 // buffer and blocks until the GPU is done. Synchronous by design — async
-// streaming with semaphore chaining lands with roadmap #9; destination
+// streaming with semaphore chaining is a later step; destination
 // buffers currently opt into concurrent sharing instead of ownership
 // transfers (BufferDesc::sharedWithTransferQueue).
 class TransferContext {

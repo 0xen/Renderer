@@ -1045,7 +1045,7 @@ int main(int argc, char** argv) {
     bool transparentWindow = false;
     // --backend: which gpu backend builds the object tree (Vulkan by
     // default; --transparent picks D3D12, the only backend that can
-    // composite the window over the desktop on this hardware).
+    // composite the window over the desktop on that driver).
     gpu::Api backendApi = gpu::Api::Vulkan;
     bool backendExplicit = false;
     // Streaming test harness: auto-spawn this model at random intervals
@@ -1238,8 +1238,8 @@ int main(int argc, char** argv) {
                   "[--draw-mode count|indirect|direct] [--spawn-test model.gltf] <scene.xml>)");
     }
 
-    // A transparent window is only achievable through D3D12 on this
-    // hardware (AMD's Vulkan WSI composites opaque), so --transparent picks
+    // A transparent window is only achievable through D3D12 on AMD
+    // (its Vulkan WSI composites opaque), so --transparent picks
     // the D3D12 backend unless --backend said otherwise.
     if (transparentWindow && !backendExplicit) {
         backendApi = gpu::Api::D3D12;
@@ -3251,7 +3251,7 @@ int main(int argc, char** argv) {
     if (transparentWindow) {
         // Premultiplied (0,0,0,0): the desktop shows through every pixel
         // no geometry covers. REND_TRANSPARENT_CLEAR="r g b a" overrides it
-        // for the pixel verifier (scratch/skills/verify-transparency.ps1).
+        // for pixel-level verification tools.
         std::array<float, 4> clear{0.0f, 0.0f, 0.0f, 0.0f};
         char override[64] = {};
         std::size_t length = 0;
@@ -5074,7 +5074,7 @@ int main(int argc, char** argv) {
 
     // Test-harness producer state: nondeterministic auto-spawns driven by
     // the --spawn-test flag (the Python host is the interactive producer).
-    char spawnPathBuf[512] = "C:/github/scenes/flight_helmet/model/FlightHelmet.gltf";
+    char spawnPathBuf[512] = "";
     if (spawnTestPath) {
         std::snprintf(spawnPathBuf, sizeof(spawnPathBuf), "%s", spawnTestPath);
     }

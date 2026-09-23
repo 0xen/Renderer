@@ -1,8 +1,7 @@
 # Scene & Pipeline XML Format
 
 The viewer loads a scene description XML (`viewer <scene.xml>`); scene nodes (e.g. a
-model) reference **pipeline definition files** like the example below. Loader lands
-with the renderer layer (roadmap #8, pugixml).
+model) reference **pipeline definition files** like the example below.
 
 ## Pipeline definition
 
@@ -122,7 +121,7 @@ At runtime the number keys `1`-`9` switch the viewer to the first nine clips of
 every animated model, cross-fading over 0.25 s; the load log lists each animated
 model's clips with their key, duration and an `once` marker for the non-looping ones.
 Python scripts switch clips and override loop mode through `rend.set_animation()` and
-`rend.set_animation_loop()` (see `pyhost/CLAUDE.md`).
+`rend.set_animation_loop()` (see `docs/SCRIPTING.md`).
 
 `ReflectionProbe position="x y z"` (optional, zero or more) marks where a probe-based
 renderer captures its environment cubemap at load time. Like lights it describes the
@@ -154,7 +153,7 @@ viewer feeds them to the optional embedded Python host (`rend_pyhost.dll`), whic
 them in order on the interpreter's own thread; scripts `import rend` and speak the
 renderer message queue (`load_model` / `set_transform` / `unload_model`, `poll_events`
 / `wait_model_ready`, `should_quit`, `log`, and the lighting controls `set_sun` /
-`set_sky_color` / `set_ambient` / `set_point_light` — see pyhost/CLAUDE.md). A scene that lists no scripts involves no
+`set_sky_color` / `set_ambient` / `set_point_light` — see `docs/SCRIPTING.md`). A scene that lists no scripts involves no
 Python at all — the host DLL is never even loaded, so it and the CPython runtime may
 be absent. assetio only parses the paths; it never executes code.
 
@@ -177,5 +176,3 @@ point lights, extras are dropped with a warning). Every attribute is optional wi
 sensible defaults. Scripts can fade all point lights together
 (`rend.set_point_light_scale`) or replace slots wholesale (`rend.set_point_light`).
 
-Example scene: `C:\github\scenes\crytek_sponza\crytek_sponza.xml` (kept outside this
-repo; Crytek Sponza in the Khronos glTF conversion).

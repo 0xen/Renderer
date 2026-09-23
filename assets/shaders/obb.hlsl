@@ -1,4 +1,4 @@
-// Incremental GPU OBB refinement (docs: scratch/memories — OBB slice):
+// Incremental GPU OBB refinement:
 // one baked dispatch per frame, recorded once into the static recordings
 // BEFORE the cull dispatch, that claims the next few entries from a
 // GPU-side counter and fits each an oriented bounding box from its pooled

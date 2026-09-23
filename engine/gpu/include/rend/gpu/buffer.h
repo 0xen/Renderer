@@ -28,7 +28,7 @@ struct BufferDesc {
     MemoryLocation location = MemoryLocation::DeviceLocal;
     // Share with the dedicated transfer family (concurrent sharing mode) so
     // uploads need no queue-ownership transfers. Revisited with async
-    // streaming/defrag (roadmap #9), where explicit transfers pay off.
+    // streaming/defrag, where explicit transfers pay off.
     bool sharedWithTransferQueue = false;
 };
 

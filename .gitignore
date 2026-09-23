@@ -16,3 +16,8 @@ cmake-build-*/
 
 # CMake local caches
 CMakeUserPresets.json
+
+# Agent instructions for this checkout; kept locally, never committed
+CLAUDE.md
+.claude/
+scratch/
